@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Norden Map Editor</title>
+  </head>
+  <body>
+    <div id="viewport"></div>
+
+    <aside id="panel">
+      <header>
+        <h1>Norden Map Editor</h1>
+        <div id="map-title" class="sub">-</div>
+      </header>
+
+      <section>
+        <h2>マップ</h2>
+        <label class="row">
+          <span>サンプル</span>
+          <select id="sample-select"></select>
+        </label>
+        <div class="buttons">
+          <button id="btn-open">JSON を開く</button>
+          <button id="btn-save">JSON 保存</button>
+        </div>
+        <input id="file-input" type="file" accept=".json,application/json" hidden />
+        <p class="hint">JSON ファイルをドロップしても開けます</p>
+      </section>
+
+      <section>
+        <h2>ランダム生成</h2>
+        <div class="grid2">
+          <label>シード <input id="rnd-seed" type="number" value="1" /></label>
+          <label>向き
+            <select id="rnd-orient">
+              <option value="flat">flat-top</option>
+              <option value="pointy">pointy-top</option>
+            </select>
+          </label>
+          <label>列 <input id="rnd-cols" type="number" value="24" min="2" max="80" /></label>
+          <label>行 <input id="rnd-rows" type="number" value="16" min="2" max="80" /></label>
+        </div>
+        <div class="buttons">
+          <button id="btn-random">生成</button>
+          <button id="btn-random-next">次のシード</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>表示</h2>
+        <label class="row">
+          <span>HEX 塗り</span>
+          <select id="overlay-mode">
+            <option value="none">なし</option>
+            <option value="terrain">地形タイプ</option>
+            <option value="elevation">標高</option>
+          </select>
+        </label>
+        <label class="check"><input id="chk-grid" type="checkbox" checked /> グリッド</label>
+        <label class="check"><input id="chk-trees" type="checkbox" checked /> 木</label>
+        <label class="check"><input id="chk-water" type="checkbox" checked /> 水面</label>
+        <div id="legend"></div>
+      </section>
+
+      <section>
+        <h2>HEX 情報</h2>
+        <dl id="hover-info" class="info"></dl>
+        <h3>選択中</h3>
+        <dl id="select-info" class="info"></dl>
+      </section>
+    </aside>
+
+    <div id="status"></div>
+    <div id="drop-hint">ここにドロップして開く</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
