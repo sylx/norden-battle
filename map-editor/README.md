@@ -19,6 +19,8 @@ src/
   core/            three.js 非依存（戦闘デモなどでも再利用する想定）
     hex.ts           HEX 座標系（オフセット/軸座標/ワールド座標の変換）
     mapData.ts       マップ JSON の型・パース・書き出し
+    features.ts      人工物の定義・橋の向き・城/砦の領域判定
+    roads.ts         街道の接続データ・中心線（ベジェ曲線）・距離検索
     terrainTypes.ts  地形タイプ定義（色・高さオフセット・木の密度）
     terrainGen.ts    HEX マップ → 高さ/色/木配置の生成、Heightmap 問い合わせ
     randomMap.ts     テスト用ランダムマップ
@@ -26,6 +28,8 @@ src/
   render/          three.js 描画
     hexOverlay.ts    HEX グリッド（シェーダで描画）
     terrainMeshes.ts 地形・水面のメッシュ
+    roads.ts         街道のメッシュ（地形に沿う帯、縁をアルファでぼかす）
+    structures/      人工物（村・城・砦・橋）。模様（石積み・瓦・板張り・漆喰）はシェーダで描画
     foliage.ts       木・低木（葉カード方式、手続き生成テクスチャ、風揺れ）
     scene.ts         レンダラ・カメラ・ライト
   editor/          エディタ UI
@@ -40,7 +44,9 @@ src/
   "seed": 3,
   "grid": { "orientation": "flat", "cols": 24, "rows": 16, "hexSize": 1 },
   "cells": [
-    { "col": 0, "row": 0, "terrain": "forest", "elevation": 1 }
+    { "col": 0, "row": 0, "terrain": "forest", "elevation": 1 },
+    { "col": 5, "row": 3, "terrain": "water", "elevation": 0, "feature": "bridge", "featureDir": 1 },
+    { "col": 7, "row": 2, "terrain": "plains", "elevation": 1, "feature": "castle", "roads": [4] }
   ]
 }
 ```
@@ -49,7 +55,14 @@ src/
 - `terrain`: `deep_water` `water` `plains` `forest` `hills` `mountain` `swamp` `wasteland`
 - `elevation`: 整数の標高レベル（0 が水面付近）
 - `seed`: 地形ノイズのシード。同じ JSON + 同じシード + 同じパラメータなら同じ地形になる
+- `feature`（省略可）: 人工物
+  - `bridge` 橋（水域のみ）。`featureDir`（0..5、0 と 3 は同じ軸）で向きを指定、省略時は両岸が陸の向きを自動選択
+  - `village` 村 / `fort` 砦 / `castle` 城（陸のみ）。隣接する砦・城は 1 つにつながり、外周に柵・城壁、頂点に塔、1 か所に門ができる
+- `roads`（省略可）: 街道がつながっている方向（0..5）の配列。隣の HEX 側の逆方向は読み込み時に補う。マップ外への方向も可
+  - 城・砦の門は道が来ている辺に、橋は道の向きに合わせて架かる。道沿いには木が生えず、村の家は道を避けて建つ
 - `cells` に無い HEX は `plains` / `elevation: 0`
+
+エディタでは「人工物の配置」のボタンを選んで HEX をクリックすると配置できる（同じものを再クリックで撤去、橋は向きを変更。Esc で選択ツールに戻る）。「森↔草原」ツールで森の伐採・植林、「街道」ツールで HEX をドラッグでなぞって街道を引ける（「撤去」ツールでなぞると消える）。
 
 ## 地形生成の仕組み
 

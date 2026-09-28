@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/noise';
 import { TreeKind, type TreeInstance } from '../core/terrainGen';
+import { GeoBuilder } from './geoBuilder';
 
 // ---- 風 -------------------------------------------------------------------
 
@@ -251,58 +252,6 @@ function getNeedleTexture(): THREE.Texture {
 }
 
 // ---- ジオメトリ構築 ---------------------------------------------------------
-
-class GeoBuilder {
-  private pos: number[] = [];
-  private nor: number[] = [];
-  private uv: number[] = [];
-  private col: number[] = [];
-  private idx: number[] = [];
-
-  get count(): number {
-    return this.pos.length / 3;
-  }
-
-  vertex(p: THREE.Vector3, n: THREE.Vector3, u: number, v: number, c: THREE.Color): number {
-    this.pos.push(p.x, p.y, p.z);
-    this.nor.push(n.x, n.y, n.z);
-    this.uv.push(u, v);
-    this.col.push(c.r, c.g, c.b);
-    return this.count - 1;
-  }
-
-  tri(a: number, b: number, c: number): void {
-    this.idx.push(a, b, c);
-  }
-
-  /** 既存ジオメトリを色付けして追加 */
-  append(g: THREE.BufferGeometry, color: (p: THREE.Vector3, n: THREE.Vector3) => THREE.Color): void {
-    const P = g.getAttribute('position');
-    const N = g.getAttribute('normal');
-    const base = this.count;
-    const p = new THREE.Vector3();
-    const n = new THREE.Vector3();
-    for (let i = 0; i < P.count; i++) {
-      p.fromBufferAttribute(P, i);
-      n.fromBufferAttribute(N, i);
-      this.vertex(p, n, 0, 0, color(p, n));
-    }
-    if (g.index) for (let i = 0; i < g.index.count; i++) this.idx.push(base + g.index.getX(i));
-    else for (let i = 0; i < P.count; i++) this.idx.push(base + i);
-    g.dispose();
-  }
-
-  build(): THREE.BufferGeometry {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
-    g.setIndex(this.idx);
-    g.computeBoundingSphere();
-    return g;
-  }
-}
 
 type Rng = () => number;
 

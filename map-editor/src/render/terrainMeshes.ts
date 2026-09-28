@@ -3,18 +3,16 @@
  */
 import * as THREE from 'three';
 import type { TerrainData } from '../core/terrainGen';
-import { createForest } from './foliage';
 import type { HexOverlay } from './hexOverlay';
 
 export interface TerrainMeshes {
   group: THREE.Group;
   terrain: THREE.Mesh;
   water: THREE.Mesh;
-  trees: THREE.Group;
   dispose(): void;
 }
 
-export function buildTerrainMeshes(data: TerrainData, overlay: HexOverlay, seed: number): TerrainMeshes {
+export function buildTerrainMeshes(data: TerrainData, overlay: HexOverlay): TerrainMeshes {
   const group = new THREE.Group();
 
   const terrain = new THREE.Mesh(buildTerrainGeometry(data), createTerrainMaterial(overlay));
@@ -26,24 +24,14 @@ export function buildTerrainMeshes(data: TerrainData, overlay: HexOverlay, seed:
   const water = buildWater(data, overlay);
   group.add(water);
 
-  const trees = createForest(data.trees, seed);
-  group.add(trees);
-
   overlay.uniforms.uWaterLevel.value = data.waterLevel;
 
   return {
     group,
     terrain,
     water,
-    trees,
     dispose() {
-      group.traverse((o) => {
-        if (o instanceof THREE.Mesh) {
-          o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
-          o.customDepthMaterial?.dispose();
-        }
-      });
+      disposeObject(group);
     },
   };
 }
@@ -118,4 +106,15 @@ function buildWater(d: TerrainData, overlay: HexOverlay): THREE.Mesh {
   mesh.renderOrder = 1;
   mesh.name = 'water';
   return mesh;
+}
+
+/** Object3D 以下のジオメトリとマテリアルを解放する */
+export function disposeObject(root: THREE.Object3D): void {
+  root.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.geometry.dispose();
+      (o.material as THREE.Material).dispose();
+      o.customDepthMaterial?.dispose();
+    }
+  });
 }

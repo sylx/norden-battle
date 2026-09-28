@@ -142,6 +142,18 @@ button {
   border-color: var(--panel-border);
 }
 
+.tools {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.tools button.active {
+  background: linear-gradient(#b08a3e, #7a5a24);
+  border-color: var(--accent);
+  color: #fff8e4;
+}
+
 button:hover {
   background: linear-gradient(#6e4c2e, #4a3220);
 }

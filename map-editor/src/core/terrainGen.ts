@@ -13,6 +13,7 @@
  */
 import type { HexMap } from './mapData';
 import { Noise, hash2, lerp, smoothstep } from './noise';
+import { ROAD_WIDTH, type RoadIndex } from './roads';
 import { TERRAIN_DEFS, TERRAIN_IDS, TERRAIN_INDEX, type RGB } from './terrainTypes';
 
 export interface TerrainParams {
@@ -83,7 +84,6 @@ export interface TerrainData {
   normals: Float32Array;
   /** sRGB 0..1 */
   colors: Float32Array;
-  trees: TreeInstance[];
   waterLevel: number;
   stats: { ms: number };
 }
@@ -216,6 +216,14 @@ export class TerrainField {
 const DQ = [1, 1, 0, -1, -1, 0];
 const DR = [0, -1, -1, 0, 1, 1];
 
+const CLEARANCE_OFFSETS = [
+  [0, 0],
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+];
+
 const ROCK: RGB = [0.46, 0.43, 0.39];
 const SNOW: RGB = [0.93, 0.94, 0.96];
 const SHORE: RGB = [0.56, 0.52, 0.38];
@@ -323,20 +331,37 @@ export function generateTerrain(map: HexMap, params: TerrainParams): TerrainData
     heights,
     normals,
     colors,
-    trees: [],
     waterLevel,
     stats: { ms: 0 },
   };
-
-  // 4) 木
-  data.trees = placeTrees(field, data, params);
   data.stats.ms = performance.now() - t0;
   return data;
 }
 
-function placeTrees(field: TerrainField, data: TerrainData, params: TerrainParams): TreeInstance[] {
+/** 木を生やさない人工物（HEX を覆う建物群） */
+const TREELESS_FEATURES = new Set(['village', 'fort', 'castle']);
+
+/**
+ * 木・低木の配置。人工物の配置だけが変わったときは地形を作り直さずこれだけ呼べばよい。
+ */
+export function placeVegetation(map: HexMap, data: TerrainData, params: TerrainParams, roads?: RoadIndex): TreeInstance[] {
   const trees: TreeInstance[] = [];
   if (params.treeDensity <= 0) return trees;
+  const field = new TerrainField(map, params);
+  const layout = map.layout;
+  // 建物・城壁に木が被らないよう、HEX の少し外側まで除外する
+  const clearance = 0.14 * layout.size;
+  // 道の端から木の幹まで少し空ける
+  const roadClear = (ROAD_WIDTH / 2 + 0.065) * layout.size;
+  const blocked = (x: number, z: number) => {
+    if (roads && roads.distance(x, z, roadClear) < roadClear) return true;
+    for (const [dx, dz] of CLEARANCE_OFFSETS) {
+      const o = layout.worldToOffset(x + dx * clearance, z + dz * clearance);
+      const f = map.get(o.col, o.row)?.feature;
+      if (f && TREELESS_FEATURES.has(f)) return true;
+    }
+    return false;
+  };
   const s = field.map.layout.size;
   const sp = Math.max(params.treeSpacing, 0.05) * s;
   const x0 = data.minX;
@@ -371,6 +396,7 @@ function placeTrees(field: TerrainField, data: TerrainData, params: TerrainParam
       if (roll < prob) kind = TreeKind.Conifer; // 種類は後で決める
       else if (roll < prob + bushProb * (1 - prob)) kind = TreeKind.Bush;
       else continue;
+      if (blocked(x, z)) continue;
 
       const y = hm.heightAt(x, z);
       if (y < data.waterLevel + 0.04 * s) continue;

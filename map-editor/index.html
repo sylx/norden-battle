@@ -29,6 +29,21 @@
       </section>
 
       <section>
+        <h2>人工物の配置</h2>
+        <div id="tools" class="tools">
+          <button data-tool="select" class="active">選択</button>
+          <button data-tool="bridge">橋</button>
+          <button data-tool="village">村</button>
+          <button data-tool="fort">砦</button>
+          <button data-tool="castle">城</button>
+          <button data-tool="erase">撤去</button>
+          <button data-tool="forest">森↔草原</button>
+          <button data-tool="road">街道</button>
+        </div>
+        <p class="hint">HEX をクリックして配置。同じ人工物をもう一度クリックで撤去（橋は向きを変更）。隣り合う砦・城は 1 つにつながります。「森↔草原」は森を伐採して草原に、草原に植林して森にします。「街道」は HEX をドラッグでなぞって引き、「撤去」でなぞると消せます</p>
+      </section>
+
+      <section>
         <h2>ランダム生成</h2>
         <div class="grid2">
           <label>シード <input id="rnd-seed" type="number" value="1" /></label>
@@ -60,6 +75,8 @@
         <label class="check"><input id="chk-grid" type="checkbox" checked /> グリッド</label>
         <label class="check"><input id="chk-trees" type="checkbox" checked /> 木</label>
         <label class="check"><input id="chk-water" type="checkbox" checked /> 水面</label>
+        <label class="check"><input id="chk-structures" type="checkbox" checked /> 人工物</label>
+        <label class="check"><input id="chk-roads" type="checkbox" checked /> 街道</label>
         <div id="legend"></div>
       </section>
 

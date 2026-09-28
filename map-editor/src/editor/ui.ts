@@ -2,9 +2,10 @@ import GUI from 'lil-gui';
 import { MapParseError, parseMapData, stringifyMapData, type HexCell, type MapData } from '../core/mapData';
 import { generateRandomMap } from '../core/randomMap';
 import { DEFAULT_TERRAIN_PARAMS } from '../core/terrainGen';
+import { FEATURE_DEFS } from '../core/features';
 import { TERRAIN_DEFS, TERRAIN_IDS } from '../core/terrainTypes';
 import { foliageUniforms, windUniforms } from '../render/foliage';
-import type { EditorApp, OverlayMode } from './app';
+import type { EditTool, EditorApp, OverlayMode } from './app';
 
 const SAMPLES = [
   { file: 'fluen.json', label: 'フルーエン近郊 (flat 24×16)' },
@@ -118,7 +119,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
     app.applyDisplay();
     updateLegend();
   });
-  const bindCheck = (id: string, key: 'grid' | 'trees' | 'water') => {
+  const bindCheck = (id: string, key: 'grid' | 'trees' | 'water' | 'structures' | 'roads') => {
     const el = $<HTMLInputElement>(id);
     el.addEventListener('change', () => {
       app.display[key] = el.checked;
@@ -128,6 +129,22 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   bindCheck('chk-grid', 'grid');
   bindCheck('chk-trees', 'trees');
   bindCheck('chk-water', 'water');
+  bindCheck('chk-structures', 'structures');
+  bindCheck('chk-roads', 'roads');
+
+  // --- 人工物の配置ツール ---
+  const toolButtons = [...document.querySelectorAll<HTMLButtonElement>('#tools button')];
+  const setTool = (tool: EditTool) => {
+    app.tool = tool;
+    for (const b of toolButtons) b.classList.toggle('active', b.dataset.tool === tool);
+  };
+  for (const b of toolButtons) b.addEventListener('click', () => setTool(b.dataset.tool as EditTool));
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement)) setTool('select');
+  });
+  app.onMessage = (msg) => {
+    setStatus(`<span class="err">${escapeHtml(msg)}</span>`);
+  };
 
   // --- HEX 情報 ---
   const renderInfo = (el: HTMLElement, cell: HexCell | null) => {
@@ -141,6 +158,8 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
       ['軸座標', `q=${a.q}, r=${a.r}`],
       ['地形', TERRAIN_DEFS[cell.terrain].name],
       ['標高', `Lv ${cell.elevation}`],
+      ['人工物', cell.feature ? FEATURE_DEFS[cell.feature].name : '-'],
+      ['街道', cell.roads ? `${cell.roads.length} 方向` : '-'],
     ]
       .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
       .join('');

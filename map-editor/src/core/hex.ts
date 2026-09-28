@@ -136,6 +136,30 @@ export class HexLayout {
       .filter((o) => this.inBounds(o.col, o.row));
   }
 
+  /** 方向 dir（0..5）の隣の HEX。範囲外でもそのまま返す。反対方向は (dir + 3) % 6 */
+  neighborInDir(col: number, row: number, dir: number): Offset {
+    const a = this.offsetToAxial(col, row);
+    const d = AXIAL_DIRS[dir];
+    return this.axialToOffset(a.q + d.q, a.r + d.r);
+  }
+
+  /** 方向 dir 側の辺の両端（ワールド座標） */
+  edgeEndpoints(col: number, row: number, dir: number): [Vec2, Vec2] {
+    const a = this.offsetToAxial(col, row);
+    const d = AXIAL_DIRS[dir];
+    const c = this.axialToWorld(a.q, a.r);
+    const n = this.axialToWorld(a.q + d.q, a.r + d.r);
+    const mx = (c.x + n.x) / 2;
+    const mz = (c.z + n.z) / 2;
+    const len = Math.hypot(n.x - c.x, n.z - c.z);
+    const px = (-(n.z - c.z) / len) * (this.size / 2);
+    const pz = ((n.x - c.x) / len) * (this.size / 2);
+    return [
+      { x: mx + px, z: mz + pz },
+      { x: mx - px, z: mz - pz },
+    ];
+  }
+
   /** HEX の 6 頂点（ワールド座標） */
   corners(col: number, row: number): Vec2[] {
     const c = this.offsetToWorld(col, row);

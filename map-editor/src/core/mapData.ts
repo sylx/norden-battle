@@ -1,4 +1,6 @@
 import { HexLayout, type GridSpec } from './hex';
+import { isFeatureId, type FeatureId } from './features';
+import { normalizeRoads } from './roads';
 import { isTerrainId, type TerrainId } from './terrainTypes';
 
 /**
@@ -9,10 +11,13 @@ import { isTerrainId, type TerrainId } from './terrainTypes';
  *   "name": "フルーエン近郊",
  *   "seed": 12345,                       // 地形ノイズのシード
  *   "grid": { "orientation": "flat", "cols": 24, "rows": 16, "hexSize": 1 },
- *   "cells": [ { "col": 0, "row": 0, "terrain": "plains", "elevation": 1 }, ... ]
+ *   "cells": [ { "col": 0, "row": 0, "terrain": "plains", "elevation": 1, "feature": "village" }, ... ]
  * }
  *
  * - elevation は整数の標高レベル（0 = 水面の高さ）。
+ * - feature は人工物（bridge / village / fort / castle）。省略可。
+ * - featureDir は橋の向き（0..5 の方向。0 と 3 は同じ軸）。省略時は自動。
+ * - roads は街道がつながっている方向（0..5）の配列。省略可。隣の HEX 側の逆方向は読み込み時に補う。
  * - cells に含まれない HEX は plains / elevation 0 として扱う。
  */
 export interface HexCell {
@@ -20,6 +25,9 @@ export interface HexCell {
   row: number;
   terrain: TerrainId;
   elevation: number;
+  feature?: FeatureId;
+  featureDir?: number;
+  roads?: number[];
 }
 
 export interface MapData {
@@ -70,12 +78,29 @@ export function parseMapData(json: unknown): MapData {
     if (!isTerrainId(cell.terrain)) fail(`cells[${i}]: 未知の terrain "${String(cell.terrain)}"`);
     const elevation = cell.elevation ?? 0;
     if (!Number.isInteger(elevation)) fail(`cells[${i}]: elevation は整数で指定してください`);
-    cells.push({
+    const out: HexCell = {
       col: col as number,
       row: row as number,
       terrain: cell.terrain as TerrainId,
       elevation: elevation as number,
-    });
+    };
+    if (cell.feature !== undefined) {
+      if (!isFeatureId(cell.feature)) fail(`cells[${i}]: 未知の feature "${String(cell.feature)}"`);
+      out.feature = cell.feature as FeatureId;
+    }
+    if (cell.featureDir !== undefined) {
+      const d = cell.featureDir;
+      if (!Number.isInteger(d) || (d as number) < 0 || (d as number) > 5) fail(`cells[${i}]: featureDir は 0..5 の整数`);
+      out.featureDir = d as number;
+    }
+    if (cell.roads !== undefined) {
+      const r = cell.roads;
+      if (!Array.isArray(r) || !r.every((d) => Number.isInteger(d) && d >= 0 && d <= 5))
+        fail(`cells[${i}]: roads は 0..5 の整数の配列`);
+      const dirs = [...new Set(r as number[])].sort((p, q) => p - q);
+      if (dirs.length > 0) out.roads = dirs;
+    }
+    cells.push(out);
   });
 
   return {
@@ -103,7 +128,8 @@ export class HexMap {
         this.cells[row * cols + col] = { col, row, terrain: 'plains', elevation: 0 };
       }
     }
-    for (const c of data.cells) this.cells[c.row * cols + c.col] = { ...c };
+    for (const c of data.cells) this.cells[c.row * cols + c.col] = { ...c, ...(c.roads ? { roads: [...c.roads] } : {}) };
+    normalizeRoads(this);
   }
 
   get(col: number, row: number): HexCell | undefined {
@@ -118,12 +144,27 @@ export class HexMap {
     return this.cells[r * this.layout.cols + c];
   }
 
+  /** 人工物を設定する（feature = null で撤去） */
+  setFeature(col: number, row: number, feature: FeatureId | null, dir?: number): void {
+    const cell = this.get(col, row);
+    if (!cell) return;
+    delete cell.feature;
+    delete cell.featureDir;
+    if (feature) cell.feature = feature;
+    if (feature && dir !== undefined) cell.featureDir = dir;
+  }
+
+  setTerrain(col: number, row: number, terrain: TerrainId): void {
+    const cell = this.get(col, row);
+    if (cell) cell.terrain = terrain;
+  }
+
   allCells(): readonly HexCell[] {
     return this.cells;
   }
 
   toJSON(): MapData {
-    return { ...this.data, cells: this.cells.map((c) => ({ ...c })) };
+    return { ...this.data, cells: this.cells.map((c) => ({ ...c, ...(c.roads ? { roads: [...c.roads] } : {}) })) };
   }
 }
 
