@@ -21,6 +21,7 @@ import { exportGlb } from '../import/convert';
 import { guessCategory, initialTransform, roundScale } from '../import/defaults';
 import { baseName, parseModel, splitFiles, type ParsedModel } from '../import/loadModel';
 import { computeStats } from '../import/stats';
+import { SoldierLab } from '../lab/soldierLab';
 import { ViewerScene } from '../render/scene';
 
 export interface OpenAsset {
@@ -62,6 +63,8 @@ export class ObjectEditorApp {
   entries: SourceEntry[] = [];
   catalogErrors: string[] = [];
   current: OpenAsset | null = null;
+  /** 兵士の試作（開いているときだけ） */
+  lab: SoldierLab | null = null;
   pending: PendingImport[] = [];
   readonly display: DisplayOptions = { references: true, skeleton: false, wireframe: false };
   private readonly clock = new THREE.Clock();
@@ -71,7 +74,9 @@ export class ObjectEditorApp {
     this.view = new ViewerScene(container);
     const loop = () => {
       requestAnimationFrame(loop);
-      this.current?.mixer.update(this.clock.getDelta());
+      const dt = this.clock.getDelta();
+      this.current?.mixer.update(dt);
+      this.lab?.update(dt);
       this.view.render();
     };
     loop();
@@ -84,6 +89,11 @@ export class ObjectEditorApp {
 
   private emit(): void {
     for (const fn of this.listeners) fn();
+  }
+
+  /** 外から状態を変えたときに UI を更新する */
+  notify(): void {
+    this.emit();
   }
 
   get dirty(): boolean {
@@ -111,6 +121,7 @@ export class ObjectEditorApp {
     const entry = this.entries.find((e) => e.id === id);
     if (!entry) throw new Error(`見つかりません: ${id}`);
     const loaded = await loadSourceAsset(structuredClone(entry), SOURCES_URL);
+    this.closeLab();
     this.close();
     loaded.object.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) o.castShadow = o.receiveShadow = true;
@@ -143,6 +154,27 @@ export class ObjectEditorApp {
       for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) m.dispose();
     });
     this.current = null;
+    this.emit();
+  }
+
+  // --- 兵士の試作 ---
+
+  async openLab(): Promise<void> {
+    if (this.lab) return;
+    const lab = new SoldierLab(this.view);
+    lab.compareCandidates = this.entries.filter((e) => e.category === 'character');
+    await lab.init(this.entries);
+    this.close();
+    this.lab = lab;
+    this.view.stage.add(lab.group);
+    lab.battleView(2.5);
+    this.emit();
+  }
+
+  closeLab(): void {
+    if (!this.lab) return;
+    this.lab.dispose();
+    this.lab = null;
     this.emit();
   }
 

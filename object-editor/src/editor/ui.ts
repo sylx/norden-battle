@@ -12,27 +12,11 @@ import {
   type Vec3Tuple,
 } from '@norden/asset-runtime';
 import * as THREE from 'three';
+import { buildSoldierPanel } from '../lab/soldierPanel';
 import type { ImportCommon, ObjectEditorApp } from './app';
+import { fmt, h, present, row, type Child, type PanelKit } from './panel';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-
-type Child = Node | string | null | undefined | false;
-
-function h<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  props: Partial<Omit<HTMLElementTagNameMap[K], 'style'>> = {},
-  ...children: Child[]
-): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag);
-  Object.assign(el, props);
-  for (const c of children) if (c) el.append(c);
-  return el;
-}
-
-const present = (children: Child[]) => children.filter((c): c is Node | string => !!c);
-
-const row = (label: string, control: Node) => h('label', { className: 'row' }, h('span', { textContent: label }), control);
-const fmt = (v: number, digits = 3) => String(Number(v.toFixed(digits)) + 0);
 
 const IMPORT_COMMON_KEY = 'norden-object-editor.importCommon';
 
@@ -119,6 +103,16 @@ export function setupUI(app: ObjectEditorApp): void {
   filterCat.addEventListener('change', renderList);
   filterText.addEventListener('input', renderList);
 
+  // --- 試作 ---
+  $('btn-soldier-lab').addEventListener('click', () => {
+    if (app.lab || !confirmDiscard()) return;
+    setStatus('兵士の試作を準備中…');
+    run(async () => {
+      await app.openLab();
+      setStatus('兵士の試作');
+    });
+  });
+
   // --- 右パネル ---
   const props = $('props');
   let propsKey = '';
@@ -168,6 +162,33 @@ export function setupUI(app: ObjectEditorApp): void {
     const el = h('div');
     syncers.push(() => el.replaceChildren(...present(render())));
     return el;
+  };
+  const rangeInput = (get: () => number, set: (v: number) => void, min: number, max: number, step: number) => {
+    const el = h('input', { type: 'range', min: String(min), max: String(max), step: String(step) });
+    const out = h('span', { className: 'range-value' });
+    el.addEventListener('input', () => set(Number(el.value)));
+    syncers.push(() => {
+      if (document.activeElement !== el) el.value = String(get());
+      out.textContent = fmt(get(), 2);
+    });
+    return h('div', { className: 'range' }, el, out);
+  };
+  const colorInput = (get: () => number, set: (v: number) => void) => {
+    const el = h('input', { type: 'color' });
+    el.addEventListener('input', () => set(parseInt(el.value.slice(1), 16)));
+    sync(el, () => `#${get().toString(16).padStart(6, '0')}`);
+    return el;
+  };
+  const kit: PanelKit = {
+    textInput,
+    numberInput,
+    rangeInput,
+    colorInput,
+    selectInput,
+    checkbox,
+    button,
+    dynamic,
+    onSync: (fn) => syncers.push(fn),
   };
 
   const licenseOptions = LICENSE_IDS.map((id) => [id, LICENSE_DEFS[id].name] as const);
@@ -403,6 +424,7 @@ export function setupUI(app: ObjectEditorApp): void {
             className: 'meta',
             textContent: `${tris.toLocaleString()} 三角形・${skel}・アニメ ${st.animations.length} 本${st.originals.length > 1 ? `・付属 ${st.originals.length - 1} ファイル` : ''}`,
           }),
+          st.warnings.length > 0 && h('ul', { className: 'errors' }, ...st.warnings.map((w) => h('li', { textContent: w }))),
           row('ID', textInput(() => p.id, (v) => (p.id = v.trim()))),
           row('名前', textInput(() => p.name, (v) => (p.name = v))),
           row('カテゴリ', selectInput(categoryOptions, () => p.category, (v: CategoryId) => (p.category = v))),
@@ -432,11 +454,25 @@ export function setupUI(app: ObjectEditorApp): void {
   };
 
   const refresh = () => {
-    const key = app.pending.length > 0 ? `import:${app.pending.length}` : app.current ? `asset:${app.current.entry.id}` : '';
+    const key =
+      app.pending.length > 0
+        ? `import:${app.pending.length}`
+        : app.lab
+          ? `lab:${app.lab.revision}`
+          : app.current
+            ? `asset:${app.current.entry.id}`
+            : '';
     if (key !== propsKey) {
       propsKey = key;
       syncers = [];
-      props.replaceChildren(...present(key.startsWith('import') ? buildImportPanel() : key ? buildAssetPanel() : []));
+      const build = key.startsWith('import')
+        ? buildImportPanel
+        : key.startsWith('lab')
+          ? () => buildSoldierPanel(kit, app, setStatus, run)
+          : key
+            ? buildAssetPanel
+            : () => [];
+      props.replaceChildren(...present(build()));
     }
     for (const s of syncers) s();
     renderList();

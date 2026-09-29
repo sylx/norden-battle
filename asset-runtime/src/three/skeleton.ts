@@ -61,9 +61,14 @@ export function promoteAnimatedNodesToBones(root: THREE.Object3D, clips: THREE.A
   for (const clip of clips) {
     for (const track of clip.tracks) targets.add(THREE.PropertyBinding.parseTrackName(track.name).nodeName);
   }
+  return promoteNodesToBones(root, (o) => targets.has(o.name));
+}
+
+/** 条件に合う普通の Object3D ノードを Bone に置き換える（子・姿勢はそのまま）。置き換えた数を返す */
+export function promoteNodesToBones(root: THREE.Object3D, test: (o: THREE.Object3D) => boolean): number {
   const replace: THREE.Object3D[] = [];
   root.traverse((o) => {
-    if (o !== root && targets.has(o.name) && !(o as THREE.Bone).isBone && o.type === 'Object3D') replace.push(o);
+    if (o !== root && o.type === 'Object3D' && test(o)) replace.push(o);
   });
   for (const o of replace) {
     const bone = new THREE.Bone();

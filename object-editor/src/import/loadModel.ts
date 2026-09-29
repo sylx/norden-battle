@@ -51,7 +51,10 @@ export async function parseModel(file: File, resources: File[]): Promise<ParsedM
     used.add(f);
     return blobUrl(f);
   });
-  manager.onError = (url) => warnings.push(`読み込めませんでした: ${decodeURIComponent(url.split(/[\\/]/).pop() ?? url)}`);
+  manager.onError = (url) => {
+    const name = decodeURIComponent(url.split('?')[0].split(/[\\/]/).pop() ?? url);
+    warnings.push(`「${name}」が見つかりません。モデルと一緒に選択（ドロップ）してください`);
+  };
   // テクスチャは本体より後に読み込まれる（FBX など）ので、すべて終わるまで待つ
   const idle = new Promise<void>((resolve) => (manager.onLoad = resolve));
 

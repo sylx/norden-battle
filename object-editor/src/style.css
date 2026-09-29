@@ -409,3 +409,45 @@ button.primary {
 button.danger {
   background: linear-gradient(#6a2c22, #4a1c16);
 }
+
+.range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.range input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.range-value {
+  width: 34px;
+  text-align: right;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.swatches {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  align-items: center;
+}
+
+.swatches input[type='color'] {
+  width: 34px;
+  height: 22px;
+  padding: 0 2px;
+}
+
+button.swatch-button {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+}

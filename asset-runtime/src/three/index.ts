@@ -2,3 +2,5 @@
 export * from './load';
 export * from './normalize';
 export * from './skeleton';
+export * from './soldier/builder';
+export * from './soldier/soldier';
