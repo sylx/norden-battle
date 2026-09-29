@@ -1,8 +1,10 @@
 # Norden Object Editor
 
-3D 素材（建物・小物・キャラクター・モーション）を取り込み、ゲームで使える形に整えるツール。
-モデリングはしない。外部の素材を集めて、向き・大きさ・原点・出典をそろえてカタログに登録する。
-全体の仕様とロードマップは [SPEC.md](SPEC.md)。今はフェーズ P0（取り込み・正規化・カタログ保存）まで。
+ユニット・建物の見た目を作るためのツール。役割は 2 つある。
+- Mixamo のモーションや外部の 3D 素材を取り込み、向き・大きさ・原点・出典をそろえてカタログに登録する
+- プロシージャル生成（兵士など）のパラメータを動かし、戦闘カメラの距離で見比べる（左パネルの「試作」）
+
+全体の仕様とロードマップは [SPEC.md](SPEC.md)。
 
 ```sh
 # リポジトリのルートで
@@ -41,7 +43,8 @@ src/
   api.ts            API のクライアント
   import/           取り込み: ファイルの読み込み（loadModel）、GLB への変換（convert）、統計（stats）、初期値（defaults）
   render/scene.ts   プレビューのシーン（HEX 1 マス・グリッド・基準の人形・正面の矢印）
-  editor/           状態（app.ts）と UI（ui.ts）
+  lab/              兵士の試作場（生成器は asset-runtime/src/three/soldier/）
+  editor/           状態（app.ts）と UI（ui.ts・panel.ts）
 ```
 
 カタログの型と three.js での読み込みは [asset-runtime](../asset-runtime/) にあり、map-editor・戦闘デモからも使う。
