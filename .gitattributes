@@ -1,0 +1,2 @@
+# 取り込んだ 3D 素材の元ファイル・変換済み GLB は Git LFS で管理する
+assets/sources/** filter=lfs diff=lfs merge=lfs -text

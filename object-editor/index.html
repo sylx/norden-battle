@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Norden Object Editor</title>
+  </head>
+  <body>
+    <div id="viewport"></div>
+
+    <aside id="panel">
+      <header>
+        <h1>Norden Object Editor</h1>
+        <div class="sub">3D 素材の取り込み・正規化</div>
+      </header>
+
+      <section>
+        <h2>取り込み</h2>
+        <div class="buttons">
+          <button id="btn-import">ファイルを選ぶ…</button>
+        </div>
+        <input id="file-input" type="file" multiple accept=".glb,.gltf,.fbx,.obj,.mtl,.bin,.png,.jpg,.jpeg,.webp,.tga" hidden />
+        <p class="hint">GLB・glTF・FBX・OBJ をドロップしても取り込めます。テクスチャ・.bin・.mtl は一緒にドロップしてください。Mixamo のモーションは何本でもまとめてドロップできます</p>
+      </section>
+
+      <section>
+        <h2>ライブラリ</h2>
+        <div class="grid2">
+          <select id="filter-category"></select>
+          <input id="filter-text" type="search" placeholder="名前・ID・タグ" />
+        </div>
+        <ul id="asset-list" class="asset-list"></ul>
+        <div id="catalog-errors" class="errors"></div>
+      </section>
+    </aside>
+
+    <aside id="props"></aside>
+
+    <div id="status"></div>
+    <div id="drop-hint">ここにドロップして取り込む</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

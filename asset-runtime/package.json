@@ -1,0 +1,22 @@
+{
+  "name": "@norden/asset-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "object-editor が作るアセットカタログの型と、three.js での読み込み（map-editor・戦闘デモ・object-editor で共有）",
+  "exports": {
+    ".": "./src/index.ts",
+    "./three": "./src/three/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "three": ">=0.180.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "three": "^0.186.1",
+    "typescript": "^7.0.2"
+  }
+}

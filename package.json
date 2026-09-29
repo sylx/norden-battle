@@ -1,0 +1,16 @@
+{
+  "name": "norden-battle",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "asset-runtime",
+    "map-editor",
+    "object-editor"
+  ],
+  "scripts": {
+    "dev:map": "npm run dev -w map-editor",
+    "dev:object": "npm run dev -w object-editor",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  }
+}
