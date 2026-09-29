@@ -393,5 +393,23 @@
     {"col":21,"row":15,"terrain":"plains","elevation":0},
     {"col":22,"row":15,"terrain":"plains","elevation":0},
     {"col":23,"row":15,"terrain":"plains","elevation":1}
+  ],
+  "units": [
+    {"col":1,"row":6,"type":"cavalry","team":"blue","facing":"right"},
+    {"col":2,"row":6,"type":"mage","team":"blue","facing":"right"},
+    {"col":3,"row":6,"type":"cavalry","team":"blue","facing":"right"},
+    {"col":20,"row":6,"type":"cavalry","team":"red","facing":"left"},
+    {"col":21,"row":6,"type":"mage","team":"red","facing":"left"},
+    {"col":22,"row":6,"type":"cavalry","team":"red","facing":"left"},
+    {"col":1,"row":7,"type":"archer","team":"blue","facing":"right"},
+    {"col":2,"row":7,"type":"infantry","team":"blue","facing":"right"},
+    {"col":3,"row":7,"type":"infantry","team":"blue","facing":"right"},
+    {"col":20,"row":7,"type":"infantry","team":"red","facing":"left"},
+    {"col":21,"row":7,"type":"infantry","team":"red","facing":"left"},
+    {"col":22,"row":7,"type":"archer","team":"red","facing":"left"},
+    {"col":2,"row":9,"type":"archer","team":"blue","facing":"right"},
+    {"col":3,"row":9,"type":"infantry","team":"blue","facing":"right"},
+    {"col":20,"row":9,"type":"infantry","team":"red","facing":"left"},
+    {"col":21,"row":9,"type":"archer","team":"red","facing":"left"}
   ]
 }

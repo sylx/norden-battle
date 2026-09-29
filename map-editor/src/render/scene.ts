@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
 
+/**
+ * カメラの俯角（水平からの角度, 度）の初期値。
+ * ユニットは 2D 画像で描くので、カメラは回転させずこの角度・北向きに固定する。
+ * 画像はこの角度から見下ろした姿で描く。
+ */
+export const DEFAULT_CAMERA_PITCH = 50;
+
 export class SceneContext {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -27,7 +34,11 @@ export class SceneContext {
     this.controls = new MapControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.12;
-    this.controls.maxPolarAngle = 1.25;
+    // 回転はさせない（パンとズームだけ）
+    this.controls.enableRotate = false;
+    this.controls.minAzimuthAngle = 0;
+    this.controls.maxAzimuthAngle = 0;
+    this.setPitch(DEFAULT_CAMERA_PITCH);
     this.controls.minDistance = 3;
     this.controls.maxDistance = 90;
     this.controls.screenSpacePanning = false;
@@ -42,6 +53,18 @@ export class SceneContext {
 
     window.addEventListener('resize', () => this.resize());
     this.resize();
+  }
+
+  /** カメラの俯角（度）を変える。注視点と距離は保つ */
+  setPitch(deg: number): void {
+    const polar = THREE.MathUtils.degToRad(90 - deg);
+    this.controls.minPolarAngle = polar;
+    this.controls.maxPolarAngle = polar;
+    this.controls.update();
+  }
+
+  get pitch(): number {
+    return 90 - THREE.MathUtils.radToDeg(this.controls.maxPolarAngle);
   }
 
   resize(): void {
@@ -77,8 +100,9 @@ export class SceneContext {
 
     if (resetCamera) {
       this.controls.target.set(cx, 0, cz);
-      const dist = Math.max(w, d) * 0.95;
-      this.camera.position.set(cx, dist * 0.8, cz + dist * 0.62);
+      const dist = Math.max(w, d) * 0.96;
+      const pitch = THREE.MathUtils.degToRad(this.pitch);
+      this.camera.position.set(cx, dist * Math.sin(pitch), cz + dist * Math.cos(pitch));
       this.controls.update();
     }
   }

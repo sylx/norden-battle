@@ -4,6 +4,7 @@ import { generateRandomMap } from '../core/randomMap';
 import { DEFAULT_TERRAIN_PARAMS } from '../core/terrainGen';
 import { FEATURE_DEFS } from '../core/features';
 import { TERRAIN_DEFS, TERRAIN_IDS } from '../core/terrainTypes';
+import { TEAM_DEFS, TEAM_IDS, UNIT_DEFS, UNIT_TYPES, type TeamId, type UnitType } from '../core/units';
 import { foliageUniforms, windUniforms } from '../render/foliage';
 import type { EditTool, EditorApp, OverlayMode } from './app';
 
@@ -119,7 +120,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
     app.applyDisplay();
     updateLegend();
   });
-  const bindCheck = (id: string, key: 'grid' | 'trees' | 'water' | 'structures' | 'roads') => {
+  const bindCheck = (id: string, key: 'grid' | 'trees' | 'water' | 'structures' | 'roads' | 'units') => {
     const el = $<HTMLInputElement>(id);
     el.addEventListener('change', () => {
       app.display[key] = el.checked;
@@ -131,9 +132,10 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   bindCheck('chk-water', 'water');
   bindCheck('chk-structures', 'structures');
   bindCheck('chk-roads', 'roads');
+  bindCheck('chk-units', 'units');
 
   // --- 人工物の配置ツール ---
-  const toolButtons = [...document.querySelectorAll<HTMLButtonElement>('#tools button')];
+  const toolButtons = [...document.querySelectorAll<HTMLButtonElement>('button[data-tool]')];
   const setTool = (tool: EditTool) => {
     app.tool = tool;
     for (const b of toolButtons) b.classList.toggle('active', b.dataset.tool === tool);
@@ -146,6 +148,25 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
     setStatus(`<span class="err">${escapeHtml(msg)}</span>`);
   };
 
+  // --- ユニット ---
+  const unitTypeSel = $<HTMLSelectElement>('unit-type');
+  const unitTeamSel = $<HTMLSelectElement>('unit-team');
+  for (const id of UNIT_TYPES) unitTypeSel.add(new Option(UNIT_DEFS[id].name, id));
+  for (const id of TEAM_IDS) unitTeamSel.add(new Option(TEAM_DEFS[id].name, id));
+  unitTypeSel.value = app.unitBrush.type;
+  unitTeamSel.value = app.unitBrush.team;
+  // 兵種・軍を選んだらそのまま置けるようにする
+  unitTypeSel.addEventListener('change', () => {
+    app.unitBrush.type = unitTypeSel.value as UnitType;
+    setTool('unit');
+  });
+  unitTeamSel.addEventListener('change', () => {
+    app.unitBrush.team = unitTeamSel.value as TeamId;
+    setTool('unit');
+  });
+  $('btn-units-demo').addEventListener('click', () => app.deployDemoUnits());
+  $('btn-units-clear').addEventListener('click', () => app.clearUnits());
+
   // --- HEX 情報 ---
   const renderInfo = (el: HTMLElement, cell: HexCell | null) => {
     if (!cell || !app.map) {
@@ -153,6 +174,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
       return;
     }
     const a = app.map.layout.offsetToAxial(cell.col, cell.row);
+    const unit = app.map.unitAt(cell.col, cell.row);
     el.innerHTML = [
       ['座標', `(${cell.col}, ${cell.row})`],
       ['軸座標', `q=${a.q}, r=${a.r}`],
@@ -160,6 +182,12 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
       ['標高', `Lv ${cell.elevation}`],
       ['人工物', cell.feature ? FEATURE_DEFS[cell.feature].name : '-'],
       ['街道', cell.roads ? `${cell.roads.length} 方向` : '-'],
+      [
+        'ユニット',
+        unit
+          ? `${TEAM_DEFS[unit.team].name} ${UNIT_DEFS[unit.type].name}（${unit.facing === 'left' ? '左' : '右'}向き）`
+          : '-',
+      ],
     ]
       .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
       .join('');
@@ -175,7 +203,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
         `生成 ${s.ms.toFixed(0)} ms`,
         `頂点 ${s.vertices.toLocaleString()}`,
         `木 ${s.trees.toLocaleString()}`,
-        '左ドラッグ: 移動 / 右ドラッグ: 回転 / ホイール: ズーム / クリック: 選択',
+        '左ドラッグ: 移動 / ホイール: ズーム / クリック: 選択',
       ].join('<span>|</span>'),
     );
 
@@ -210,6 +238,12 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   fGrid.add(u.uLineWidth, 'value', 0.005, 0.1, 0.001).name('線幅');
   fGrid.addColor(gridState, 'color').name('線の色').onChange((v: string) => u.uGridColor.value.set(v));
   fGrid.add(u.uCellOpacity, 'value', 0, 1, 0.01).name('HEX 塗りの濃さ');
+  const fCamera = gui.addFolder('カメラ');
+  const camState = { pitch: app.ctx.pitch };
+  fCamera
+    .add(camState, 'pitch', 30, 80, 1)
+    .name('俯角 (度)')
+    .onChange((v: number) => app.ctx.setPitch(v));
   const fQuality = gui.addFolder('品質');
   fQuality.add(p, 'resolution', 2, 24, 1).name('頂点密度 (/単位)').onFinishChange(regen);
   fQuality.add(p, 'margin', 0, 6, 1).name('外周マージン (HEX)').onFinishChange(regen);

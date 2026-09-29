@@ -5,17 +5,19 @@ import { HexMap, type HexCell, type MapData } from '../core/mapData';
 import { buildRoadPaths, clearRoads, RoadIndex, setRoad } from '../core/roads';
 import { DEFAULT_TERRAIN_PARAMS, generateTerrain, Heightmap, placeVegetation, type TerrainData, type TerrainParams } from '../core/terrainGen';
 import { TERRAIN_DEFS } from '../core/terrainTypes';
+import { canPlaceUnit, deployDemoUnits, type TeamId, type UnitType } from '../core/units';
 import { createForest, windUniforms } from '../render/foliage';
 import { HexOverlay } from '../render/hexOverlay';
 import { buildRoadMesh } from '../render/roads';
 import { SceneContext } from '../render/scene';
 import { buildStructures } from '../render/structures';
 import { buildTerrainMeshes, disposeObject, type TerrainMeshes } from '../render/terrainMeshes';
+import { UnitLayer } from '../render/units';
 
 export type OverlayMode = 'none' | 'terrain' | 'elevation';
 
-/** クリック時の動作: 選択 / 人工物の配置 / 撤去 / 森の伐採・植林 / 街道（ドラッグ） */
-export type EditTool = 'select' | FeatureId | 'erase' | 'forest' | 'road';
+/** クリック時の動作: 選択 / 人工物の配置 / 撤去 / 森の伐採・植林 / 街道（ドラッグ） / ユニットの配置 */
+export type EditTool = 'select' | FeatureId | 'erase' | 'forest' | 'road' | 'unit';
 
 export interface DisplayOptions {
   overlayMode: OverlayMode;
@@ -24,6 +26,7 @@ export interface DisplayOptions {
   water: boolean;
   structures: boolean;
   roads: boolean;
+  units: boolean;
 }
 
 export interface GenStats {
@@ -38,7 +41,18 @@ export class EditorApp {
   readonly ctx: SceneContext;
   readonly overlay = new HexOverlay();
   readonly params: TerrainParams = { ...DEFAULT_TERRAIN_PARAMS };
-  readonly display: DisplayOptions = { overlayMode: 'none', grid: true, trees: true, water: true, structures: true, roads: true };
+  readonly display: DisplayOptions = {
+    overlayMode: 'none',
+    grid: true,
+    trees: true,
+    water: true,
+    structures: true,
+    roads: true,
+    units: true,
+  };
+  /** ユニットツールで置くユニット */
+  readonly unitBrush: { type: UnitType; team: TeamId } = { type: 'infantry', team: 'blue' };
+  readonly units = new UnitLayer();
   map: HexMap | null = null;
   selected: Offset | null = null;
   tool: EditTool = 'select';
@@ -64,6 +78,8 @@ export class EditorApp {
 
   constructor(container: HTMLElement) {
     this.ctx = new SceneContext(container);
+    this.ctx.scene.add(this.units.group);
+    this.units.art.onChange = () => this.rebuildUnits();
     const el = this.ctx.renderer.domElement;
     el.addEventListener('pointermove', (e) => {
       this.setPointer(e);
@@ -153,8 +169,27 @@ export class EditorApp {
     if (roadMesh) roads.add(roadMesh);
     this.decor = { forest: createForest(trees, map.data.seed), structures: buildStructures(map, data, roadIndex), roads };
     this.ctx.scene.add(this.decor.forest, this.decor.structures, this.decor.roads);
+    // 橋の有無で足元の高さが変わるのでユニットも置き直す
+    this.rebuildUnits();
     this.applyDisplay();
     this.onGenerated({ ...this.stats, ms: this.stats.ms + performance.now() - t0, trees: trees.length });
+  }
+
+  rebuildUnits(): void {
+    if (this.map && this.terrainData) this.units.build(this.map, this.terrainData);
+  }
+
+  /** 表示確認用に 2 軍を並べる（既存のユニットは置き換える） */
+  deployDemoUnits(): void {
+    if (!this.map) return;
+    this.map.replaceUnits(deployDemoUnits(this.map));
+    this.rebuildUnits();
+  }
+
+  clearUnits(): void {
+    if (!this.map) return;
+    this.map.replaceUnits([]);
+    this.rebuildUnits();
   }
 
   applyDisplay(): void {
@@ -166,6 +201,7 @@ export class EditorApp {
       this.decor.structures.visible = this.display.structures;
       this.decor.roads.visible = this.display.roads;
     }
+    this.units.group.visible = this.display.units;
     this.updateCellColors();
   }
 
@@ -199,6 +235,12 @@ export class EditorApp {
   private pick(): Offset | null {
     if (!this.meshes || !this.map) return null;
     this.raycaster.setFromCamera(this.pointer, this.ctx.camera);
+    // ユニットは地形より手前に描いているので、画像に重なっていればそのユニットの HEX を指す
+    // （街道のなぞり描き中は地面だけを見る）
+    if (!this.drag && this.tool !== 'road') {
+      const unit = this.units.pick(this.raycaster);
+      if (unit) return { col: unit.col, row: unit.row };
+    }
     const targets: THREE.Object3D[] = [this.meshes.terrain];
     if (this.meshes.water.visible) targets.push(this.meshes.water);
     const hit = this.raycaster.intersectObjects(targets, false)[0];
@@ -231,6 +273,17 @@ export class EditorApp {
       this.onMessage('街道は HEX をドラッグでなぞって引きます');
       return;
     }
+    if (tool === 'unit') {
+      this.placeUnit(o);
+      return;
+    }
+    if (tool === 'erase' && map.unitAt(o.col, o.row)) {
+      // ユニットがいれば人工物・街道より先に撤去
+      map.removeUnit(o.col, o.row);
+      this.rebuildUnits();
+      this.setSelected(o);
+      return;
+    }
     if (tool === 'erase') {
       // 人工物があればそれを、無ければ街道を撤去
       if (cell.feature) map.setFeature(o.col, o.row, null);
@@ -255,6 +308,26 @@ export class EditorApp {
       map.setFeature(o.col, o.row, tool);
     }
     this.rebuildDecor();
+    this.setSelected(o);
+  }
+
+  /** 空き HEX には置き、同じユニットがいれば向きを反転、違うユニットなら置き換える */
+  private placeUnit(o: Offset): void {
+    const map = this.map!;
+    const cell = map.get(o.col, o.row)!;
+    const { type, team } = this.unitBrush;
+    const cur = map.unitAt(o.col, o.row);
+    if (cur && cur.type === type && cur.team === team) {
+      map.setUnit({ ...cur, facing: cur.facing === 'left' ? 'right' : 'left' });
+    } else if (!canPlaceUnit(cell)) {
+      this.onMessage('ユニットは陸か橋の上にしか置けません');
+      return;
+    } else {
+      // 新しく置くときはマップ中央を向かせる
+      const facing = cur?.facing ?? (o.col < map.layout.cols / 2 ? 'right' : 'left');
+      map.setUnit({ col: o.col, row: o.row, type, team, facing });
+    }
+    this.rebuildUnits();
     this.setSelected(o);
   }
 

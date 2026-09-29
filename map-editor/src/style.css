@@ -148,7 +148,7 @@ button {
   gap: 4px;
 }
 
-.tools button.active {
+button[data-tool].active {
   background: linear-gradient(#b08a3e, #7a5a24);
   border-color: var(--accent);
   color: #fff8e4;
