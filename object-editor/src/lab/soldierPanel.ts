@@ -4,7 +4,7 @@
 import { ARMOR_TYPES, HELMET_TYPES, SHIELD_TYPES, TEAM_COLORS, WEAPON_TYPES, type SoldierParams } from '@norden/asset-runtime/three';
 import type { ObjectEditorApp } from '../editor/app';
 import { h, row, type Child, type PanelKit } from '../editor/panel';
-import type { LabMode } from './soldierLab';
+import type { LabMode, RenderMode } from './soldierLab';
 
 export function buildSoldierPanel(
   kit: PanelKit,
@@ -18,7 +18,7 @@ export function buildSoldierPanel(
     lab.rebuild();
     app.notify();
   };
-  const { selectInput, rangeInput, numberInput, colorInput, button, checkbox, dynamic } = kit;
+  const { selectInput, rangeInput, numberInput, colorInput, button, checkbox } = kit;
 
   const teamButtons = TEAM_COLORS.map((t) => {
     const b = button('', () => set('teamColor', t.color), 'swatch-button');
@@ -28,6 +28,46 @@ export function buildSoldierPanel(
   });
 
   const clipOptions = [['', '（停止）'] as const, ...[...lab.clips.keys()].map((k) => [k, k] as const)];
+  const armyDistance = () => Math.min(11, 4 + Math.sqrt(lab.army.squadsPerSide) * 1.6);
+  const rebuildArmy = () => {
+    lab.rebuild();
+    app.notify();
+  };
+  const armySection = (): Child[] => [
+    h('h2', { textContent: '大軍' }),
+    row(
+      '描画方式',
+      selectInput(
+        [
+          ['instanced', 'インスタンス（ベイク）'],
+          ['skinned', '1 体ずつ SkinnedMesh'],
+        ] as const,
+        () => lab.army.render,
+        (v: RenderMode) => {
+          lab.army.render = v;
+          rebuildArmy();
+        },
+      ),
+    ),
+    row('片軍の部隊', numberInput(() => lab.army.squadsPerSide, (v) => ((lab.army.squadsPerSide = clampInt(v, 1, 60)), rebuildArmy()), 1, 0)),
+    row('1 部隊の人数', numberInput(() => lab.army.perSquad, (v) => ((lab.army.perSquad = clampInt(v, 1, 20)), rebuildArmy()), 1, 0)),
+    row('見た目の種類', numberInput(() => lab.army.variants, (v) => ((lab.army.variants = clampInt(v, 1, 8)), rebuildArmy()), 1, 0)),
+    row(
+      'モーション',
+      selectInput(
+        [['', '部隊ごとにばらばら'] as const, ...[...lab.clips.keys()].map((k) => [k, k] as const)],
+        () => lab.army.clip,
+        (v) => {
+          lab.army.clip = v;
+          rebuildArmy();
+        },
+      ),
+    ),
+    h('p', {
+      className: 'hint',
+      textContent: '味方（手前）は上の装備、敵（奥）は剣と盾の歩兵。インスタンス描画では兵種×見た目の種類ごとに 1 ドローコール（影でもう 1 回）',
+    }),
+  ];
   const compareOptions = [['', 'なし'] as const, ...lab.compareCandidates.map((e) => [e.id, e.name] as const)];
 
   return [
@@ -69,11 +109,13 @@ export function buildSoldierPanel(
         [
           ['single', '1 体'],
           ['squad', '部隊（12 体）'],
+          ['army', '大軍（負荷テスト）'],
         ] as const,
         () => lab.mode,
         (v: LabMode) => {
-          lab.mode = v;
-          lab.rebuild();
+          lab.setMode(v);
+          lab.revision++;
+          if (v === 'army') lab.battleView(armyDistance());
           app.notify();
         },
       ),
@@ -89,6 +131,7 @@ export function buildSoldierPanel(
         }),
       ),
     ),
+    ...(lab.mode === 'army' ? armySection() : []),
     h(
       'div',
       { className: 'buttons' },
@@ -96,6 +139,7 @@ export function buildSoldierPanel(
       button('戦闘カメラ（近）', () => lab.battleView(2.5)),
       button('戦闘カメラ（標準）', () => lab.battleView(5)),
     ),
+    lab.mode === 'army' && h('div', { className: 'buttons' }, button('全体を見る', () => lab.battleView(armyDistance()))),
     h(
       'div',
       {},
@@ -104,13 +148,27 @@ export function buildSoldierPanel(
         app.applyDisplay();
       }),
     ),
-    dynamic(() => [
-      h('p', {
-        className: 'hint',
-        textContent: `1 体 ${Math.round(lab.triangles / Math.max(lab.unitCount, 1)).toLocaleString()} 三角形・1 ドローコール（${lab.unitCount} 体で ${lab.triangles.toLocaleString()} 三角形）`,
-      }),
-    ]),
+    perfLine(app),
 
     h('div', { className: 'buttons' }, button('閉じる', () => app.closeLab())),
   ];
+}
+
+const clampInt = (v: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(v)));
+
+/** 兵の数・三角形・ドローコール・FPS（0.5 秒ごとに更新） */
+function perfLine(app: ObjectEditorApp): HTMLElement {
+  const el = h('p', { className: 'hint perf' });
+  const update = () => {
+    const lab = app.lab;
+    if (!el.isConnected || !lab) {
+      clearInterval(id);
+      return;
+    }
+    const info = app.view.renderer.info.render;
+    el.textContent = `${lab.soldierCount.toLocaleString()} 体・${lab.triangles.toLocaleString()} 三角形／画面全体 ${info.calls} ドローコール・${app.fps.toFixed(0)} FPS`;
+  };
+  const id = setInterval(update, 500);
+  queueMicrotask(update);
+  return el;
 }

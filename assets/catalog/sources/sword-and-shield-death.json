@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "kind": "source",
+  "id": "sword-and-shield-death",
+  "name": "Sword And Shield Death",
+  "category": "animation",
+  "tags": [],
+  "license": "mixamo",
+  "origin": {
+    "pack": "Mixamo"
+  },
+  "files": {
+    "original": [
+      "original/Sword And Shield Death.fbx"
+    ],
+    "model": "model.glb"
+  },
+  "skeleton": "mixamo",
+  "transform": {
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "pivot": [
+      -0.036,
+      0.0027,
+      -3.1021
+    ],
+    "scale": 0.002031
+  },
+  "stats": {
+    "triangles": 0,
+    "vertices": 0,
+    "meshes": 0,
+    "materials": 0,
+    "textures": 0,
+    "maxTextureSize": 0,
+    "bones": 69,
+    "animations": [
+      {
+        "name": "Sword And Shield Death",
+        "duration": 3.9
+      }
+    ],
+    "rawSize": [
+      170.3426,
+      172.3323,
+      26.7226
+    ]
+  },
+  "importedAt": "2026-09-29T04:00:30.334Z"
+}

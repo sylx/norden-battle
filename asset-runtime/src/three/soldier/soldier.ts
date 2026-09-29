@@ -121,6 +121,23 @@ export interface SoldierBuild {
   triangles: number;
 }
 
+export interface SoldierGeometry {
+  /** 骨格の基準姿勢のモデル座標。skinIndex は bones の番号 */
+  geometry: THREE.BufferGeometry;
+  /** 雛形の複製（骨だけ）。bones はその中の骨を雛形の走査順に並べたもの */
+  root: THREE.Object3D;
+  bones: THREE.Bone[];
+  /** 身長を UNITS.soldierHeight・足元を原点にする変換（骨格だけで決まる） */
+  transform: NormalizeTransform;
+  triangles: number;
+}
+
+/** チーム色で塗る（shade は明るさの倍率） */
+interface TeamPaint {
+  team: number;
+}
+const TEAM = (shade = 1): TeamPaint => ({ team: shade });
+
 let sharedMaterial: THREE.MeshStandardMaterial | null = null;
 
 export function soldierMaterial(): THREE.MeshStandardMaterial {
@@ -138,6 +155,37 @@ function rng(seed: number): () => number {
 }
 
 export function buildSoldier(template: THREE.Object3D, p: SoldierParams): SoldierBuild {
+  const { geometry, root, bones, transform, triangles } = buildSoldierGeometry(template, p);
+  return { ...bindSoldier(geometry, root, bones, transform), triangles };
+}
+
+/**
+ * 作り済みのジオメトリで、動かせる兵士（SkinnedMesh）をもう 1 体作る（ジオメトリは共有）。
+ * 近景用や、インスタンス描画との比較用。
+ */
+export function instantiateSoldier(template: THREE.Object3D, geometry: THREE.BufferGeometry, transform: NormalizeTransform): { object: NormalizedModel; mesh: THREE.SkinnedMesh } {
+  const root = template.clone(true);
+  root.updateMatrixWorld(true);
+  const bones: THREE.Bone[] = [];
+  root.traverse((o) => {
+    if ((o as THREE.Bone).isBone) bones.push(o as THREE.Bone);
+  });
+  return bindSoldier(geometry, root, bones, transform);
+}
+
+function bindSoldier(geometry: THREE.BufferGeometry, root: THREE.Object3D, bones: THREE.Bone[], transform: NormalizeTransform) {
+  const mesh = new THREE.SkinnedMesh(geometry, soldierMaterial());
+  mesh.name = 'soldier-body';
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.frustumCulled = false;
+  root.add(mesh);
+  root.updateMatrixWorld(true);
+  mesh.bind(new THREE.Skeleton(bones));
+  return { object: new NormalizedModel(root, transform), mesh };
+}
+
+export function buildSoldierGeometry(template: THREE.Object3D, p: SoldierParams): SoldierGeometry {
   const root = template.clone(true);
   root.updateMatrixWorld(true);
   const bones: THREE.Bone[] = [];
@@ -161,7 +209,6 @@ export function buildSoldier(template: THREE.Object3D, p: SoldierParams): Soldie
 
   const R = rng(p.seed);
   const pick = <T>(arr: readonly T[]) => arr[Math.floor(R() * arr.length)];
-  const jitter = (hex: number, amt = 0.05) => new THREE.Color(hex).multiplyScalar(1 - amt + R() * amt * 2);
 
   const team = new THREE.Color(p.teamColor);
   const skin = new THREE.Color(pick(SKIN));
@@ -191,11 +238,15 @@ export function buildSoldier(template: THREE.Object3D, p: SoldierParams): Soldie
   const bodyH = headTop.y - groundY;
 
   const b = new RigidMeshBuilder();
-  const add = (part: { geo: THREE.BufferGeometry; matrix: THREE.Matrix4 }, color: THREE.Color | number, bone: number, amt = 0.04) =>
-    b.add(part.geo, part.matrix, typeof color === 'number' ? jitter(color, amt) : color.clone().multiplyScalar(1 - amt + R() * amt * 2), bone);
+  const add = (part: { geo: THREE.BufferGeometry; matrix: THREE.Matrix4 }, color: THREE.Color | number | TeamPaint, bone: number, amt = 0.04) => {
+    const j = 1 - amt + R() * amt * 2;
+    if (typeof color === 'number') b.add(part.geo, part.matrix, new THREE.Color(color).multiplyScalar(j), bone);
+    else if (color instanceof THREE.Color) b.add(part.geo, part.matrix, color.clone().multiplyScalar(j), bone);
+    else b.add(part.geo, part.matrix, team.clone().multiplyScalar(color.team * j), bone, color.team * j);
+  };
 
   const armored = p.armor !== 'tunic';
-  const sleeve = armored ? new THREE.Color(MAIL) : team;
+  const sleeve = armored ? MAIL : TEAM();
 
   // --- 脚 ---
   for (const s of ['Left', 'Right']) {
@@ -224,10 +275,10 @@ export function buildSoldier(template: THREE.Object3D, p: SoldierParams): Soldie
   const waistR = 14.5 * u * g;
   const skirtBot = hips.clone().addScaledVector(Y, -17 * u);
   if (armored) add(tube(hips.clone().addScaledVector(Y, -21 * u), hips, waistR * 1.18, waistR * 1.02, 8, F, 1, 0.72), MAIL, bi('Hips'));
-  add(tube(skirtBot, hips.clone().addScaledVector(Y, 4 * u), waistR * 1.2, waistR * 1.0, 8, F, 1, 0.74), team, bi('Hips'));
+  add(tube(skirtBot, hips.clone().addScaledVector(Y, 4 * u), waistR * 1.2, waistR * 1.0, 8, F, 1, 0.74), TEAM(), bi('Hips'));
   const chestTop = neck.clone().addScaledVector(Y, -1.5 * u);
-  const torsoColor = p.armor === 'plate' ? new THREE.Color(METAL) : team;
-  add(tube(hips.clone().addScaledVector(Y, 3 * u), spine1, waistR, waistR * 1.04, 8, F, 1, 0.7), p.armor === 'plate' ? new THREE.Color(MAIL) : team, bi('Spine'));
+  const torsoColor = p.armor === 'plate' ? METAL : TEAM();
+  add(tube(hips.clone().addScaledVector(Y, 3 * u), spine1, waistR, waistR * 1.04, 8, F, 1, 0.7), p.armor === 'plate' ? MAIL : TEAM(), bi('Spine'));
   add(tube(spine1, chestTop, waistR * 1.04, Math.max(shoulderHalf * 0.92, waistR), 8, F, 1, 0.62), torsoColor, bi('Spine2', 'Spine1', 'Spine'));
   // ベルトとバックル
   add(tube(hips.clone().addScaledVector(Y, 1 * u), hips.clone().addScaledVector(Y, 5.5 * u), waistR * 1.06, waistR * 1.06, 8, F, 1, 0.74), LEATHER, bi('Spine'));
@@ -235,7 +286,7 @@ export function buildSoldier(template: THREE.Object3D, p: SoldierParams): Soldie
   if (p.armor === 'plate') {
     // 胸甲の上にチームカラーの帯（たすき）
     const mid = spine1.clone().lerp(chestTop, 0.5).addScaledVector(F, waistR * 0.62 * 1.02);
-    add(box(mid, Y, F, 5 * u, spine1.distanceTo(chestTop) * 1.05, 1.2 * u), team, bi('Spine2', 'Spine1', 'Spine'));
+    add(box(mid, Y, F, 5 * u, spine1.distanceTo(chestTop) * 1.05, 1.2 * u), TEAM(), bi('Spine2', 'Spine1', 'Spine'));
   }
 
   // --- 首・頭 ---
@@ -266,7 +317,7 @@ export function buildSoldier(template: THREE.Object3D, p: SoldierParams): Soldie
     case 'greathelm':
       add(tube(hc.clone().addScaledVector(Y, -r * 1.02), hc.clone().addScaledVector(Y, r * 0.95), r * 1.14, r * 1.1, 10, F), METAL, H);
       add(box(face(1.1, 0.14), Y, F, r * 1.3, r * 0.14, r * 0.12), DARK, H, 0);
-      add(box(face(0.0, 1.05), Y, F, r * 0.18, r * 0.5, r * 1.4), team, H);
+      add(box(face(0.0, 1.05), Y, F, r * 0.18, r * 0.5, r * 1.4), TEAM(), H);
       break;
   }
 
@@ -326,10 +377,10 @@ export function buildSoldier(template: THREE.Object3D, p: SoldierParams): Soldie
     n.normalize();
     const center = lFore.clone().lerp(lHand, 0.45).addScaledVector(n, 4.5 * u * g + 2 * u);
     const S = bi('LeftForeArm');
-    const trim = team.clone().offsetHSL(0, -0.1, 0.22);
+    const trim = TEAM(1.4);
     if (p.shield === 'round') {
       add(tube(center.clone().addScaledVector(n, -1.3 * u), center.clone().addScaledVector(n, 1.3 * u), 27 * u, 27 * u, 14, d), WOOD, S);
-      add(tube(center.clone().addScaledVector(n, 1.2 * u), center.clone().addScaledVector(n, 1.6 * u), 24 * u, 24 * u, 14, d), team, S);
+      add(tube(center.clone().addScaledVector(n, 1.2 * u), center.clone().addScaledVector(n, 1.6 * u), 24 * u, 24 * u, 14, d), TEAM(), S);
       add(box(center.clone().addScaledVector(n, 1.7 * u), n, d, 6 * u, 0.5 * u, 46 * u), trim, S);
       add(dome(center.clone().addScaledVector(n, 1.6 * u), n, d, 6 * u, 4 * u, 8), METAL, S);
     } else {
@@ -344,26 +395,14 @@ export function buildSoldier(template: THREE.Object3D, p: SoldierParams): Soldie
       geo.translate(0, 0, -1.3);
       // 盾の上辺は肘の方（腕を下ろすと上を向く）
       const m = frame(center, d.clone().negate(), n, u, u, u);
-      b.add(geo, m, team, S);
+      b.add(geo, m, team, S, 1);
       add(box(center.clone().addScaledVector(n, 1.5 * u).addScaledVector(d, 4 * u), d, n, 7 * u, 50 * u, 0.6 * u), trim, S);
     }
   }
 
-  // --- 骨に結びつける ---
-  const geometry = b.build();
-  const mesh = new THREE.SkinnedMesh(geometry, soldierMaterial());
-  mesh.name = 'soldier-body';
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  mesh.frustumCulled = false;
-  root.add(mesh);
-  root.updateMatrixWorld(true);
-  mesh.bind(new THREE.Skeleton(bones));
-
   const scale = UNITS.soldierHeight / bodyH;
-  const t: NormalizeTransform = { rotation: [0, 0, 0], pivot: [-hips.x, -groundY, -hips.z], scale };
-  const object = new NormalizedModel(root, t);
-  return { object, mesh, triangles: b.triangles };
+  const transform: NormalizeTransform = { rotation: [0, 0, 0], pivot: [-hips.x, -groundY, -hips.z], scale };
+  return { geometry: b.build(), root, bones, transform, triangles: b.triangles };
 }
 
 /** Mixamo 骨格の兵士が作れるか（必要な骨があるか） */

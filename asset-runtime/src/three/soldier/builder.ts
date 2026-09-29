@@ -1,6 +1,9 @@
 /**
  * パーツを 1 本の骨に固定する（重みが 1 本だけの）スキンメッシュを組み立てる。
  * パーツは骨格の基準姿勢のモデル座標で置く。頂点カラー + フラットシェーディング。
+ *
+ * teamShade 属性: チーム色で塗る部分は明るさの倍率（> 0）、それ以外は 0。
+ * 部隊の描画ではこれを見てインスタンスごとのチーム色に塗り替える（color 属性には既定のチーム色で塗った色が入っている）。
  */
 import * as THREE from 'three';
 
@@ -8,13 +11,14 @@ export class RigidMeshBuilder {
   private readonly pos: number[] = [];
   private readonly col: number[] = [];
   private readonly bone: number[] = [];
+  private readonly team: number[] = [];
 
   get triangles(): number {
     return this.pos.length / 9;
   }
 
   /** geo は使い捨て（dispose する） */
-  add(geo: THREE.BufferGeometry, matrix: THREE.Matrix4, color: THREE.Color, boneIndex: number): void {
+  add(geo: THREE.BufferGeometry, matrix: THREE.Matrix4, color: THREE.Color, boneIndex: number, teamShade = 0): void {
     const g = geo.index ? geo.toNonIndexed() : geo;
     g.applyMatrix4(matrix);
     const p = g.getAttribute('position');
@@ -22,6 +26,7 @@ export class RigidMeshBuilder {
       this.pos.push(p.getX(i), p.getY(i), p.getZ(i));
       this.col.push(color.r, color.g, color.b);
       this.bone.push(boneIndex);
+      this.team.push(teamShade);
     }
     if (g !== geo) g.dispose();
     geo.dispose();
@@ -40,6 +45,7 @@ export class RigidMeshBuilder {
     }
     g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
     g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+    g.setAttribute('teamShade', new THREE.Float32BufferAttribute(this.team, 1));
     // インデックスなしなので面ごとの法線になる
     g.computeVertexNormals();
     g.computeBoundingSphere();

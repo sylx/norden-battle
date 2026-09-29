@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "kind": "source",
+  "id": "building-home-a-blue",
+  "name": "building_home_A_blue",
+  "category": "prop",
+  "tags": [],
+  "license": "CC0",
+  "origin": {
+    "url": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "pack": "KayKit - Medieval Hexagon Pack"
+  },
+  "files": {
+    "original": [
+      "original/building_home_A_blue.fbx",
+      "original/hexagons_medieval.png"
+    ],
+    "model": "model.glb"
+  },
+  "skeleton": "none",
+  "transform": {
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "pivot": [
+      0,
+      0,
+      4.1826
+    ],
+    "scale": 0.00172
+  },
+  "stats": {
+    "triangles": 1011,
+    "vertices": 3033,
+    "meshes": 1,
+    "materials": 1,
+    "textures": 1,
+    "maxTextureSize": 1024,
+    "bones": 0,
+    "animations": [],
+    "rawSize": [
+      79.196,
+      93,
+      85.3652
+    ]
+  },
+  "importedAt": "2026-09-29T02:38:07.583Z"
+}

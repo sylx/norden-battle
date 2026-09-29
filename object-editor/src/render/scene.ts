@@ -16,6 +16,8 @@ export class ViewerScene {
   readonly references = new THREE.Group();
   /** プレビュー中のモデルを入れる */
   readonly stage = new THREE.Group();
+  /** 足元の HEX 1 マスとグリッド */
+  readonly ground = createGround();
   private readonly container: HTMLElement;
 
   constructor(container: HTMLElement) {
@@ -31,13 +33,14 @@ export class ViewerScene {
     this.scene.background = new THREE.Color(0xaec6cf);
 
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.002, 50);
-    this.camera.position.set(0.35, 0.3, 0.55);
+    const S = UNITS.soldierHeight;
+    this.camera.position.set(S * 3.5, S * 3, S * 5.5);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.12;
     this.controls.minDistance = 0.03;
     this.controls.maxDistance = 12;
-    this.controls.target.set(0, 0.05, 0);
+    this.controls.target.set(0, S / 2, 0);
 
     this.scene.add(new THREE.HemisphereLight(0xdfeeff, 0x4a4030, 1.1));
     this.sun = new THREE.DirectionalLight(0xfff1d6, 2.6);
@@ -48,7 +51,7 @@ export class ViewerScene {
     this.scene.add(this.sun, this.sun.target);
     this.setShadowRange(1);
 
-    this.scene.add(createGround(), this.references, this.stage);
+    this.scene.add(this.ground, this.references, this.stage);
     this.references.add(createReferences());
 
     window.addEventListener('resize', () => this.resize());
@@ -132,16 +135,17 @@ function createReferences(): THREE.Group {
   g.name = 'references';
   const mat = (color: number) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, transparent: true, opacity: 0.55 });
 
+  const S = UNITS.soldierHeight;
   const figure = (height: number, color: number, x: number) => {
     const r = height * 0.16;
     const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, height - r * 2, 4, 12), mat(color));
-    m.position.set(x, height / 2, -0.12);
+    m.position.set(x, height / 2, -S * 1.2);
     m.castShadow = true;
     return m;
   };
-  g.add(figure(UNITS.soldierHeight, 0x3a6ea5, -0.18), figure(UNITS.humanHeight, 0xa5553a, -0.24));
+  g.add(figure(S, 0x3a6ea5, -S * 1.8), figure(UNITS.humanHeight, 0xa5553a, -S * 2.5));
 
-  const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0.001, 0), 0.25, 0xd04030, 0.04, 0.025);
+  const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0.001, 0), S * 1.5, 0xd04030, S * 0.3, S * 0.18);
   arrow.name = 'forward';
   g.add(arrow);
   return g;

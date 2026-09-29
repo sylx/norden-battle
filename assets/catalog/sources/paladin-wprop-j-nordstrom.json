@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "kind": "source",
+  "id": "paladin-wprop-j-nordstrom",
+  "name": "Paladin WProp J Nordstrom",
+  "category": "character",
+  "tags": [],
+  "license": "mixamo",
+  "origin": {
+    "pack": "Mixamo"
+  },
+  "files": {
+    "original": [
+      "original/Paladin WProp J Nordstrom.fbx"
+    ],
+    "model": "model.glb"
+  },
+  "skeleton": "mixamo",
+  "transform": {
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "pivot": [
+      4.7055,
+      0.0026,
+      -15.3202
+    ],
+    "scale": 0.002029
+  },
+  "stats": {
+    "triangles": 14990,
+    "vertices": 44970,
+    "meshes": 4,
+    "materials": 1,
+    "textures": 3,
+    "maxTextureSize": 2048,
+    "bones": 276,
+    "animations": [
+      {
+        "name": "Paladin WProp J Nordstrom",
+        "duration": 0.033
+      }
+    ],
+    "rawSize": [
+      179.8816,
+      172.5474,
+      119.8063
+    ]
+  },
+  "importedAt": "2026-09-29T02:32:08.391Z"
+}

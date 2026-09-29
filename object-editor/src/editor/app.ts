@@ -68,6 +68,8 @@ export class ObjectEditorApp {
   pending: PendingImport[] = [];
   readonly display: DisplayOptions = { references: true, skeleton: false, wireframe: false };
   private readonly clock = new THREE.Clock();
+  /** 直近の平均 FPS */
+  fps = 0;
   private readonly listeners = new Set<Listener>();
 
   constructor(container: HTMLElement) {
@@ -75,6 +77,7 @@ export class ObjectEditorApp {
     const loop = () => {
       requestAnimationFrame(loop);
       const dt = this.clock.getDelta();
+      if (dt > 0) this.fps += (1 / dt - this.fps) * 0.05;
       this.current?.mixer.update(dt);
       this.lab?.update(dt);
       this.view.render();
