@@ -7,7 +7,7 @@ const unitImagesDir = fileURLToPath(new URL('../assets/units', import.meta.url))
 
 export default defineConfig({
   base: './',
-  server: { port: 5175 },
+  server: { allowedHosts: ["78b2-113-37-101-195.ngrok-free.app"], port: 5175 },
   plugins: [
     // map-editor で保存したマップ（assets/maps/）を読み込む。ここからは書き込まない
     mapsPlugin({ mapsDir: fileURLToPath(new URL('../assets/maps', import.meta.url)), readOnly: true }),

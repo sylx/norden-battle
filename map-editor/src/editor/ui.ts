@@ -328,8 +328,10 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   fQuality.add(p, 'margin', 0, 6, 1).name('外周マージン (HEX)').onFinishChange(regen);
   const fPerf = gui.addFolder('描画負荷');
   fPerf.add(app.ctx, 'fps').name('FPS').decimals(1).disable().listen();
+  fPerf.add({ gpu: app.ctx.gpuName }, 'gpu').name('GPU').disable();
   fPerf.add(app.ctx, 'pixelRatio', 0.5, 2, 0.25).name('描画解像度');
-  fPerf.add(app.view, 'foliagePrepass').name('森の深度プリパス');
+  fPerf.add(app.view, 'forestMode', { '板絵（軽い）': 'impostor', '3D モデル': 'mesh' }).name('森の描画');
+  fPerf.add(app.view, 'foliagePrepass').name('森の深度プリパス (3D)');
   fPerf
     .add({ dynamic: !app.ctx.staticShadows }, 'dynamic')
     .name('影を毎フレーム更新')

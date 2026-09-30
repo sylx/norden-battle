@@ -38,9 +38,17 @@
           <span>解像度</span>
           <select id="pixel-ratio"></select>
         </label>
-        <label class="check"><input id="chk-prepass" type="checkbox" /> 森の深度プリパス</label>
+        <label class="row">
+          <span>森</span>
+          <select id="forest-mode">
+            <option value="impostor">板絵（軽い）</option>
+            <option value="mesh">3D モデル</option>
+          </select>
+        </label>
+        <label class="check"><input id="chk-prepass" type="checkbox" /> 森の深度プリパス（3D のとき）</label>
         <label class="check"><input id="chk-dynamic-shadows" type="checkbox" /> 影を毎フレーム更新</label>
         <p class="hint">重いときは解像度を下げてください。深度プリパス・影はオフ/オンで負荷を比べる用です</p>
+        <p id="gpu-name" class="hint"></p>
       </section>
 
       <section>

@@ -3,6 +3,7 @@ import { MapParseError, parseMapData, type HexCell, type MapData } from '@norden
 import { TERRAIN_DEFS } from '@norden/map-runtime/core/terrainTypes';
 import { TEAM_DEFS, UNIT_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import { listMapFiles, loadMapFile, type MapFileInfo } from '@norden/map-runtime/mapFiles';
+import type { ForestMode } from '@norden/map-runtime/render/foliage';
 import { DEFAULT_PIXEL_RATIO } from '@norden/map-runtime/render/scene';
 import type { BattleApp } from './app';
 
@@ -97,6 +98,10 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
   for (const r of ratios) ratioSel.add(new Option(`× ${r}${r === DEFAULT_PIXEL_RATIO ? '（既定）' : ''}`, String(r)));
   ratioSel.value = String(app.ctx.pixelRatio);
   ratioSel.addEventListener('change', () => (app.ctx.pixelRatio = Number(ratioSel.value)));
+  const forestSel = $<HTMLSelectElement>('forest-mode');
+  forestSel.value = app.view.forestMode;
+  forestSel.addEventListener('change', () => (app.view.forestMode = forestSel.value as ForestMode));
+  $('gpu-name').textContent = `GPU: ${app.ctx.gpuName}`;
   const prepass = $<HTMLInputElement>('chk-prepass');
   prepass.checked = app.view.foliagePrepass;
   prepass.addEventListener('change', () => (app.view.foliagePrepass = prepass.checked));

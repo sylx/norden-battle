@@ -9,6 +9,17 @@ import { ParchmentEffect } from './parchment';
  */
 export const DEFAULT_CAMERA_PITCH = 50;
 
+/** 光源（木の板絵を焼くときも同じ光を使う） */
+export const LIGHTS = {
+  hemiSky: 0xe8e4d8,
+  hemiGround: 0x4a4030,
+  hemiIntensity: 1.2,
+  sunColor: 0xfff1d6,
+  sunIntensity: 2.3,
+  /** 太陽の方向（地面から太陽へ。北西の上空） */
+  sunDirection: new THREE.Vector3(-0.6, 1.2, -0.9).normalize(),
+} as const;
+
 /** 描画解像度（devicePixelRatio）の初期値。高 DPI の画面でも 2 倍までにする */
 export const DEFAULT_PIXEL_RATIO = Math.min(window.devicePixelRatio, 2);
 
@@ -23,8 +34,15 @@ export class SceneContext {
   readonly sun: THREE.DirectionalLight;
   /** 直近 1 秒の平均フレームレート */
   fps = 0;
+  /**
+   * シャドウマップを描く直前（true）と直後（false）に呼ばれる。
+   * 影を落とすためだけのもの（板絵にした木の元の 3D モデル）をこの間だけ表示するのに使う
+   */
+  onShadowPass: (active: boolean) => void = () => {};
   private readonly container: HTMLElement;
   private fpsFrames = 0;
+  /** シャドウマップだけを更新するときの描画先（本体の描画結果は捨てる） */
+  private readonly shadowDummy = new THREE.WebGLRenderTarget(1, 1);
   private fpsStart = performance.now();
 
   constructor(container: HTMLElement) {
@@ -58,8 +76,8 @@ export class SceneContext {
     this.controls.maxDistance = 90;
     this.controls.screenSpacePanning = false;
 
-    this.scene.add(new THREE.HemisphereLight(0xe8e4d8, 0x4a4030, 1.2));
-    this.sun = new THREE.DirectionalLight(0xfff1d6, 2.3);
+    this.scene.add(new THREE.HemisphereLight(LIGHTS.hemiSky, LIGHTS.hemiGround, LIGHTS.hemiIntensity));
+    this.sun = new THREE.DirectionalLight(LIGHTS.sunColor, LIGHTS.sunIntensity);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(4096, 4096);
     this.sun.shadow.bias = -0.0004;
@@ -76,6 +94,13 @@ export class SceneContext {
     this.controls.minPolarAngle = polar;
     this.controls.maxPolarAngle = polar;
     this.controls.update();
+  }
+
+  /** ブラウザが使っている GPU の名前（ノート PC で内蔵 GPU が使われていないかの確認用） */
+  get gpuName(): string {
+    const gl = this.renderer.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
   }
 
   /** 影を落とすもの・太陽が変わったら呼ぶ（次の描画でシャドウマップを描き直す） */
@@ -125,7 +150,9 @@ export class SceneContext {
     const d = box.maxZ - box.minZ;
     const r = Math.hypot(w, d) / 2;
 
-    this.sun.position.set(cx - r * 0.6, r * 1.2, cz - r * 0.9);
+    const sd = LIGHTS.sunDirection;
+    const sl = r * Math.hypot(0.6, 1.2, 0.9);
+    this.sun.position.set(cx + sd.x * sl, sd.y * sl, cz + sd.z * sl);
     this.sun.target.position.set(cx, 0, cz);
     const cam = this.sun.shadow.camera;
     cam.left = -r;
@@ -160,10 +187,32 @@ export class SceneContext {
     }
     this.controls.update();
     const r = this.renderer;
+    const sm = r.shadowMap;
+    if (sm.autoUpdate || sm.needsUpdate) this.renderShadows();
+    // 本体の描画ではシャドウマップに触らない
+    const autoUpdate = sm.autoUpdate;
+    sm.autoUpdate = false;
     if (this.parchment.enabled) this.parchment.render(r, this.scene, this.camera);
     else r.render(this.scene, this.camera);
     r.autoClear = false;
     r.render(this.overlay, this.camera);
     r.autoClear = true;
+    sm.autoUpdate = autoUpdate;
+  }
+
+  /** シャドウマップだけを描き直す（1×1 の捨てるターゲットに描くついでに更新させる） */
+  private renderShadows(): void {
+    const r = this.renderer;
+    const sm = r.shadowMap;
+    const autoUpdate = sm.autoUpdate;
+    this.onShadowPass(true);
+    sm.autoUpdate = false;
+    sm.needsUpdate = true;
+    const prev = r.getRenderTarget();
+    r.setRenderTarget(this.shadowDummy);
+    r.render(this.scene, this.camera);
+    r.setRenderTarget(prev);
+    sm.autoUpdate = autoUpdate;
+    this.onShadowPass(false);
   }
 }

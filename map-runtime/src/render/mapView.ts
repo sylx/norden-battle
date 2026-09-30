@@ -8,7 +8,7 @@ import type { Offset } from '../core/hex';
 import type { HexMap } from '../core/mapData';
 import { buildRoadPaths, RoadIndex } from '../core/roads';
 import { DEFAULT_TERRAIN_PARAMS, generateTerrain, Heightmap, placeVegetation, type TerrainData, type TerrainParams } from '../core/terrainGen';
-import { createForest, setFoliagePrepass, windUniforms } from './foliage';
+import { Forest, windUniforms, type ForestMode } from './foliage';
 import { HexOverlay } from './hexOverlay';
 import { buildRoadMesh } from './roads';
 import type { SceneContext } from './scene';
@@ -52,14 +52,16 @@ export class MapView {
   private meshes: TerrainMeshes | null = null;
   private terrainData: TerrainData | null = null;
   /** 木と人工物（地形を作り直さずに差し替えられる部分） */
-  private decor: { forest: THREE.Group; structures: THREE.Group; roads: THREE.Group } | null = null;
+  private decor: { forest: Forest; structures: THREE.Group; roads: THREE.Group } | null = null;
   private stats: GenStats = { ms: 0, vertices: 0, trees: 0 };
   private gridOpacity = this.overlay.uniforms.uGridOpacity.value;
   private _foliagePrepass = true;
+  private _forestMode: ForestMode = 'impostor';
 
   constructor(ctx: SceneContext) {
     this.ctx = ctx;
     ctx.overlay.add(this.units.group);
+    ctx.onShadowPass = (active) => this.decor?.forest.setShadowPass(active);
     this.units.art.onChange = () => this.rebuildUnits();
   }
 
@@ -106,8 +108,8 @@ export class MapView {
     if (!map || !data) return;
     const t0 = performance.now();
     if (this.decor) {
-      this.ctx.scene.remove(this.decor.forest, this.decor.structures, this.decor.roads);
-      disposeObject(this.decor.forest);
+      this.ctx.scene.remove(this.decor.forest.group, this.decor.structures, this.decor.roads);
+      this.decor.forest.dispose();
       disposeObject(this.decor.structures);
       disposeObject(this.decor.roads);
     }
@@ -117,10 +119,13 @@ export class MapView {
     const roads = new THREE.Group();
     const roadMesh = buildRoadMesh(roadPaths, new Heightmap(data), data.waterLevel, map.layout.size);
     if (roadMesh) roads.add(roadMesh);
-    const forest = createForest(trees, map.data.seed);
-    setFoliagePrepass(forest, this.foliagePrepass);
+    const forest = new Forest(trees, map.data.seed, this.ctx.renderer, {
+      mode: this._forestMode,
+      prepass: this._foliagePrepass,
+      pitch: this.ctx.pitch,
+    });
     this.decor = { forest, structures: buildStructures(map, data, roadIndex), roads };
-    this.ctx.scene.add(this.decor.forest, this.decor.structures, this.decor.roads);
+    this.ctx.scene.add(forest.group, this.decor.structures, this.decor.roads);
     this.ctx.invalidateShadows();
     // 橋の有無で足元の高さが変わるのでユニットも置き直す
     this.rebuildUnits();
@@ -139,7 +144,17 @@ export class MapView {
 
   set foliagePrepass(v: boolean) {
     this._foliagePrepass = v;
-    if (this.decor) setFoliagePrepass(this.decor.forest, v);
+    this.decor?.forest.setPrepass(v);
+  }
+
+  /** 森の描き方（既定は板絵。'mesh' で葉のカードの 3D モデル） */
+  get forestMode(): ForestMode {
+    return this._forestMode;
+  }
+
+  set forestMode(v: ForestMode) {
+    this._forestMode = v;
+    this.decor?.forest.setMode(v, this.ctx.pitch);
   }
 
   /** display の表示・非表示を反映する */
@@ -149,7 +164,7 @@ export class MapView {
     this.overlay.uniforms.uGridOpacity.value = this.display.grid ? this.gridOpacity : 0;
     if (this.meshes) this.meshes.water.visible = this.display.water;
     if (this.decor) {
-      this.decor.forest.visible = this.display.trees;
+      this.decor.forest.group.visible = this.display.trees;
       this.decor.structures.visible = this.display.structures;
       this.decor.roads.visible = this.display.roads;
     }
@@ -190,6 +205,8 @@ export class MapView {
   /** 毎フレーム呼ぶ（風揺れの時間を進めて描画する） */
   render(): void {
     windUniforms.uTime.value = performance.now() / 1000;
+    // 俯角を変えたら板絵を焼き直す
+    this.decor?.forest.setPitch(this.ctx.pitch);
     this.ctx.render();
   }
 }
