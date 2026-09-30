@@ -166,8 +166,8 @@ function getLeafTexture(): THREE.Texture {
     const y = S / 2 + Math.sin(a) * r;
     const len = 11 + rng() * 9;
     const wid = len * (0.38 + rng() * 0.12);
-    const hue = 78 + rng() * 32;
-    const sat = 38 + rng() * 22;
+    const hue = 70 + rng() * 30;
+    const sat = 18 + rng() * 14;
     const lig = 16 + t * 20 + rng() * 12;
     g.save();
     g.translate(x, y);
@@ -226,7 +226,7 @@ function getNeedleTexture(): THREE.Texture {
         const s = Math.sin(ang);
         const nx = ux * c - uy * s;
         const ny = ux * s + uy * c;
-        g.strokeStyle = `hsl(${138 + rng() * 22}, ${28 + rng() * 18}%, ${13 + rng() * 17 + t * 6}%)`;
+        g.strokeStyle = `hsl(${120 + rng() * 25}, ${14 + rng() * 12}%, ${13 + rng() * 17 + t * 6}%)`;
         g.lineWidth = 1.1 + rng() * 0.6;
         g.beginPath();
         g.moveTo(px, py);

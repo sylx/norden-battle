@@ -238,6 +238,18 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   fGrid.add(u.uLineWidth, 'value', 0.005, 0.1, 0.001).name('線幅');
   fGrid.addColor(gridState, 'color').name('線の色').onChange((v: string) => u.uGridColor.value.set(v));
   fGrid.add(u.uCellOpacity, 'value', 0, 1, 0.01).name('HEX 塗りの濃さ');
+  const fPaper = gui.addFolder('羊皮紙風（ユニット以外）');
+  const pe = app.ctx.parchment;
+  const pu = pe.uniforms;
+  fPaper.add(pe, 'enabled').name('有効');
+  fPaper.add(pu.uSaturation, 'value', 0, 1, 0.01).name('彩度');
+  fPaper.add(pu.uSepia, 'value', 0, 1, 0.01).name('セピア');
+  fPaper.add(pu.uPaper, 'value', 0, 1.5, 0.01).name('紙の地合い');
+  fPaper.add(pu.uFade, 'value', 0, 0.5, 0.01).name('色あせ');
+  fPaper.add(pu.uOutline, 'value', 0, 1, 0.01).name('輪郭線');
+  fPaper.add(pu.uVignette, 'value', 0, 1.5, 0.01).name('周縁の焼け');
+  const fUnits = gui.addFolder('ユニット');
+  fUnits.add(app.units, 'scale', 0.5, 3, 0.05).name('表示倍率').onChange(() => app.rebuildUnits());
   const fCamera = gui.addFolder('カメラ');
   const camState = { pitch: app.ctx.pitch };
   fCamera

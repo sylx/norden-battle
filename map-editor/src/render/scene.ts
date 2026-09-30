@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
+import { ParchmentEffect } from './parchment';
 
 /**
  * カメラの俯角（水平からの角度, 度）の初期値。
@@ -11,6 +12,9 @@ export const DEFAULT_CAMERA_PITCH = 50;
 export class SceneContext {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
+  /** ポストプロセスをかけずに最後に重ねるシーン（ユニット） */
+  readonly overlay = new THREE.Scene();
+  readonly parchment = new ParchmentEffect();
   readonly camera: THREE.PerspectiveCamera;
   readonly controls: MapControls;
   readonly sun: THREE.DirectionalLight;
@@ -26,7 +30,8 @@ export class SceneContext {
     this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
 
-    const sky = new THREE.Color(0xaec6cf);
+    // 空・遠景は霞んだ紙の色に溶かす
+    const sky = new THREE.Color(0xc9bea3);
     this.scene.background = sky;
     this.scene.fog = new THREE.Fog(sky, 60, 140);
 
@@ -43,8 +48,8 @@ export class SceneContext {
     this.controls.maxDistance = 90;
     this.controls.screenSpacePanning = false;
 
-    this.scene.add(new THREE.HemisphereLight(0xdfeeff, 0x4a4030, 1.1));
-    this.sun = new THREE.DirectionalLight(0xfff1d6, 2.6);
+    this.scene.add(new THREE.HemisphereLight(0xe8e4d8, 0x4a4030, 1.2));
+    this.sun = new THREE.DirectionalLight(0xfff1d6, 2.3);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(4096, 4096);
     this.sun.shadow.bias = -0.0004;
@@ -71,6 +76,8 @@ export class SceneContext {
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
     this.renderer.setSize(w, h);
+    const buf = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    this.parchment.setSize(buf.x, buf.y);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -109,6 +116,11 @@ export class SceneContext {
 
   render(): void {
     this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+    const r = this.renderer;
+    if (this.parchment.enabled) this.parchment.render(r, this.scene, this.camera);
+    else r.render(this.scene, this.camera);
+    r.autoClear = false;
+    r.render(this.overlay, this.camera);
+    r.autoClear = true;
   }
 }

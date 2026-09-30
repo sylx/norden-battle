@@ -1,6 +1,6 @@
 /**
  * ユニットの表示。2D 画像をカメラ正対のスプライトで HEX の中心に立て、
- * 足元に軍の色の円を地面に沿わせて敷く。
+ * 足元に横長の楕円の影を地面に沿わせて敷く。
  *
  * どちらも深度テストをせず地形・木・建物より手前に描く（森や山の陰でもユニットを見失わないため）。
  * スプライト同士は奥から順に描かれるので、手前のユニットが奥のユニットに重なる。
@@ -8,19 +8,25 @@
 import * as THREE from 'three';
 import type { HexMap } from '../core/mapData';
 import { Heightmap, type TerrainData } from '../core/terrainGen';
-import { TEAM_DEFS, type UnitData } from '../core/units';
+import type { UnitData } from '../core/units';
 import { UnitArt, type UnitImage } from './unitArt';
 
 /** スプライトの高さ（hexSize 比） */
 const UNIT_HEIGHT = 0.95;
-/** 足元の円の半径（hexSize 比） */
-const RING_RADIUS = 0.5;
+/** 影の楕円の横半径（hexSize 比、表示倍率 1 のとき） */
+const SHADOW_RX = 0.46;
+/** 影の楕円の縦（奥行き）/ 横の比 */
+const SHADOW_ASPECT = 0.45;
+/** 影を奥（画面の上）へずらす量（hexSize 比、表示倍率 1 のとき） */
+const SHADOW_SHIFT = 0.06;
+/** 影の中心の濃さ */
+const SHADOW_OPACITY = 0.55;
 /** 橋の上に立つときの足元の高さ（水面から、hexSize 比） */
 const BRIDGE_DECK = 0.14;
 /** クリック判定で「描かれている」とみなす不透明度 */
 const PICK_ALPHA = 0.25;
 
-const RING_ORDER = 9;
+const SHADOW_ORDER = 9;
 const SPRITE_ORDER = 10;
 
 interface UnitSprite {
@@ -33,7 +39,18 @@ export class UnitLayer {
   readonly group = new THREE.Group();
   readonly art = new UnitArt();
   private sprites: UnitSprite[] = [];
-  private readonly ringTexture = createRingTexture();
+  private readonly shadowTexture = createShadowTexture();
+  private readonly shadowMaterial = new THREE.MeshBasicMaterial({
+    map: this.shadowTexture,
+    color: 0x000000,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+    fog: false,
+  });
+  /** 表示倍率。変えたら build() し直す */
+  scale = 1.75;
 
   constructor() {
     this.group.name = 'units';
@@ -51,21 +68,13 @@ export class UnitLayer {
       const floor = onBridge ? data.waterLevel + BRIDGE_DECK * s : data.waterLevel;
       const y = Math.max(hm.heightAt(c.x, c.z), floor);
 
-      const color = TEAM_DEFS[unit.team].color;
-      const ring = new THREE.Mesh(
-        ringGeometry(hm, c.x, c.z, RING_RADIUS * s, onBridge ? floor : data.waterLevel),
-        new THREE.MeshBasicMaterial({
-          map: this.ringTexture,
-          color,
-          transparent: true,
-          depthTest: false,
-          depthWrite: false,
-          toneMapped: false,
-          fog: false,
-        }),
+      const rx = SHADOW_RX * this.scale * s;
+      const shadow = new THREE.Mesh(
+        shadowGeometry(hm, c.x, c.z - SHADOW_SHIFT * this.scale * s, rx, rx * SHADOW_ASPECT, onBridge ? floor : data.waterLevel),
+        this.shadowMaterial,
       );
-      ring.renderOrder = RING_ORDER;
-      this.group.add(ring);
+      shadow.renderOrder = SHADOW_ORDER;
+      this.group.add(shadow);
 
       const image = this.art.get(unit.type, unit.team, unit.facing ?? 'right');
       const sprite = new THREE.Sprite(
@@ -80,7 +89,8 @@ export class UnitLayer {
       );
       sprite.center.set(0.5, 0);
       sprite.position.set(c.x, y, c.z);
-      sprite.scale.set(UNIT_HEIGHT * s * image.aspect, UNIT_HEIGHT * s, 1);
+      const h = UNIT_HEIGHT * this.scale * s;
+      sprite.scale.set(h * image.aspect, h, 1);
       sprite.renderOrder = SPRITE_ORDER;
       this.group.add(sprite);
       this.sprites.push({ sprite, image, unit });
@@ -104,37 +114,39 @@ export class UnitLayer {
   dispose(): void {
     this.clear();
     this.art.dispose();
-    this.ringTexture.dispose();
+    this.shadowTexture.dispose();
+    this.shadowMaterial.dispose();
   }
 
   private clear(): void {
     for (const child of [...this.group.children]) {
       this.group.remove(child);
+      // 影のマテリアルとテクスチャは共有なので、捨てるのは影のジオメトリとスプライトのマテリアルだけ
       if (child instanceof THREE.Mesh) child.geometry.dispose();
-      // テクスチャは UnitArt / ringTexture が持っているのでマテリアルだけ捨てる
-      ((child as THREE.Mesh | THREE.Sprite).material as THREE.Material).dispose();
+      else if (child instanceof THREE.Sprite) child.material.dispose();
     }
     this.sprites = [];
   }
 }
 
-/** 地面に沿わせた円盤（同心円 × 放射状の格子） */
-function ringGeometry(hm: Heightmap, cx: number, cz: number, radius: number, floor: number): THREE.BufferGeometry {
+/** 地面に沿わせた楕円盤（同心楕円 × 放射状の格子） */
+function shadowGeometry(hm: Heightmap, cx: number, cz: number, rx: number, rz: number, floor: number): THREE.BufferGeometry {
   const RINGS = 4;
   const SEGS = 32;
   const lift = 0.015;
   const pos: number[] = [];
   const uv: number[] = [];
   const idx: number[] = [];
-  const push = (dx: number, dz: number) => {
-    const x = cx + dx;
-    const z = cz + dz;
+  // (u, v) は単位円上の座標
+  const push = (u: number, v: number) => {
+    const x = cx + u * rx;
+    const z = cz + v * rz;
     pos.push(x, Math.max(hm.heightAt(x, z), floor) + lift, z);
-    uv.push(0.5 + dx / (2 * radius), 0.5 - dz / (2 * radius));
+    uv.push(0.5 + u / 2, 0.5 - v / 2);
   };
   push(0, 0);
   for (let r = 1; r <= RINGS; r++) {
-    const rr = (radius * r) / RINGS;
+    const rr = r / RINGS;
     for (let i = 0; i < SEGS; i++) {
       const a = (i / SEGS) * Math.PI * 2;
       push(rr * Math.cos(a), rr * Math.sin(a));
@@ -156,26 +168,22 @@ function ringGeometry(hm: Heightmap, cx: number, cz: number, radius: number, flo
   return geo;
 }
 
-/** 白の円（薄い塗り + くっきりした縁）。マテリアルの color で軍の色に染める */
-function createRingTexture(): THREE.Texture {
+/** 中心が濃く縁へ柔らかく消える円（楕円はジオメトリ側で作る）。色はマテリアルの color（黒） */
+function createShadowTexture(): THREE.Texture {
   const N = 128;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = N;
   const g = canvas.getContext('2d')!;
   const c = N / 2;
-  g.fillStyle = 'rgba(255, 255, 255, 0.3)';
-  g.beginPath();
-  g.arc(c, c, c * 0.9, 0, Math.PI * 2);
-  g.fill();
-  g.strokeStyle = 'rgba(0, 0, 0, 0.45)';
-  g.lineWidth = N * 0.1;
-  g.beginPath();
-  g.arc(c, c, c * 0.87, 0, Math.PI * 2);
-  g.stroke();
-  g.strokeStyle = 'rgba(255, 255, 255, 1)';
-  g.lineWidth = N * 0.06;
-  g.stroke();
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  const grad = g.createRadialGradient(c, c, 0, c, c, c);
+  for (let i = 0; i <= 10; i++) {
+    const t = i / 10;
+    // 中心付近は平らに濃く、外側 6 割で滑らかに 0 へ
+    const k = Math.min(Math.max((t - 0.4) / 0.6, 0), 1);
+    const a = SHADOW_OPACITY * (1 - k * k * (3 - 2 * k));
+    grad.addColorStop(t, `rgba(255, 255, 255, ${a.toFixed(4)})`);
+  }
+  g.fillStyle = grad;
+  g.fillRect(0, 0, N, N);
+  return new THREE.CanvasTexture(canvas);
 }

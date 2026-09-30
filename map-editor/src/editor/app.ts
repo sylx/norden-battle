@@ -78,7 +78,7 @@ export class EditorApp {
 
   constructor(container: HTMLElement) {
     this.ctx = new SceneContext(container);
-    this.ctx.scene.add(this.units.group);
+    this.ctx.overlay.add(this.units.group);
     this.units.art.onChange = () => this.rebuildUnits();
     const el = this.ctx.renderer.domElement;
     el.addEventListener('pointermove', (e) => {
@@ -121,6 +121,7 @@ export class EditorApp {
   loadMap(data: MapData, resetCamera = true): void {
     this.map = new HexMap(data);
     this.overlay.setLayout(this.map.layout);
+    this.ctx.parchment.uniforms.uPaperScale.value = this.map.layout.size;
     this.selected = null;
     this.onSelect(null);
     this.regenerate(resetCamera);
