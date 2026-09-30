@@ -155,7 +155,7 @@ export class HexOverlay {
       uCellTex: { value: HexOverlay.makeCellTexture(1, 1) },
       uCellOpacity: { value: 0.55 },
       uWaterLevel: { value: 0 },
-      uGrain: { value: 0.22 },
+      uGrain: { value: 0.6 },
     };
   }
 

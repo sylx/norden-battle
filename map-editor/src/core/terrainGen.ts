@@ -45,7 +45,7 @@ export interface TerrainParams {
 
 export const DEFAULT_TERRAIN_PARAMS: TerrainParams = {
   resolution: 10,
-  margin: 2,
+  margin: 0,
   levelHeight: 0.32,
   blendStart: 0.55,
   blendEnd: 1.7,

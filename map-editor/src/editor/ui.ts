@@ -9,8 +9,8 @@ import { foliageUniforms, windUniforms } from '../render/foliage';
 import type { EditTool, EditorApp, OverlayMode } from './app';
 
 const SAMPLES = [
-  { file: 'fluen.json', label: 'フルーエン近郊 (flat 24×16)' },
-  { file: 'pointy-test.json', label: 'pointy-top テスト (16×12)' },
+  { file: 'fluen.json', label: 'フルーエン近郊 (flat 16×16)' },
+  { file: 'pointy-test.json', label: 'pointy-top テスト (16×16)' },
 ];
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -228,7 +228,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   fLook.add(p, 'treeDensity', 0, 2, 0.05).name('木の密度').onFinishChange(regen);
   fLook.add(p, 'treeSpacing', 0.1, 0.5, 0.01).name('木の間隔').onFinishChange(regen);
   const u = app.overlay.uniforms;
-  fLook.add(u.uGrain, 'value', 0, 0.6, 0.01).name('地表の粒状感');
+  fLook.add(u.uGrain, 'value', 0, 1, 0.01).name('地表の粒状感');
   fLook.add(windUniforms.uWind, 'value', 0, 3, 0.05).name('風の強さ');
   fLook.add(foliageUniforms.broadleafMipAlpha, 'value', 0, 2, 0.01).name('遠景の葉の補正 (広葉樹)');
   fLook.add(foliageUniforms.needleMipAlpha, 'value', 0, 2, 0.01).name('遠景の葉の補正 (針葉樹)');
