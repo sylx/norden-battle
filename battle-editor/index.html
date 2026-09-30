@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Norden Battle Editor</title>
+  </head>
+  <body>
+    <div id="viewport"></div>
+
+    <aside id="panel">
+      <header>
+        <h1>Norden Battle Editor</h1>
+        <div id="map-title" class="sub">-</div>
+      </header>
+
+      <section>
+        <h2>マップ</h2>
+        <label class="row">
+          <span>保存済み</span>
+          <select id="map-select"></select>
+        </label>
+        <div class="buttons">
+          <button id="btn-map-list">一覧を更新</button>
+          <button id="btn-open">JSON を開く</button>
+        </div>
+        <input id="file-input" type="file" accept=".json,application/json" hidden />
+        <p class="hint">map-editor で保存したマップ（assets/maps/）を読み込みます。JSON ファイルをドロップしても開けます</p>
+      </section>
+
+      <section>
+        <h2>HEX 情報</h2>
+        <dl id="hover-info" class="info"></dl>
+        <h3>選択中</h3>
+        <dl id="select-info" class="info"></dl>
+      </section>
+    </aside>
+
+    <div id="status"></div>
+    <div id="drop-hint">ここにドロップして開く</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

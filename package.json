@@ -4,11 +4,14 @@
   "type": "module",
   "workspaces": [
     "asset-runtime",
+    "map-runtime",
     "map-editor",
+    "battle-editor",
     "object-editor"
   ],
   "scripts": {
     "dev:map": "npm run dev -w map-editor",
+    "dev:battle": "npm run dev -w battle-editor",
     "dev:object": "npm run dev -w object-editor",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build": "npm run build --workspaces --if-present"

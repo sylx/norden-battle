@@ -1,17 +1,20 @@
 import GUI from 'lil-gui';
-import { MapParseError, parseMapData, stringifyMapData, type HexCell, type MapData } from '../core/mapData';
-import { generateRandomMap } from '../core/randomMap';
-import { DEFAULT_TERRAIN_PARAMS } from '../core/terrainGen';
-import { FEATURE_DEFS } from '../core/features';
-import { TERRAIN_DEFS, TERRAIN_IDS } from '../core/terrainTypes';
-import { TEAM_DEFS, TEAM_IDS, UNIT_DEFS, UNIT_TYPES, type TeamId, type UnitType } from '../core/units';
-import { foliageUniforms, windUniforms } from '../render/foliage';
+import { FEATURE_DEFS } from '@norden/map-runtime/core/features';
+import { MapParseError, parseMapData, stringifyMapData, type HexCell, type MapData } from '@norden/map-runtime/core/mapData';
+import { generateRandomMap } from '@norden/map-runtime/core/randomMap';
+import { DEFAULT_TERRAIN_PARAMS } from '@norden/map-runtime/core/terrainGen';
+import { TERRAIN_DEFS, TERRAIN_IDS } from '@norden/map-runtime/core/terrainTypes';
+import { TEAM_DEFS, TEAM_IDS, UNIT_DEFS, UNIT_TYPES, type TeamId, type UnitType } from '@norden/map-runtime/core/units';
+import {
+  isValidMapFileName,
+  listMapFiles,
+  loadMapFile,
+  mapFileNameFor,
+  saveMapFile,
+  type MapFileInfo,
+} from '@norden/map-runtime/mapFiles';
+import { foliageUniforms, windUniforms } from '@norden/map-runtime/render/foliage';
 import type { EditTool, EditorApp, OverlayMode } from './app';
-
-const SAMPLES = [
-  { file: 'fluen.json', label: 'フルーエン近郊 (flat 16×16)' },
-  { file: 'pointy-test.json', label: 'pointy-top テスト (16×16)' },
-];
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -24,48 +27,111 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
     console.error(e);
   };
 
-  const load = (data: MapData) => {
+  // --- マップ（assets/maps/ に保存） ---
+  const mapSel = $<HTMLSelectElement>('map-select');
+  const nameInput = $<HTMLInputElement>('map-name');
+  const fileNameInput = $<HTMLInputElement>('map-file');
+  let files: MapFileInfo[] = [];
+  /** assets/maps/ から開いた（または保存した）ファイル名。ランダム生成・ローカルから開いたときは null */
+  let currentFile: string | null = null;
+
+  const updateTitle = () => {
+    const data = app.map?.data;
+    $('map-title').textContent = data
+      ? `${currentFile ?? '（未保存）'} — ${data.name} — ${data.grid.orientation} ${data.grid.cols}×${data.grid.rows}`
+      : '-';
+  };
+
+  const refreshList = async () => {
+    try {
+      files = await listMapFiles();
+    } catch (e) {
+      files = [];
+      showError(e);
+    }
+    mapSel.replaceChildren(new Option('（選択）', ''));
+    for (const f of files) {
+      const label = f.error ? `${f.file}（読めません）` : `${f.name} — ${f.file} (${f.grid!.orientation} ${f.grid!.cols}×${f.grid!.rows})`;
+      const opt = new Option(label, f.file);
+      opt.disabled = !!f.error;
+      mapSel.add(opt);
+    }
+    mapSel.value = currentFile && files.some((f) => f.file === currentFile) ? currentFile : '';
+  };
+
+  /** file = assets/maps/ のファイル名（それ以外から開いたときは null。保存欄にはその候補を入れる） */
+  const load = (data: MapData, file: string | null, suggestedFile?: string) => {
     app.loadMap(data);
-    $('map-title').textContent = `${data.name} — ${data.grid.orientation} ${data.grid.cols}×${data.grid.rows}`;
+    currentFile = file;
+    mapSel.value = file && files.some((f) => f.file === file) ? file : '';
+    nameInput.value = data.name;
+    fileNameInput.value = file ?? (suggestedFile && isValidMapFileName(suggestedFile) ? suggestedFile : mapFileNameFor(data.name));
+    updateTitle();
   };
 
-  const loadJsonText = (text: string) => {
+  const loadJsonText = (text: string, fileName?: string) => {
     try {
-      load(parseMapData(JSON.parse(text)));
+      load(parseMapData(JSON.parse(text)), null, fileName);
     } catch (e) {
       showError(e);
     }
   };
 
-  const loadSample = async (file: string) => {
+  const loadStored = async (file: string) => {
     try {
-      const res = await fetch(`./maps/${file}`);
-      if (!res.ok) throw new Error(`${file}: HTTP ${res.status}`);
-      load(parseMapData(await res.json()));
+      load(await loadMapFile(file), file);
     } catch (e) {
       showError(e);
     }
   };
 
-  // --- マップ ---
-  const sampleSel = $<HTMLSelectElement>('sample-select');
-  for (const s of SAMPLES) sampleSel.add(new Option(s.label, s.file));
-  sampleSel.addEventListener('change', () => loadSample(sampleSel.value));
+  mapSel.addEventListener('change', () => {
+    if (mapSel.value) void loadStored(mapSel.value);
+  });
+  $('btn-map-list').addEventListener('click', () => void refreshList());
+
+  nameInput.addEventListener('change', () => {
+    if (!app.map) return;
+    app.map.data.name = nameInput.value.trim() || 'untitled';
+    updateTitle();
+  });
+
+  $('btn-save').addEventListener('click', async () => {
+    if (!app.map) return;
+    const file = fileNameInput.value.trim() || mapFileNameFor(app.map.data.name);
+    if (!isValidMapFileName(file)) {
+      showError(`ファイル名に使えません: ${file}（.json で終わり、/ \\ : * ? " < > | を含まない名前にしてください）`);
+      return;
+    }
+    if (file !== currentFile && files.some((f) => f.file === file) && !confirm(`${file} は既にあります。上書きしますか？`)) return;
+    app.map.data.name = nameInput.value.trim() || 'untitled';
+    try {
+      await saveMapFile(file, app.map.toJSON());
+    } catch (e) {
+      showError(e);
+      return;
+    }
+    currentFile = file;
+    fileNameInput.value = file;
+    await refreshList();
+    updateTitle();
+    setStatus(`<span class="ok">${escapeHtml(`assets/maps/${file} に保存しました`)}</span>`);
+  });
 
   const fileInput = $<HTMLInputElement>('file-input');
   $('btn-open').addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', async () => {
     const f = fileInput.files?.[0];
-    if (f) loadJsonText(await f.text());
+    if (f) loadJsonText(await f.text(), f.name);
     fileInput.value = '';
   });
-  $('btn-save').addEventListener('click', () => {
+  $('btn-download').addEventListener('click', () => {
     if (!app.map) return;
     const data = app.map.toJSON();
     const blob = new Blob([stringifyMapData(data)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${data.name.replace(/[\\/:*?"<>|\s]+/g, '_')}.json`;
+    a.download = fileNameInput.value.trim() || mapFileNameFor(data.name);
     a.click();
     URL.revokeObjectURL(a.href);
   });
@@ -81,7 +147,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
     e.preventDefault();
     document.body.classList.remove('dragging');
     const f = e.dataTransfer?.files[0];
-    if (f) loadJsonText(await f.text());
+    if (f) loadJsonText(await f.text(), f.name);
   });
 
   // --- ランダム生成 ---
@@ -95,6 +161,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
         rows: clampInt($<HTMLInputElement>('rnd-rows').value, 2, 80),
         orientation: $<HTMLSelectElement>('rnd-orient').value as 'flat' | 'pointy',
       }),
+      null,
     );
   };
   $('btn-random').addEventListener('click', randomize);
@@ -108,7 +175,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   const legend = $('legend');
   const updateLegend = () => {
     legend.innerHTML =
-      app.display.overlayMode === 'terrain'
+      app.overlayMode === 'terrain'
         ? TERRAIN_IDS.map(
             (id) =>
               `<div class="item"><span class="swatch" style="background:${TERRAIN_DEFS[id].overlay}"></span>${TERRAIN_DEFS[id].name}</div>`,
@@ -116,7 +183,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
         : '';
   };
   overlaySel.addEventListener('change', () => {
-    app.display.overlayMode = overlaySel.value as OverlayMode;
+    app.overlayMode = overlaySel.value as OverlayMode;
     app.applyDisplay();
     updateLegend();
   });
@@ -274,16 +341,16 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
 
   return {
     async loadInitial() {
+      await refreshList();
       const q = new URLSearchParams(location.search);
       const seed = q.get('seed');
-      if (seed) {
-        seedInput.value = seed;
+      const file = q.get('map') ?? files.find((f) => !f.error)?.file;
+      if (seed || !file) {
+        if (seed) seedInput.value = seed;
         randomize();
         return;
       }
-      const file = q.get('map') ?? SAMPLES[0].file;
-      sampleSel.value = file;
-      await loadSample(file);
+      await loadStored(file);
     },
   };
 }

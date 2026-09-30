@@ -95,26 +95,6 @@ label.row input {
   min-width: 0;
 }
 
-label.check {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-right: 10px;
-}
-
-.grid2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.grid2 label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  color: var(--text-dim);
-}
-
 input,
 select,
 button {
@@ -124,10 +104,6 @@ button {
   border: 1px solid #5a4630;
   border-radius: 3px;
   padding: 3px 6px;
-}
-
-input[type='checkbox'] {
-  accent-color: var(--accent);
 }
 
 .buttons {
@@ -141,18 +117,6 @@ button {
   cursor: pointer;
   background: linear-gradient(#5a3e26, #3e2a1a);
   border-color: var(--panel-border);
-}
-
-.tools {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-}
-
-button[data-tool].active {
-  background: linear-gradient(#b08a3e, #7a5a24);
-  border-color: var(--accent);
-  color: #fff8e4;
 }
 
 button:hover {
@@ -179,27 +143,6 @@ button:hover {
 
 .info dd {
   margin: 0;
-}
-
-#legend {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px 8px;
-  margin-top: 6px;
-}
-
-#legend .item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-}
-
-#legend .swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  border: 1px solid rgba(0, 0, 0, 0.4);
 }
 
 #status {
@@ -245,13 +188,3 @@ body.dragging #drop-hint {
   display: flex;
 }
 
-.lil-gui.root {
-  --background-color: var(--panel-bg);
-  --title-background-color: #4a3420;
-  --widget-color: #3a2c1e;
-  --hover-color: #4e3b28;
-  --focus-color: #5c4630;
-  --number-color: #e8c37a;
-  --string-color: #cfe08a;
-  --font-size: 12px;
-}

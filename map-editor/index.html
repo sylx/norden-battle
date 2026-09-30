@@ -17,15 +17,29 @@
       <section>
         <h2>マップ</h2>
         <label class="row">
-          <span>サンプル</span>
-          <select id="sample-select"></select>
+          <span>保存済み</span>
+          <select id="map-select"></select>
         </label>
         <div class="buttons">
+          <button id="btn-map-list">一覧を更新</button>
+        </div>
+        <label class="row">
+          <span>マップ名</span>
+          <input id="map-name" type="text" />
+        </label>
+        <label class="row">
+          <span>ファイル</span>
+          <input id="map-file" type="text" placeholder="例: fluen.json" />
+        </label>
+        <div class="buttons">
+          <button id="btn-save">保存</button>
+        </div>
+        <div class="buttons">
           <button id="btn-open">JSON を開く</button>
-          <button id="btn-save">JSON 保存</button>
+          <button id="btn-download">ダウンロード</button>
         </div>
         <input id="file-input" type="file" accept=".json,application/json" hidden />
-        <p class="hint">JSON ファイルをドロップしても開けます</p>
+        <p class="hint">保存先はリポジトリ直下の assets/maps/ です（battle-editor からも読み込めます）。「保存」はファイル名欄の名前で書き込みます。JSON ファイルをドロップしても開けます</p>
       </section>
 
       <section>

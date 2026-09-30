@@ -1,59 +1,33 @@
 import * as THREE from 'three';
-import { bridgeAxis, bridgeAxisCandidates, canPlaceFeature, FEATURE_DEFS, type FeatureId } from '../core/features';
-import { axialRound, type Offset } from '../core/hex';
-import { HexMap, type HexCell, type MapData } from '../core/mapData';
-import { buildRoadPaths, clearRoads, RoadIndex, setRoad } from '../core/roads';
-import { DEFAULT_TERRAIN_PARAMS, generateTerrain, Heightmap, placeVegetation, type TerrainData, type TerrainParams } from '../core/terrainGen';
-import { TERRAIN_DEFS } from '../core/terrainTypes';
-import { canPlaceUnit, deployDemoUnits, type TeamId, type UnitType } from '../core/units';
-import { createForest, windUniforms } from '../render/foliage';
-import { HexOverlay } from '../render/hexOverlay';
-import { buildRoadMesh } from '../render/roads';
-import { SceneContext } from '../render/scene';
-import { buildStructures } from '../render/structures';
-import { buildTerrainMeshes, disposeObject, type TerrainMeshes } from '../render/terrainMeshes';
-import { UnitLayer } from '../render/units';
+import { bridgeAxis, bridgeAxisCandidates, canPlaceFeature, FEATURE_DEFS, type FeatureId } from '@norden/map-runtime/core/features';
+import { axialRound, type Offset } from '@norden/map-runtime/core/hex';
+import { HexMap, type HexCell, type MapData } from '@norden/map-runtime/core/mapData';
+import { clearRoads, setRoad } from '@norden/map-runtime/core/roads';
+import type { TerrainParams } from '@norden/map-runtime/core/terrainGen';
+import { TERRAIN_DEFS } from '@norden/map-runtime/core/terrainTypes';
+import { canPlaceUnit, deployDemoUnits, type TeamId, type UnitType } from '@norden/map-runtime/core/units';
+import type { HexOverlay } from '@norden/map-runtime/render/hexOverlay';
+import { MapView, type GenStats, type MapDisplay } from '@norden/map-runtime/render/mapView';
+import { SceneContext } from '@norden/map-runtime/render/scene';
+import type { UnitLayer } from '@norden/map-runtime/render/units';
+
+export type { GenStats };
 
 export type OverlayMode = 'none' | 'terrain' | 'elevation';
 
 /** クリック時の動作: 選択 / 人工物の配置 / 撤去 / 森の伐採・植林 / 街道（ドラッグ） / ユニットの配置 */
 export type EditTool = 'select' | FeatureId | 'erase' | 'forest' | 'road' | 'unit';
 
-export interface DisplayOptions {
-  overlayMode: OverlayMode;
-  grid: boolean;
-  trees: boolean;
-  water: boolean;
-  structures: boolean;
-  roads: boolean;
-  units: boolean;
-}
-
-export interface GenStats {
-  ms: number;
-  vertices: number;
-  trees: number;
-}
-
 const ELEV_COLORS = [0x3f7f5f, 0x7fae4f, 0xc8c35a, 0xd89a4a, 0xb0603a, 0x8a5a4a, 0xf0f0f0].map((c) => new THREE.Color(c));
 
 export class EditorApp {
   readonly ctx: SceneContext;
-  readonly overlay = new HexOverlay();
-  readonly params: TerrainParams = { ...DEFAULT_TERRAIN_PARAMS };
-  readonly display: DisplayOptions = {
-    overlayMode: 'none',
-    grid: true,
-    trees: true,
-    water: true,
-    structures: true,
-    roads: true,
-    units: true,
-  };
+  /** マップの描画（地形・木・人工物・ユニット） */
+  readonly view: MapView;
+  /** HEX の塗り分け */
+  overlayMode: OverlayMode = 'none';
   /** ユニットツールで置くユニット */
   readonly unitBrush: { type: UnitType; team: TeamId } = { type: 'infantry', team: 'blue' };
-  readonly units = new UnitLayer();
-  map: HexMap | null = null;
   selected: Offset | null = null;
   tool: EditTool = 'select';
 
@@ -63,23 +37,20 @@ export class EditorApp {
   /** 編集操作の結果メッセージ（配置できない場合など） */
   onMessage: (msg: string) => void = () => {};
 
-  private meshes: TerrainMeshes | null = null;
-  private terrainData: TerrainData | null = null;
-  /** 木と人工物（地形を作り直さずに差し替えられる部分） */
-  private decor: { forest: THREE.Group; structures: THREE.Group; roads: THREE.Group } | null = null;
   /** 街道ツール・撤去ツールでドラッグ中の HEX の並び */
   private drag: { tool: 'road' | 'erase'; path: Offset[] } | null = null;
-  private stats: GenStats = { ms: 0, vertices: 0, trees: 0 };
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
   private pointerDirty = false;
   private downPos: { x: number; y: number } | null = null;
-  private gridOpacity = this.overlay.uniforms.uGridOpacity.value;
 
   constructor(container: HTMLElement) {
     this.ctx = new SceneContext(container);
-    this.ctx.overlay.add(this.units.group);
-    this.units.art.onChange = () => this.rebuildUnits();
+    this.view = new MapView(this.ctx);
+    this.view.onGenerated = (stats) => {
+      this.updateCellColors();
+      this.onGenerated(stats);
+    };
     const el = this.ctx.renderer.domElement;
     el.addEventListener('pointermove', (e) => {
       this.setPointer(e);
@@ -118,66 +89,42 @@ export class EditorApp {
     this.ctx.renderer.setAnimationLoop(() => this.frame());
   }
 
+  get map(): HexMap | null {
+    return this.view.map;
+  }
+
+  get params(): TerrainParams {
+    return this.view.params;
+  }
+
+  get display(): MapDisplay {
+    return this.view.display;
+  }
+
+  get overlay(): HexOverlay {
+    return this.view.overlay;
+  }
+
+  get units(): UnitLayer {
+    return this.view.units;
+  }
+
   loadMap(data: MapData, resetCamera = true): void {
-    this.map = new HexMap(data);
-    this.overlay.setLayout(this.map.layout);
-    this.ctx.parchment.uniforms.uPaperScale.value = this.map.layout.size;
-    this.selected = null;
-    this.onSelect(null);
-    this.regenerate(resetCamera);
+    this.view.setMap(new HexMap(data), resetCamera);
+    this.setSelected(null);
   }
 
   regenerate(resetCamera = false): void {
-    if (!this.map) return;
-    const data = generateTerrain(this.map, this.params);
-    if (this.meshes) {
-      this.ctx.scene.remove(this.meshes.group);
-      this.meshes.dispose();
-    }
-    this.meshes = buildTerrainMeshes(data, this.overlay);
-    this.ctx.scene.add(this.meshes.group);
-    this.terrainData = data;
-    this.stats = { ms: data.stats.ms, vertices: data.nx * data.nz, trees: 0 };
-    this.rebuildDecor();
-    this.ctx.fitTo(
-      {
-        minX: data.minX,
-        minZ: data.minZ,
-        maxX: data.minX + (data.nx - 1) * data.step,
-        maxZ: data.minZ + (data.nz - 1) * data.step,
-      },
-      resetCamera,
-    );
+    this.view.regenerate(resetCamera);
   }
 
   /** 木と人工物だけを作り直す（人工物の配置変更時） */
   rebuildDecor(): void {
-    const map = this.map;
-    const data = this.terrainData;
-    if (!map || !data) return;
-    const t0 = performance.now();
-    if (this.decor) {
-      this.ctx.scene.remove(this.decor.forest, this.decor.structures, this.decor.roads);
-      disposeObject(this.decor.forest);
-      disposeObject(this.decor.structures);
-      disposeObject(this.decor.roads);
-    }
-    const roadPaths = buildRoadPaths(map);
-    const roadIndex = new RoadIndex(roadPaths);
-    const trees = placeVegetation(map, data, this.params, roadIndex);
-    const roads = new THREE.Group();
-    const roadMesh = buildRoadMesh(roadPaths, new Heightmap(data), data.waterLevel, map.layout.size);
-    if (roadMesh) roads.add(roadMesh);
-    this.decor = { forest: createForest(trees, map.data.seed), structures: buildStructures(map, data, roadIndex), roads };
-    this.ctx.scene.add(this.decor.forest, this.decor.structures, this.decor.roads);
-    // 橋の有無で足元の高さが変わるのでユニットも置き直す
-    this.rebuildUnits();
-    this.applyDisplay();
-    this.onGenerated({ ...this.stats, ms: this.stats.ms + performance.now() - t0, trees: trees.length });
+    this.view.rebuildDecor();
   }
 
   rebuildUnits(): void {
-    if (this.map && this.terrainData) this.units.build(this.map, this.terrainData);
+    this.view.rebuildUnits();
   }
 
   /** 表示確認用に 2 軍を並べる（既存のユニットは置き換える） */
@@ -194,27 +141,18 @@ export class EditorApp {
   }
 
   applyDisplay(): void {
-    const u = this.overlay.uniforms;
-    u.uGridOpacity.value = this.display.grid ? this.gridOpacity : 0;
-    if (this.meshes) this.meshes.water.visible = this.display.water;
-    if (this.decor) {
-      this.decor.forest.visible = this.display.trees;
-      this.decor.structures.visible = this.display.structures;
-      this.decor.roads.visible = this.display.roads;
-    }
-    this.units.group.visible = this.display.units;
+    this.view.applyDisplay();
     this.updateCellColors();
   }
 
   setGridOpacity(v: number): void {
-    this.gridOpacity = v;
-    this.applyDisplay();
+    this.view.setGridOpacity(v);
   }
 
   updateCellColors(): void {
     const map = this.map;
     if (!map) return;
-    const mode = this.display.overlayMode;
+    const mode = this.overlayMode;
     const tmp = new THREE.Color();
     const dragged = new Set(this.drag?.path.map((o) => `${o.col},${o.row}`) ?? []);
     const dragColor = this.drag?.tool === 'erase' ? 0xd04a3a : 0xe0b060;
@@ -234,20 +172,9 @@ export class EditorApp {
   }
 
   private pick(): Offset | null {
-    if (!this.meshes || !this.map) return null;
     this.raycaster.setFromCamera(this.pointer, this.ctx.camera);
-    // ユニットは地形より手前に描いているので、画像に重なっていればそのユニットの HEX を指す
-    // （街道のなぞり描き中は地面だけを見る）
-    if (!this.drag && this.tool !== 'road') {
-      const unit = this.units.pick(this.raycaster);
-      if (unit) return { col: unit.col, row: unit.row };
-    }
-    const targets: THREE.Object3D[] = [this.meshes.terrain];
-    if (this.meshes.water.visible) targets.push(this.meshes.water);
-    const hit = this.raycaster.intersectObjects(targets, false)[0];
-    if (!hit) return null;
-    const o = this.map.layout.worldToOffset(hit.point.x, hit.point.z);
-    return this.map.layout.inBounds(o.col, o.row) ? o : null;
+    // 街道のなぞり描き中は地面だけを見る
+    return this.view.pick(this.raycaster, !this.drag && this.tool !== 'road');
   }
 
   private applyTool(o: Offset | null): void {
@@ -380,22 +307,21 @@ export class EditorApp {
   }
 
   private setHover(o: Offset | null): void {
-    this.overlay.uniforms.uHover.value.set(o?.col ?? -1, o?.row ?? -1);
+    this.view.setHover(o);
     this.onHover(o && this.map ? this.map.get(o.col, o.row)! : null);
   }
 
   private setSelected(o: Offset | null): void {
     this.selected = o;
-    this.overlay.uniforms.uSelected.value.set(o?.col ?? -1, o?.row ?? -1);
+    this.view.setSelected(o);
     this.onSelect(o && this.map ? this.map.get(o.col, o.row)! : null);
   }
 
   private frame(): void {
-    windUniforms.uTime.value = performance.now() / 1000;
     if (this.pointerDirty) {
       this.pointerDirty = false;
       this.setHover(this.pick());
     }
-    this.ctx.render();
+    this.view.render();
   }
 }

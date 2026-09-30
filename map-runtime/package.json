@@ -1,0 +1,29 @@
+{
+  "name": "@norden/map-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "HEX マップのデータ・地形生成（core）と three.js 描画（render）、マップ JSON の読み書き（map-editor・battle-editor で共有）",
+  "exports": {
+    "./core/*": "./src/core/*.ts",
+    "./render/structures": "./src/render/structures/index.ts",
+    "./render/*": "./src/render/*.ts",
+    "./mapFiles": "./src/mapFiles.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "simplex-noise": "^4.0.3"
+  },
+  "peerDependencies": {
+    "three": ">=0.180.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/three": "^0.186.0",
+    "three": "^0.186.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}

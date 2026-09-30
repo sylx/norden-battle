@@ -13,7 +13,7 @@ map-editor のユニット（2D スプライト）の画像を置く場所。こ
 - 軍: `blue`・`red`・`green`
 - 形式: PNG・WebP・JPEG
 
-兵種と軍の一覧は `map-editor/src/core/units.ts`。
+兵種と軍の一覧は `map-runtime/src/core/units.ts`。
 
 ## 画像の約束
 - **右向き** で描く（左向きは反転して表示する）。

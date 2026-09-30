@@ -11,13 +11,13 @@
 これにより object-editor の役割は、**建物の部品や近景用のモデルの取り込み口** に絞られる。兵士の生成・アニメーション・部隊のインスタンス描画（下の B〜D）は中止し、試作したコード（`asset-runtime/src/three/soldier/`・`crowd/`・`src/formation.ts`、object-editor の `src/lab/`）は参考として残してある。
 
 ## ユニットの表示（2D、map-editor）
-- **カメラ**（`map-editor/src/render/scene.ts`）: 回転させない。北向き、俯角は既定 50°（`DEFAULT_CAMERA_PITCH`。lil-gui の「カメラ → 俯角」で調整できる）。操作は移動とズームだけ。
-- **画像**（`map-editor/src/render/unitArt.ts`）:
+- **カメラ**（`map-runtime/src/render/scene.ts`）: 回転させない。北向き、俯角は既定 50°（`DEFAULT_CAMERA_PITCH`。lil-gui の「カメラ → 俯角」で調整できる）。操作は移動とズームだけ。
+- **画像**（`map-runtime/src/render/unitArt.ts`）:
   - 兵種ごとに 1 枚を **`assets/units/<兵種>.png`** に置く（軍ごとに変えるなら `<兵種>_<軍>.png`）。置くだけで読み込まれ、無い兵種は Canvas で描いたプレースホルダーになる。詳しくは `assets/units/README.md`。
-  - 読み込み時に、透過の無い画像は外周からつながった無地の背景を抜き、余白を切り詰め、高さ 512px までに縮める（`map-editor/src/render/spriteCleanup.ts`）。Midjourney の画像をそのまま置けるようにするため。
+  - 読み込み時に、透過の無い画像は外周からつながった無地の背景を抜き、余白を切り詰め、高さ 512px までに縮める（`map-runtime/src/render/spriteCleanup.ts`）。Midjourney の画像をそのまま置けるようにするため。
   - 描き方の約束: **カメラの俯角から見下ろした姿を右向きで**描く。**下端中央が足元**。余白は付けない（画像の縦横比がそのままスプライトの縦横比になる）。左向きは反転して表示する。
   - 軍の色は画像ではなく足元の円で示すので、画像は軍で共通にできる。
-- **描画**（`map-editor/src/render/units.ts`）:
+- **描画**（`map-runtime/src/render/units.ts`）:
   - HEX の中心にカメラ正対のスプライトを立てる。高さは hexSize の 0.95 倍。
   - 足元に軍の色の円を地面に沿わせて敷く。
   - スプライトも円も深度テストをせず、地形・木・建物より手前に描く（森や山の陰でもユニットを見失わないため）。ユニット同士は奥から順に描く。
@@ -129,7 +129,8 @@ norden-battle/
     sources/<id>/        取り込んだ元ファイルと変換した model.glb（Git LFS）
     catalog/sources/     Source の JSON
     CREDITS.md           カタログから自動生成
-    units/               ユニットの 2D 画像（map-editor が読み込む。Git LFS）
+    units/               ユニットの 2D 画像（map-editor・battle-editor が読み込む。Git LFS）
+    maps/                マップ JSON（map-editor が保存、battle-editor が読み込む）
   asset-runtime/         カタログの型（three.js 非依存）と three.js 側
     src/three/soldier/   プロシージャル兵士（中止、参考として残す）
     src/three/crowd/     部隊のインスタンス描画（中止、参考として残す）
@@ -139,7 +140,7 @@ norden-battle/
     src/import/          取り込み
     src/lab/             兵士の試作場（中止、参考として残す）
     src/editor/          状態と UI
-  map-editor/
+  map-runtime/           map-editor・battle-editor が共有するマップの core・描画
     src/core/units.ts    ユニットの定義・配置（three.js 非依存）
     src/render/units.ts  ユニットのスプライト表示
     src/render/unitArt.ts  ユニット画像の読み込みとプレースホルダー

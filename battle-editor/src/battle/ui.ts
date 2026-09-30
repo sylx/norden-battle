@@ -1,0 +1,126 @@
+import { FEATURE_DEFS } from '@norden/map-runtime/core/features';
+import { MapParseError, parseMapData, type HexCell, type MapData } from '@norden/map-runtime/core/mapData';
+import { TERRAIN_DEFS } from '@norden/map-runtime/core/terrainTypes';
+import { TEAM_DEFS, UNIT_DEFS, type UnitData } from '@norden/map-runtime/core/units';
+import { listMapFiles, loadMapFile, type MapFileInfo } from '@norden/map-runtime/mapFiles';
+import type { BattleApp } from './app';
+
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+
+export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
+  const status = $('status');
+  const setStatus = (html: string) => (status.innerHTML = html);
+  const showError = (e: unknown) => {
+    const msg = e instanceof MapParseError ? `マップの読み込みに失敗: ${e.message}` : String(e);
+    setStatus(`<span class="err">${escapeHtml(msg)}</span>`);
+    console.error(e);
+  };
+
+  // --- マップ（map-editor が assets/maps/ に保存したもの） ---
+  const mapSel = $<HTMLSelectElement>('map-select');
+  let files: MapFileInfo[] = [];
+  /** assets/maps/ から開いたファイル名。ローカルから開いたときは null */
+  let currentFile: string | null = null;
+
+  const refreshList = async () => {
+    try {
+      files = await listMapFiles();
+    } catch (e) {
+      files = [];
+      showError(e);
+    }
+    mapSel.replaceChildren(new Option('（選択）', ''));
+    for (const f of files) {
+      const label = f.error ? `${f.file}（読めません）` : `${f.name} — ${f.file} (${f.grid!.orientation} ${f.grid!.cols}×${f.grid!.rows})`;
+      const opt = new Option(label, f.file);
+      opt.disabled = !!f.error;
+      mapSel.add(opt);
+    }
+    mapSel.value = currentFile && files.some((f) => f.file === currentFile) ? currentFile : '';
+  };
+
+  const load = (data: MapData, file: string | null, label = file) => {
+    app.loadMap(data);
+    currentFile = file;
+    mapSel.value = file && files.some((f) => f.file === file) ? file : '';
+    $('map-title').textContent = `${label ?? '-'} — ${data.name} — ${data.grid.orientation} ${data.grid.cols}×${data.grid.rows}`;
+    setStatus('左ドラッグ: 移動 / ホイール: ズーム / クリック: 選択');
+  };
+
+  const loadStored = async (file: string) => {
+    try {
+      load(await loadMapFile(file), file);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  const loadJsonText = (text: string, fileName: string) => {
+    try {
+      load(parseMapData(JSON.parse(text)), null, `${fileName}（ローカル）`);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  mapSel.addEventListener('change', () => {
+    if (mapSel.value) void loadStored(mapSel.value);
+  });
+  $('btn-map-list').addEventListener('click', () => void refreshList());
+
+  const fileInput = $<HTMLInputElement>('file-input');
+  $('btn-open').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async () => {
+    const f = fileInput.files?.[0];
+    if (f) loadJsonText(await f.text(), f.name);
+    fileInput.value = '';
+  });
+
+  window.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    document.body.classList.add('dragging');
+  });
+  window.addEventListener('dragleave', (e) => {
+    if (e.relatedTarget === null) document.body.classList.remove('dragging');
+  });
+  window.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    document.body.classList.remove('dragging');
+    const f = e.dataTransfer?.files[0];
+    if (f) loadJsonText(await f.text(), f.name);
+  });
+
+  // --- HEX 情報 ---
+  const renderInfo = (el: HTMLElement, cell: HexCell | null, unit: UnitData | null) => {
+    if (!cell) {
+      el.innerHTML = '<dt>-</dt><dd></dd>';
+      return;
+    }
+    el.innerHTML = [
+      ['座標', `(${cell.col}, ${cell.row})`],
+      ['地形', TERRAIN_DEFS[cell.terrain].name],
+      ['標高', `Lv ${cell.elevation}`],
+      ['人工物', cell.feature ? FEATURE_DEFS[cell.feature].name : '-'],
+      ['ユニット', unit ? `${TEAM_DEFS[unit.team].name} ${UNIT_DEFS[unit.type].name}` : '-'],
+    ]
+      .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
+      .join('');
+  };
+  app.onHover = (c, u) => renderInfo($('hover-info'), c, u);
+  app.onSelect = (c, u) => renderInfo($('select-info'), c, u);
+  renderInfo($('hover-info'), null, null);
+  renderInfo($('select-info'), null, null);
+
+  return {
+    async loadInitial() {
+      await refreshList();
+      const file = new URLSearchParams(location.search).get('map') ?? files.find((f) => !f.error)?.file;
+      if (file) await loadStored(file);
+      else setStatus('<span class="err">assets/maps/ にマップがありません。map-editor で保存してください</span>');
+    },
+  };
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
