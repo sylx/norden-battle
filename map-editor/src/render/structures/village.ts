@@ -24,10 +24,10 @@ import {
 export type WallStyle = 'plaster' | 'stone' | 'wood';
 
 /** 瓦（赤茶）・スレート・藁葺き */
-export const ROOF_TILE = [0x9a4a2e, 0x8a3f28, 0xa5573a, 0x7a3a26];
-export const ROOF_SLATE = 0x535a66;
-export const ROOF_THATCH = 0x9c8452;
-const PLASTER = [0xe8dcc4, 0xddd2b8, 0xefe6d2, 0xd8c8a8];
+export const ROOF_TILE = [0x8a5844, 0x7c4f3e, 0x93644f, 0x6f4a3b];
+export const ROOF_SLATE = 0x5a5d62;
+export const ROOF_THATCH = 0x958661;
+const PLASTER = [0xd8cfbb, 0xcfc6b0, 0xddd5c3, 0xcabda2];
 const STONE = 0xa39a8a;
 const WOOD_WALL = 0x6e5238;
 const TIMBER = 0x4a3526;
@@ -155,7 +155,7 @@ function fencedPlot(ctx: BuildCtx, f: Frame, x0: number, x1: number, z0: number,
 
 function haystack(ctx: BuildCtx, x: number, z: number, rng: Rng): void {
   const g = ctx.hm.heightAt(x, z);
-  const c = vary(0xc8a850, rng);
+  const c = vary(0xb8a26a, rng);
   const r = 0.018 + rng() * 0.008;
   cylinder(ctx.b, x, z, g - 0.01, g + r * 0.9, r, r, 8, c, PAT.None);
   cone(ctx.b, x, z, g + r * 0.9, r * 1.4, r * 1.05, 8, c.clone().multiplyScalar(0.92), PAT.None);

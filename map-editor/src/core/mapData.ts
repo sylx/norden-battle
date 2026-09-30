@@ -2,6 +2,7 @@ import { HexLayout, type GridSpec } from './hex';
 import { isFeatureId, type FeatureId } from './features';
 import { normalizeRoads } from './roads';
 import { isTerrainId, type TerrainId } from './terrainTypes';
+import { isTeamId, isUnitType, type UnitData } from './units';
 
 /**
  * マップ JSON のフォーマット (version 1)
@@ -11,7 +12,8 @@ import { isTerrainId, type TerrainId } from './terrainTypes';
  *   "name": "フルーエン近郊",
  *   "seed": 12345,                       // 地形ノイズのシード
  *   "grid": { "orientation": "flat", "cols": 24, "rows": 16, "hexSize": 1 },
- *   "cells": [ { "col": 0, "row": 0, "terrain": "plains", "elevation": 1, "feature": "village" }, ... ]
+ *   "cells": [ { "col": 0, "row": 0, "terrain": "plains", "elevation": 1, "feature": "village" }, ... ],
+ *   "units": [ { "col": 3, "row": 5, "type": "infantry", "team": "blue", "facing": "right" }, ... ]
  * }
  *
  * - elevation は整数の標高レベル（0 = 水面の高さ）。
@@ -19,6 +21,7 @@ import { isTerrainId, type TerrainId } from './terrainTypes';
  * - featureDir は橋の向き（0..5 の方向。0 と 3 は同じ軸）。省略時は自動。
  * - roads は街道がつながっている方向（0..5）の配列。省略可。隣の HEX 側の逆方向は読み込み時に補う。
  * - cells に含まれない HEX は plains / elevation 0 として扱う。
+ * - units はユニットの配置（1 HEX に 1 部隊）。省略可。facing は画像の左右の向き（省略時 right）。
  */
 export interface HexCell {
   col: number;
@@ -36,6 +39,7 @@ export interface MapData {
   seed: number;
   grid: GridSpec;
   cells: HexCell[];
+  units?: UnitData[];
 }
 
 export class MapParseError extends Error {}
@@ -103,12 +107,35 @@ export function parseMapData(json: unknown): MapData {
     cells.push(out);
   });
 
+  const units: UnitData[] = [];
+  if (o.units !== undefined && !Array.isArray(o.units)) fail('units が配列ではありません');
+  const occupied = new Set<string>();
+  ((o.units as unknown[] | undefined) ?? []).forEach((u, i) => {
+    const unit = u as Record<string, unknown>;
+    const col = unit?.col;
+    const row = unit?.row;
+    if (!Number.isInteger(col) || !Number.isInteger(row)) fail(`units[${i}]: col/row が不正です`);
+    if ((col as number) < 0 || (row as number) < 0 || (col as number) >= grid.cols || (row as number) >= grid.rows)
+      fail(`units[${i}]: (${String(col)}, ${String(row)}) はマップ範囲外です`);
+    const key = `${String(col)},${String(row)}`;
+    if (occupied.has(key)) fail(`units[${i}]: (${key}) には既にユニットがいます`);
+    occupied.add(key);
+    if (!isUnitType(unit.type)) fail(`units[${i}]: 未知の type "${String(unit.type)}"`);
+    if (!isTeamId(unit.team)) fail(`units[${i}]: 未知の team "${String(unit.team)}"`);
+    if (unit.facing !== undefined && unit.facing !== 'left' && unit.facing !== 'right')
+      fail(`units[${i}]: facing は "left" か "right"`);
+    const out: UnitData = { col: col as number, row: row as number, type: unit.type as UnitData['type'], team: unit.team as UnitData['team'] };
+    if (unit.facing) out.facing = unit.facing as UnitData['facing'];
+    units.push(out);
+  });
+
   return {
     version: 1,
     name: typeof o.name === 'string' ? o.name : 'untitled',
     seed: typeof o.seed === 'number' ? o.seed : 1,
     grid,
     cells,
+    ...(units.length > 0 ? { units } : {}),
   };
 }
 
@@ -117,6 +144,8 @@ export class HexMap {
   readonly data: MapData;
   readonly layout: HexLayout;
   private readonly cells: HexCell[];
+  /** HEX のインデックス → ユニット */
+  private readonly units = new Map<number, UnitData>();
 
   constructor(data: MapData) {
     this.data = data;
@@ -130,6 +159,7 @@ export class HexMap {
     }
     for (const c of data.cells) this.cells[c.row * cols + c.col] = { ...c, ...(c.roads ? { roads: [...c.roads] } : {}) };
     normalizeRoads(this);
+    for (const u of data.units ?? []) this.units.set(u.row * cols + u.col, { ...u });
   }
 
   get(col: number, row: number): HexCell | undefined {
@@ -163,15 +193,50 @@ export class HexMap {
     return this.cells;
   }
 
+  unitAt(col: number, row: number): UnitData | undefined {
+    if (!this.layout.inBounds(col, row)) return undefined;
+    return this.units.get(row * this.layout.cols + col);
+  }
+
+  /** ユニットを置く（同じ HEX のユニットは置き換える） */
+  setUnit(unit: UnitData): void {
+    if (!this.layout.inBounds(unit.col, unit.row)) return;
+    this.units.set(unit.row * this.layout.cols + unit.col, { ...unit });
+  }
+
+  removeUnit(col: number, row: number): void {
+    this.units.delete(row * this.layout.cols + col);
+  }
+
+  /** 全ユニットを入れ替える */
+  replaceUnits(units: readonly UnitData[]): void {
+    this.units.clear();
+    for (const u of units) this.setUnit(u);
+  }
+
+  allUnits(): UnitData[] {
+    return [...this.units.values()];
+  }
+
   toJSON(): MapData {
-    return { ...this.data, cells: this.cells.map((c) => ({ ...c, ...(c.roads ? { roads: [...c.roads] } : {}) })) };
+    const { units: _, ...rest } = this.data;
+    // HEX の並び順（row → col）で書き出す
+    const units = [...this.units.entries()].sort((a, b) => a[0] - b[0]).map(([, u]) => ({ ...u }));
+    return {
+      ...rest,
+      cells: this.cells.map((c) => ({ ...c, ...(c.roads ? { roads: [...c.roads] } : {}) })),
+      ...(units.length > 0 ? { units } : {}),
+    };
   }
 }
 
 /** 1 セル 1 行の読みやすい形で JSON 文字列化する */
 export function stringifyMapData(data: MapData): string {
-  const { cells, ...rest } = data;
+  const { cells, units, ...rest } = data;
   const head = JSON.stringify(rest, null, 2).replace(/\n}$/, '');
-  const body = cells.map((c) => `    ${JSON.stringify(c)}`).join(',\n');
-  return `${head},\n  "cells": [\n${body}\n  ]\n}\n`;
+  const list = (key: string, items: readonly object[]) =>
+    `  "${key}": [\n${items.map((c) => `    ${JSON.stringify(c)}`).join(',\n')}\n  ]`;
+  const parts = [list('cells', cells)];
+  if (units && units.length > 0) parts.push(list('units', units));
+  return `${head},\n${parts.join(',\n')}\n}\n`;
 }

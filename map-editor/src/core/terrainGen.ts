@@ -224,10 +224,10 @@ const CLEARANCE_OFFSETS = [
   [0, -1],
 ];
 
-const ROCK: RGB = [0.46, 0.43, 0.39];
-const SNOW: RGB = [0.93, 0.94, 0.96];
-const SHORE: RGB = [0.56, 0.52, 0.38];
-const BED: RGB = [0.2, 0.27, 0.24];
+const ROCK: RGB = [0.47, 0.45, 0.41];
+const SNOW: RGB = [0.88, 0.87, 0.84];
+const SHORE: RGB = [0.56, 0.53, 0.43];
+const BED: RGB = [0.24, 0.27, 0.25];
 
 function mix3(out: number[], c: RGB, t: number): void {
   out[0] = lerp(out[0], c[0], t);

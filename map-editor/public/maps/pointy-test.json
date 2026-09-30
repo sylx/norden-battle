@@ -201,5 +201,15 @@
     {"col":13,"row":11,"terrain":"forest","elevation":2},
     {"col":14,"row":11,"terrain":"plains","elevation":2},
     {"col":15,"row":11,"terrain":"forest","elevation":2}
+  ],
+  "units": [
+    {"col":2,"row":4,"type":"cavalry","team":"blue","facing":"right"},
+    {"col":1,"row":5,"type":"infantry","team":"blue","facing":"right"},
+    {"col":13,"row":5,"type":"infantry","team":"red","facing":"left"},
+    {"col":14,"row":5,"type":"archer","team":"red","facing":"left"},
+    {"col":1,"row":6,"type":"archer","team":"blue","facing":"right"},
+    {"col":2,"row":6,"type":"infantry","team":"blue","facing":"right"},
+    {"col":13,"row":6,"type":"infantry","team":"red","facing":"left"},
+    {"col":14,"row":6,"type":"cavalry","team":"red","facing":"left"}
   ]
 }

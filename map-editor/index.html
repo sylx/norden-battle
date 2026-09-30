@@ -44,6 +44,26 @@
       </section>
 
       <section>
+        <h2>ユニット</h2>
+        <div class="tools">
+          <button data-tool="unit">配置</button>
+        </div>
+        <label class="row">
+          <span>兵種</span>
+          <select id="unit-type"></select>
+        </label>
+        <label class="row">
+          <span>軍</span>
+          <select id="unit-team"></select>
+        </label>
+        <div class="buttons">
+          <button id="btn-units-demo">両軍を並べる</button>
+          <button id="btn-units-clear">全て撤去</button>
+        </div>
+        <p class="hint">「配置」で HEX をクリックすると置けます。同じユニットをもう一度クリックで左右の向きを反転、「撤去」ツールで取り除けます</p>
+      </section>
+
+      <section>
         <h2>ランダム生成</h2>
         <div class="grid2">
           <label>シード <input id="rnd-seed" type="number" value="1" /></label>
@@ -77,6 +97,7 @@
         <label class="check"><input id="chk-water" type="checkbox" checked /> 水面</label>
         <label class="check"><input id="chk-structures" type="checkbox" checked /> 人工物</label>
         <label class="check"><input id="chk-roads" type="checkbox" checked /> 街道</label>
+        <label class="check"><input id="chk-units" type="checkbox" checked /> ユニット</label>
         <div id="legend"></div>
       </section>
 

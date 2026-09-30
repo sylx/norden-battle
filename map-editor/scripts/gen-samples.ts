@@ -4,8 +4,9 @@
  */
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { stringifyMapData } from '../src/core/mapData';
+import { HexMap, stringifyMapData } from '../src/core/mapData';
 import { generateRandomMap } from '../src/core/randomMap';
+import { deployDemoUnits } from '../src/core/units';
 
 const outDir = fileURLToPath(new URL('../public/maps/', import.meta.url));
 
@@ -15,6 +16,8 @@ const samples = [
 ];
 
 for (const s of samples) {
-  writeFileSync(outDir + s.file, stringifyMapData(generateRandomMap(s.opt)));
+  const map = new HexMap(generateRandomMap(s.opt));
+  map.replaceUnits(deployDemoUnits(map));
+  writeFileSync(outDir + s.file, stringifyMapData(map.toJSON()));
   console.log(`wrote ${s.file}`);
 }

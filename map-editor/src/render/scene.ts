@@ -1,9 +1,20 @@
 import * as THREE from 'three';
 import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
+import { ParchmentEffect } from './parchment';
+
+/**
+ * カメラの俯角（水平からの角度, 度）の初期値。
+ * ユニットは 2D 画像で描くので、カメラは回転させずこの角度・北向きに固定する。
+ * 画像はこの角度から見下ろした姿で描く。
+ */
+export const DEFAULT_CAMERA_PITCH = 50;
 
 export class SceneContext {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
+  /** ポストプロセスをかけずに最後に重ねるシーン（ユニット） */
+  readonly overlay = new THREE.Scene();
+  readonly parchment = new ParchmentEffect();
   readonly camera: THREE.PerspectiveCamera;
   readonly controls: MapControls;
   readonly sun: THREE.DirectionalLight;
@@ -19,7 +30,8 @@ export class SceneContext {
     this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
 
-    const sky = new THREE.Color(0xaec6cf);
+    // 空・遠景は霞んだ紙の色に溶かす
+    const sky = new THREE.Color(0xc9bea3);
     this.scene.background = sky;
     this.scene.fog = new THREE.Fog(sky, 60, 140);
 
@@ -27,13 +39,17 @@ export class SceneContext {
     this.controls = new MapControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.12;
-    this.controls.maxPolarAngle = 1.25;
+    // 回転はさせない（パンとズームだけ）
+    this.controls.enableRotate = false;
+    this.controls.minAzimuthAngle = 0;
+    this.controls.maxAzimuthAngle = 0;
+    this.setPitch(DEFAULT_CAMERA_PITCH);
     this.controls.minDistance = 3;
     this.controls.maxDistance = 90;
     this.controls.screenSpacePanning = false;
 
-    this.scene.add(new THREE.HemisphereLight(0xdfeeff, 0x4a4030, 1.1));
-    this.sun = new THREE.DirectionalLight(0xfff1d6, 2.6);
+    this.scene.add(new THREE.HemisphereLight(0xe8e4d8, 0x4a4030, 1.2));
+    this.sun = new THREE.DirectionalLight(0xfff1d6, 2.3);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(4096, 4096);
     this.sun.shadow.bias = -0.0004;
@@ -44,10 +60,24 @@ export class SceneContext {
     this.resize();
   }
 
+  /** カメラの俯角（度）を変える。注視点と距離は保つ */
+  setPitch(deg: number): void {
+    const polar = THREE.MathUtils.degToRad(90 - deg);
+    this.controls.minPolarAngle = polar;
+    this.controls.maxPolarAngle = polar;
+    this.controls.update();
+  }
+
+  get pitch(): number {
+    return 90 - THREE.MathUtils.radToDeg(this.controls.maxPolarAngle);
+  }
+
   resize(): void {
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
     this.renderer.setSize(w, h);
+    const buf = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    this.parchment.setSize(buf.x, buf.y);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -77,14 +107,20 @@ export class SceneContext {
 
     if (resetCamera) {
       this.controls.target.set(cx, 0, cz);
-      const dist = Math.max(w, d) * 0.95;
-      this.camera.position.set(cx, dist * 0.8, cz + dist * 0.62);
+      const dist = Math.max(w, d) * 0.96;
+      const pitch = THREE.MathUtils.degToRad(this.pitch);
+      this.camera.position.set(cx, dist * Math.sin(pitch), cz + dist * Math.cos(pitch));
       this.controls.update();
     }
   }
 
   render(): void {
     this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+    const r = this.renderer;
+    if (this.parchment.enabled) this.parchment.render(r, this.scene, this.camera);
+    else r.render(this.scene, this.camera);
+    r.autoClear = false;
+    r.render(this.overlay, this.camera);
+    r.autoClear = true;
   }
 }

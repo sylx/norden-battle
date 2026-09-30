@@ -93,8 +93,8 @@ function buildWater(d: TerrainData, overlay: HexOverlay): THREE.Mesh {
   g.rotateX(-Math.PI / 2);
   g.translate(d.minX + w / 2, d.waterLevel, d.minZ + h / 2);
   const m = new THREE.MeshStandardMaterial({
-    color: 0x2c6f96,
-    roughness: 0.18,
+    color: 0x4d6770,
+    roughness: 0.3,
     metalness: 0.05,
     transparent: true,
     opacity: 0.72,
