@@ -1,0 +1,63 @@
+# battle-editor をビルドして GitHub Pages に公開する。
+# 初回だけ、リポジトリの Settings → Pages → Build and deployment の Source を「GitHub Actions」にしておくこと。
+name: battle-editor → GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - battle-editor/**
+      - map-runtime/**
+      - assets/maps/**
+      - assets/units/**
+      - package.json
+      - package-lock.json
+      - .github/workflows/battle-editor-pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 公開は 1 本ずつ。新しい push が来ても実行中の公開は止めない
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # LFS のうちユニット画像だけを取る（3D 素材の元ファイルは不要なので落とさない）
+      - name: Pull unit images (Git LFS)
+        run: git lfs pull --include="assets/units/**"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # base: './' でビルドするので、https://<user>.github.io/<repo>/ の下でもそのまま動く。
+      # マップは assets/maps/ の内容が dist/maps/ に同梱される（Pages 上では読み込みのみ）
+      - run: npm run build -w battle-editor
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: battle-editor/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

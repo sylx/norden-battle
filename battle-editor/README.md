@@ -13,6 +13,13 @@ npm run build
 
 URL パラメータ: `?map=pointy-test.json`（assets/maps/ のファイルを開く）
 
+## GitHub Pages
+
+main に push すると [.github/workflows/battle-editor-pages.yml](../.github/workflows/battle-editor-pages.yml) がビルドして
+GitHub Pages に公開する（battle-editor・map-runtime・assets/maps・assets/units などに変更があったときだけ。Actions の画面から手動でも実行できる）。
+初回だけリポジトリの Settings → Pages → Source を「GitHub Actions」にしておく。
+Pages 上のマップはビルド時点の assets/maps/ の内容。
+
 ## マップ
 
 map-editor で保存したマップ（リポジトリ直下の [assets/maps/](../assets/maps/)）を「保存済み」から選んで読み込む。
