@@ -13,7 +13,7 @@ import { isTeamId, isUnitType, type UnitData } from './units';
  *   "seed": 12345,                       // 地形ノイズのシード
  *   "grid": { "orientation": "flat", "cols": 24, "rows": 16, "hexSize": 1 },
  *   "cells": [ { "col": 0, "row": 0, "terrain": "plains", "elevation": 1, "feature": "village" }, ... ],
- *   "units": [ { "col": 3, "row": 5, "type": "infantry", "team": "blue", "facing": "right" }, ... ]
+ *   "units": [ { "col": 3, "row": 5, "type": "infantry", "team": "blue" }, ... ]
  * }
  *
  * - elevation は整数の標高レベル（0 = 水面の高さ）。
@@ -21,7 +21,8 @@ import { isTeamId, isUnitType, type UnitData } from './units';
  * - featureDir は橋の向き（0..5 の方向。0 と 3 は同じ軸）。省略時は自動。
  * - roads は街道がつながっている方向（0..5）の配列。省略可。隣の HEX 側の逆方向は読み込み時に補う。
  * - cells に含まれない HEX は plains / elevation 0 として扱う。
- * - units はユニットの配置（1 HEX に 1 部隊）。省略可。facing は画像の左右の向き（省略時 right）。
+ * - units はユニットの配置（1 HEX に 1 部隊）。省略可。
+ *   画像の左右の向きは保存せず、配置から決める（以前の形式の facing は読み込み時に無視する）。
  */
 export interface HexCell {
   col: number;
@@ -122,11 +123,7 @@ export function parseMapData(json: unknown): MapData {
     occupied.add(key);
     if (!isUnitType(unit.type)) fail(`units[${i}]: 未知の type "${String(unit.type)}"`);
     if (!isTeamId(unit.team)) fail(`units[${i}]: 未知の team "${String(unit.team)}"`);
-    if (unit.facing !== undefined && unit.facing !== 'left' && unit.facing !== 'right')
-      fail(`units[${i}]: facing は "left" か "right"`);
-    const out: UnitData = { col: col as number, row: row as number, type: unit.type as UnitData['type'], team: unit.team as UnitData['team'] };
-    if (unit.facing) out.facing = unit.facing as UnitData['facing'];
-    units.push(out);
+    units.push({ col: col as number, row: row as number, type: unit.type as UnitData['type'], team: unit.team as UnitData['team'] });
   });
 
   return {

@@ -312,22 +312,21 @@ export class EditorApp {
     this.setSelected(o);
   }
 
-  /** 空き HEX には置き、同じユニットがいれば向きを反転、違うユニットなら置き換える */
+  /** 空き HEX には置き、違うユニットがいれば置き換える（向きは配置から自動で決まる） */
   private placeUnit(o: Offset): void {
     const map = this.map!;
     const cell = map.get(o.col, o.row)!;
     const { type, team } = this.unitBrush;
     const cur = map.unitAt(o.col, o.row);
     if (cur && cur.type === type && cur.team === team) {
-      map.setUnit({ ...cur, facing: cur.facing === 'left' ? 'right' : 'left' });
-    } else if (!canPlaceUnit(cell)) {
+      this.setSelected(o);
+      return;
+    }
+    if (!canPlaceUnit(cell)) {
       this.onMessage('ユニットは陸か橋の上にしか置けません');
       return;
-    } else {
-      // 新しく置くときはマップ中央を向かせる
-      const facing = cur?.facing ?? (o.col < map.layout.cols / 2 ? 'right' : 'left');
-      map.setUnit({ col: o.col, row: o.row, type, team, facing });
     }
+    map.setUnit({ col: o.col, row: o.row, type, team });
     this.rebuildUnits();
     this.setSelected(o);
   }

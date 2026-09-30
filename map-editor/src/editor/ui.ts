@@ -185,7 +185,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
       [
         'ユニット',
         unit
-          ? `${TEAM_DEFS[unit.team].name} ${UNIT_DEFS[unit.type].name}（${unit.facing === 'left' ? '左' : '右'}向き）`
+          ? `${TEAM_DEFS[unit.team].name} ${UNIT_DEFS[unit.type].name}`
           : '-',
       ],
     ]

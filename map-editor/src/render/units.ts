@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import type { HexMap } from '../core/mapData';
 import { Heightmap, type TerrainData } from '../core/terrainGen';
-import type { UnitData } from '../core/units';
+import { unitFacings, type UnitData } from '../core/units';
 import { UnitArt, type UnitImage } from './unitArt';
 
 /** スプライトの高さ（hexSize 比） */
@@ -60,6 +60,7 @@ export class UnitLayer {
     this.clear();
     const hm = new Heightmap(data);
     const s = map.layout.size;
+    const facings = unitFacings(map);
     for (const unit of map.allUnits()) {
       const cell = map.get(unit.col, unit.row);
       if (!cell) continue;
@@ -76,7 +77,7 @@ export class UnitLayer {
       shadow.renderOrder = SHADOW_ORDER;
       this.group.add(shadow);
 
-      const image = this.art.get(unit.type, unit.team, unit.facing ?? 'right');
+      const image = this.art.get(unit.type, unit.team, facings.get(unit) ?? 'right');
       const sprite = new THREE.Sprite(
         new THREE.SpriteMaterial({
           map: image.texture,
