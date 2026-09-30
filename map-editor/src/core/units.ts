@@ -25,14 +25,13 @@ export interface UnitData {
   facing?: Facing;
 }
 
+/**
+ * 兵種。画像はリポジトリ直下の assets/units/<id>.png（無ければプレースホルダー）。
+ * 置き方は assets/units/README.md を参照。
+ */
 export interface UnitDef {
   id: UnitType;
   name: string;
-  /**
-   * 画像ファイル（public/ からの相対パス。例: 'units/infantry.png'）。省略時はプレースホルダーを描く。
-   * 右向きの姿を、下端中央が足元になるよう余白なしで描いておく。軍の色は足元の円で示す。
-   */
-  image?: string;
 }
 
 export const UNIT_DEFS: Record<UnitType, UnitDef> = {

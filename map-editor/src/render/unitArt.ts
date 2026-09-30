@@ -1,14 +1,23 @@
 /**
- * ユニット画像の用意。UNIT_DEFS に画像が指定されていればそれを読み込み、
+ * ユニット画像の用意。リポジトリ直下の assets/units/ に画像があればそれを読み込み、
  * 無ければ（または読み込みに失敗したら）Canvas でプレースホルダーを描く。
  *
- * プレースホルダーは 100×100 の座標系で右向きに描き、下端（y = 100）が足元。
- * 軍ごとに服の色を変える。実画像は軍で共通（軍の色は足元の円で示す）。
+ * - ファイル名は兵種 ID（infantry.png など）。軍ごとに変えたいときは infantry_red.png のように軍 ID を付ける。
+ * - 読み込んだ画像は spriteCleanup で背景を抜き、余白を切り詰めてから使う。
+ * - プレースホルダーは 100×100 の座標系で右向きに描き、下端（y = 100）が足元。軍ごとに服の色を変える。
  */
 import * as THREE from 'three';
-import { TEAM_DEFS, UNIT_DEFS, type Facing, type TeamId, type UnitType } from '../core/units';
+import { TEAM_DEFS, type Facing, type TeamId, type UnitType } from '../core/units';
+import { cleanupSprite } from './spriteCleanup';
 
 const CANVAS_SIZE = 256;
+
+/** assets/units/ の画像。ファイル名（拡張子なし）→ URL */
+const IMAGE_URLS = new Map(
+  Object.entries(
+    import.meta.glob<string>('../../../assets/units/*.{png,webp,jpg,jpeg}', { eager: true, query: '?url', import: 'default' }),
+  ).map(([path, url]) => [path.slice(path.lastIndexOf('/') + 1).replace(/\.\w+$/, ''), url]),
+);
 
 export interface UnitImage {
   texture: THREE.Texture;
@@ -24,15 +33,16 @@ export class UnitArt {
   onChange: () => void = () => {};
 
   private readonly cache = new Map<string, UnitImage>();
-  private readonly loaded = new Map<UnitType, HTMLImageElement | 'loading' | 'failed'>();
+  /** URL → 整えた画像 */
+  private readonly loaded = new Map<string, HTMLCanvasElement | 'loading' | 'failed'>();
 
   get(type: UnitType, team: TeamId, facing: Facing): UnitImage {
-    const img = this.image(type);
-    const key = `${type}:${img ? '' : team}:${facing}`;
+    const url = IMAGE_URLS.get(`${type}_${team}`) ?? IMAGE_URLS.get(type);
+    const canvas = url ? this.image(url, type) : null;
+    const key = canvas ? `${url}:${facing}` : `${type}:${team}:${facing}`;
     let out = this.cache.get(key);
     if (!out) {
-      const canvas = img ? imageToCanvas(img) : drawPlaceholder(type, TEAM_DEFS[team].color);
-      out = makeUnitImage(canvas, facing === 'left');
+      out = makeUnitImage(canvas ?? drawPlaceholder(type, TEAM_DEFS[team].color), facing === 'left');
       this.cache.set(key, out);
     }
     return out;
@@ -43,16 +53,14 @@ export class UnitArt {
     this.cache.clear();
   }
 
-  private image(type: UnitType): HTMLImageElement | null {
-    const src = UNIT_DEFS[type].image;
-    if (!src) return null;
-    const state = this.loaded.get(type);
-    if (state instanceof HTMLImageElement) return state;
+  private image(url: string, type: UnitType): HTMLCanvasElement | null {
+    const state = this.loaded.get(url);
+    if (state instanceof HTMLCanvasElement) return state;
     if (state) return null;
-    this.loaded.set(type, 'loading');
+    this.loaded.set(url, 'loading');
     const img = new Image();
     img.onload = () => {
-      this.loaded.set(type, img);
+      this.loaded.set(url, cleanupSprite(img));
       // プレースホルダーを捨てて描き直してもらう
       for (const [k, v] of this.cache) {
         if (!k.startsWith(`${type}:`)) continue;
@@ -62,20 +70,12 @@ export class UnitArt {
       this.onChange();
     };
     img.onerror = () => {
-      this.loaded.set(type, 'failed');
-      console.warn(`ユニット画像を読み込めません: ${src}（プレースホルダーで表示します）`);
+      this.loaded.set(url, 'failed');
+      console.warn(`ユニット画像を読み込めません: ${url}（プレースホルダーで表示します）`);
     };
-    img.src = src;
+    img.src = url;
     return null;
   }
-}
-
-function imageToCanvas(img: HTMLImageElement): HTMLCanvasElement {
-  const canvas = document.createElement('canvas');
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
-  canvas.getContext('2d')!.drawImage(img, 0, 0);
-  return canvas;
 }
 
 function makeUnitImage(canvas: HTMLCanvasElement, flip: boolean): UnitImage {

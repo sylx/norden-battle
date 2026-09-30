@@ -1,2 +1,7 @@
 # 取り込んだ 3D 素材の元ファイル・変換済み GLB は Git LFS で管理する
 assets/sources/** filter=lfs diff=lfs merge=lfs -text
+# ユニット画像（2D スプライト）
+assets/units/*.png filter=lfs diff=lfs merge=lfs -text
+assets/units/*.webp filter=lfs diff=lfs merge=lfs -text
+assets/units/*.jpg filter=lfs diff=lfs merge=lfs -text
+assets/units/*.jpeg filter=lfs diff=lfs merge=lfs -text
