@@ -9,6 +9,9 @@ import { ParchmentEffect } from './parchment';
  */
 export const DEFAULT_CAMERA_PITCH = 50;
 
+/** 描画解像度（devicePixelRatio）の初期値。高 DPI の画面でも 2 倍までにする */
+export const DEFAULT_PIXEL_RATIO = Math.min(window.devicePixelRatio, 2);
+
 export class SceneContext {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -18,14 +21,21 @@ export class SceneContext {
   readonly camera: THREE.PerspectiveCamera;
   readonly controls: MapControls;
   readonly sun: THREE.DirectionalLight;
+  /** 直近 1 秒の平均フレームレート */
+  fps = 0;
   private readonly container: HTMLElement;
+  private fpsFrames = 0;
+  private fpsStart = performance.now();
 
   constructor(container: HTMLElement) {
     this.container = container;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(DEFAULT_PIXEL_RATIO);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // 影を落とすもの（地形・木・建物）は動かないので、シャドウマップは変更があったときだけ描き直す。
+    // 木の風揺れは影には反映されなくなるが、揺れ幅が小さいので見た目はほぼ変わらない
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
@@ -68,6 +78,31 @@ export class SceneContext {
     this.controls.update();
   }
 
+  /** 影を落とすもの・太陽が変わったら呼ぶ（次の描画でシャドウマップを描き直す） */
+  invalidateShadows(): void {
+    this.renderer.shadowMap.needsUpdate = true;
+  }
+
+  /** false にするとシャドウマップを毎フレーム描き直す（木の影も風で揺れる） */
+  get staticShadows(): boolean {
+    return !this.renderer.shadowMap.autoUpdate;
+  }
+
+  set staticShadows(v: boolean) {
+    this.renderer.shadowMap.autoUpdate = !v;
+    this.invalidateShadows();
+  }
+
+  /** 描画解像度（CSS ピクセルあたりの描画ピクセル数）。下げると重い画面での負荷が大きく減る */
+  get pixelRatio(): number {
+    return this.renderer.getPixelRatio();
+  }
+
+  set pixelRatio(v: number) {
+    this.renderer.setPixelRatio(v);
+    this.resize();
+  }
+
   get pitch(): number {
     return 90 - THREE.MathUtils.radToDeg(this.controls.maxPolarAngle);
   }
@@ -100,6 +135,7 @@ export class SceneContext {
     cam.near = 0.1;
     cam.far = r * 4;
     cam.updateProjectionMatrix();
+    this.invalidateShadows();
 
     const fog = this.scene.fog as THREE.Fog;
     fog.near = r * 2.2;
@@ -115,6 +151,13 @@ export class SceneContext {
   }
 
   render(): void {
+    this.fpsFrames++;
+    const now = performance.now();
+    if (now - this.fpsStart >= 1000) {
+      this.fps = (this.fpsFrames * 1000) / (now - this.fpsStart);
+      this.fpsFrames = 0;
+      this.fpsStart = now;
+    }
     this.controls.update();
     const r = this.renderer;
     if (this.parchment.enabled) this.parchment.render(r, this.scene, this.camera);

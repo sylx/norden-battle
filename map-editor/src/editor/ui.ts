@@ -326,6 +326,14 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   const fQuality = gui.addFolder('品質');
   fQuality.add(p, 'resolution', 2, 24, 1).name('頂点密度 (/単位)').onFinishChange(regen);
   fQuality.add(p, 'margin', 0, 6, 1).name('外周マージン (HEX)').onFinishChange(regen);
+  const fPerf = gui.addFolder('描画負荷');
+  fPerf.add(app.ctx, 'fps').name('FPS').decimals(1).disable().listen();
+  fPerf.add(app.ctx, 'pixelRatio', 0.5, 2, 0.25).name('描画解像度');
+  fPerf.add(app.view, 'foliagePrepass').name('森の深度プリパス');
+  fPerf
+    .add({ dynamic: !app.ctx.staticShadows }, 'dynamic')
+    .name('影を毎フレーム更新')
+    .onChange((v: boolean) => (app.ctx.staticShadows = !v));
   gui
     .add(
       {

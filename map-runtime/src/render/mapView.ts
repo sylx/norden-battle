@@ -8,7 +8,7 @@ import type { Offset } from '../core/hex';
 import type { HexMap } from '../core/mapData';
 import { buildRoadPaths, RoadIndex } from '../core/roads';
 import { DEFAULT_TERRAIN_PARAMS, generateTerrain, Heightmap, placeVegetation, type TerrainData, type TerrainParams } from '../core/terrainGen';
-import { createForest, windUniforms } from './foliage';
+import { createForest, setFoliagePrepass, windUniforms } from './foliage';
 import { HexOverlay } from './hexOverlay';
 import { buildRoadMesh } from './roads';
 import type { SceneContext } from './scene';
@@ -55,6 +55,7 @@ export class MapView {
   private decor: { forest: THREE.Group; structures: THREE.Group; roads: THREE.Group } | null = null;
   private stats: GenStats = { ms: 0, vertices: 0, trees: 0 };
   private gridOpacity = this.overlay.uniforms.uGridOpacity.value;
+  private _foliagePrepass = true;
 
   constructor(ctx: SceneContext) {
     this.ctx = ctx;
@@ -83,6 +84,7 @@ export class MapView {
     }
     this.meshes = buildTerrainMeshes(data, this.overlay);
     this.ctx.scene.add(this.meshes.group);
+    this.ctx.invalidateShadows();
     this.terrainData = data;
     this.stats = { ms: data.stats.ms, vertices: data.nx * data.nz, trees: 0 };
     this.rebuildDecor();
@@ -115,8 +117,11 @@ export class MapView {
     const roads = new THREE.Group();
     const roadMesh = buildRoadMesh(roadPaths, new Heightmap(data), data.waterLevel, map.layout.size);
     if (roadMesh) roads.add(roadMesh);
-    this.decor = { forest: createForest(trees, map.data.seed), structures: buildStructures(map, data, roadIndex), roads };
+    const forest = createForest(trees, map.data.seed);
+    setFoliagePrepass(forest, this.foliagePrepass);
+    this.decor = { forest, structures: buildStructures(map, data, roadIndex), roads };
     this.ctx.scene.add(this.decor.forest, this.decor.structures, this.decor.roads);
+    this.ctx.invalidateShadows();
     // 橋の有無で足元の高さが変わるのでユニットも置き直す
     this.rebuildUnits();
     this.applyDisplay();
@@ -127,8 +132,20 @@ export class MapView {
     if (this.map && this.terrainData) this.units.build(this.map, this.terrainData);
   }
 
+  /** 森の深度プリパス（葉の重なりを 1 回だけ塗る）を使うか */
+  get foliagePrepass(): boolean {
+    return this._foliagePrepass;
+  }
+
+  set foliagePrepass(v: boolean) {
+    this._foliagePrepass = v;
+    if (this.decor) setFoliagePrepass(this.decor.forest, v);
+  }
+
   /** display の表示・非表示を反映する */
   applyDisplay(): void {
+    // 表示を切り替えたものの影も消える・現れるようにする
+    this.ctx.invalidateShadows();
     this.overlay.uniforms.uGridOpacity.value = this.display.grid ? this.gridOpacity : 0;
     if (this.meshes) this.meshes.water.visible = this.display.water;
     if (this.decor) {

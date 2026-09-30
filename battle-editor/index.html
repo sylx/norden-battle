@@ -29,6 +29,21 @@
       </section>
 
       <section>
+        <h2>描画負荷</h2>
+        <label class="row">
+          <span>FPS</span>
+          <output id="fps">-</output>
+        </label>
+        <label class="row">
+          <span>解像度</span>
+          <select id="pixel-ratio"></select>
+        </label>
+        <label class="check"><input id="chk-prepass" type="checkbox" /> 森の深度プリパス</label>
+        <label class="check"><input id="chk-dynamic-shadows" type="checkbox" /> 影を毎フレーム更新</label>
+        <p class="hint">重いときは解像度を下げてください。深度プリパス・影はオフ/オンで負荷を比べる用です</p>
+      </section>
+
+      <section>
         <h2>HEX 情報</h2>
         <dl id="hover-info" class="info"></dl>
         <h3>選択中</h3>

@@ -95,6 +95,17 @@ label.row input {
   min-width: 0;
 }
 
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+}
+
+input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+
 input,
 select,
 button {

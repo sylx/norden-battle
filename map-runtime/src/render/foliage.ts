@@ -9,6 +9,10 @@
  *   - 頂点色で AO（下側・内側ほど暗い）を付ける
  *   - 形状バリエーションを複数生成し、InstancedMesh で大量に描く
  *   - 頂点シェーダで風の揺れ
+ *   - 深度プリパス: 葉のカードは何枚も重なり、アルファテスト（discard）があると GPU の早期深度テストが
+ *     効かないため、重なった全カードで PBR・影の計算が走る（古い GPU ではこれが一番重い）。
+ *     先に安いシェーダで葉の深度だけを描き、本描画は深度を書かずに「一番手前と同じ深度」の面だけを塗る。
+ *     見た目は変わらず、葉の塗りは 1 画素につきほぼ 1 回になる
  */
 import * as THREE from 'three';
 import { mulberry32 } from '../core/noise';
@@ -460,11 +464,40 @@ function foliageMaterials(needle: boolean) {
   const leavesDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5 });
   applyFoliageShader(leavesDepth, { flutter: true, sphericalNormals: false, mipAlpha });
 
+  // 深度プリパス用（色は書かない）。本描画とわずかな計算誤差があっても本描画が深度テストで
+  // 落ちないよう、深度を少し奥へずらしておく
+  const leavesPrepass = new THREE.MeshBasicMaterial({
+    map,
+    alphaTest: 0.5,
+    alphaToCoverage: true,
+    side: THREE.DoubleSide,
+    colorWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
+  });
+  applyFoliageShader(leavesPrepass, { flutter: true, sphericalNormals: false, mipAlpha });
+
   const solid = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
   applyFoliageShader(solid, { flutter: false, sphericalNormals: false, mipAlpha });
   const solidDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
   applyFoliageShader(solidDepth, { flutter: false, sphericalNormals: false, mipAlpha });
-  return { leaves, leavesDepth, solid, solidDepth };
+  return { leaves, leavesDepth, leavesPrepass, solid, solidDepth };
+}
+
+const PREPASS_ORDER = 1;
+const LEAVES_ORDER = 2;
+
+/**
+ * 深度プリパスの有無を切り替える（createForest で作ったグループに対して）。
+ * 無しにすると、葉は従来どおり重なった枚数だけ塗られる（比較用）
+ */
+export function setFoliagePrepass(forest: THREE.Object3D, on: boolean): void {
+  forest.traverse((o) => {
+    if (!(o instanceof THREE.InstancedMesh)) return;
+    if (o.userData.foliagePrepass) o.visible = on;
+    else if (o.userData.foliageLeaves) (o.material as THREE.Material).depthWrite = !on;
+  });
 }
 
 /** 木の配置データから InstancedMesh 群を作る */
@@ -487,6 +520,8 @@ export function createForest(trees: readonly TreeInstance[], seed: number): THRE
       const parts = spec.build(rng);
       const leavesMesh = new THREE.InstancedMesh(parts.leaves, mats.leaves, list.length);
       leavesMesh.customDepthMaterial = mats.leavesDepth;
+      leavesMesh.renderOrder = LEAVES_ORDER;
+      leavesMesh.userData.foliageLeaves = true;
       const meshes = [leavesMesh];
       if (parts.solid) {
         const solidMesh = new THREE.InstancedMesh(parts.solid, mats.solid, list.length);
@@ -518,6 +553,14 @@ export function createForest(trees: readonly TreeInstance[], seed: number): THRE
         m.computeBoundingSphere();
         group.add(m);
       }
+
+      // 深度プリパス（同じジオメトリ・配置を共有し、葉の本描画より先に描く）
+      const prepass = new THREE.InstancedMesh(parts.leaves, mats.leavesPrepass, list.length);
+      prepass.instanceMatrix = leavesMesh.instanceMatrix;
+      prepass.boundingSphere = leavesMesh.boundingSphere;
+      prepass.renderOrder = PREPASS_ORDER;
+      prepass.userData.foliagePrepass = true;
+      group.add(prepass);
     }
   }
   return group;
