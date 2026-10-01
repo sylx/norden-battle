@@ -40,3 +40,7 @@ seen from above at 50 degrees, miniature figure, plain white background, no shad
 ```
 
 画像ファイルは Git LFS で管理する（`.gitattributes`）。
+
+## 指揮官の顔（battle-editor）
+`character_face.webp` は指揮官の顔画像。1 枚に 3×3 で顔を並べたもので（1 マス 256×256）、
+左上から行ごとに 0..8 の番号で参照し、円に切り抜いてユニットの情報札に表示する（`battle-editor/src/battle/unitStatus.ts`）。

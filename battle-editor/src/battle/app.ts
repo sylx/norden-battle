@@ -8,11 +8,16 @@ import { HexMap, type HexCell, type MapData } from '@norden/map-runtime/core/map
 import type { UnitData } from '@norden/map-runtime/core/units';
 import { MapView } from '@norden/map-runtime/render/mapView';
 import { SceneContext } from '@norden/map-runtime/render/scene';
+import { UnitTags } from './unitTags';
+import { demoStatuses } from './unitStatus';
 
 export class BattleApp {
   readonly ctx: SceneContext;
   readonly view: MapView;
+  /** ユニットの頭上の情報札（顔・兵士数・士気） */
+  readonly tags: UnitTags;
   selected: Offset | null = null;
+  hovered: Offset | null = null;
 
   onHover: (cell: HexCell | null, unit: UnitData | null) => void = () => {};
   onSelect: (cell: HexCell | null, unit: UnitData | null) => void = () => {};
@@ -25,6 +30,7 @@ export class BattleApp {
   constructor(container: HTMLElement) {
     this.ctx = new SceneContext(container);
     this.view = new MapView(this.ctx);
+    this.tags = new UnitTags(container);
     const el = this.ctx.renderer.domElement;
     el.addEventListener('pointermove', (e) => this.setPointer(e));
     el.addEventListener('pointerleave', () => this.setHover(null));
@@ -47,7 +53,9 @@ export class BattleApp {
   }
 
   loadMap(data: MapData): void {
-    this.view.setMap(new HexMap(data));
+    const map = new HexMap(data);
+    this.tags.setStatuses(demoStatuses(map.allUnits()));
+    this.view.setMap(map);
     this.setSelected(null);
   }
 
@@ -63,6 +71,7 @@ export class BattleApp {
   }
 
   private setHover(o: Offset | null): void {
+    this.hovered = o;
     this.view.setHover(o);
     this.onHover(...this.cellAndUnit(o));
   }
@@ -85,5 +94,6 @@ export class BattleApp {
       this.setHover(this.pick());
     }
     this.view.render();
+    this.tags.update(this.view.units.placements(), this.ctx.camera, this.view.display.units, this.hovered, this.selected);
   }
 }
