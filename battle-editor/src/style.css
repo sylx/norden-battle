@@ -41,50 +41,96 @@ body {
   display: block;
 }
 
-#panel {
+/* --- ツールバーと道具のウィンドウ（toolbar.ts。エディタの道具で、ゲームの画面には出さない） --- */
+#toolbar {
   position: fixed;
   top: 12px;
   left: 12px;
-  bottom: 44px;
-  width: 260px;
-  overflow-y: auto;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100vw - 24px);
+  padding: 5px 6px 5px 12px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
-  padding: 12px 14px;
 }
 
-#panel header {
-  border-bottom: 1px solid var(--panel-border);
-  padding-bottom: 8px;
-  margin-bottom: 4px;
-}
-
-h1 {
-  font-size: 16px;
-  margin: 0;
+#toolbar h1 {
+  flex: none;
+  margin: 0 6px 0 0;
+  font-size: 14px;
   color: var(--accent);
   letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
-.sub {
+#toolbar .tool {
+  flex: none;
+  padding: 3px 12px;
+}
+
+#toolbar .tool.active {
+  color: #fff4d0;
+  border-color: var(--accent);
+  background: linear-gradient(#7a5226, #4e3216);
+}
+
+#toolbar .sub {
+  min-width: 0;
+  margin: 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-dim);
-  margin-top: 2px;
 }
 
-h2 {
+/* 位置（left・top）は toolbar.ts で開くボタンの下に合わせる */
+.tool-window {
+  position: fixed;
+  top: 56px;
+  left: 12px;
+  z-index: 30;
+  width: 280px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 110px);
+  overflow-y: auto;
+  padding: 8px 12px 12px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+
+.tool-window[hidden] {
+  display: none;
+}
+
+.tool-window header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.tool-window h2 {
+  margin: 0;
+  padding-left: 6px;
+  border-left: 3px solid var(--accent);
   font-size: 13px;
   color: var(--accent);
-  margin: 14px 0 6px;
-  border-left: 3px solid var(--accent);
-  padding-left: 6px;
 }
 
-h3 {
-  font-size: 12px;
-  color: var(--text-dim);
-  margin: 8px 0 4px;
+.tool-window .close {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 1;
 }
 
 label.row {
@@ -148,26 +194,6 @@ button:hover {
   color: var(--text-dim);
   font-size: 11px;
   margin: 6px 0 0;
-}
-
-.info {
-  display: grid;
-  grid-template-columns: 56px 1fr;
-  gap: 2px 8px;
-  margin: 0;
-  min-height: 1em;
-}
-
-.info dt {
-  color: var(--text-dim);
-}
-
-.info dd {
-  margin: 0;
-}
-
-.info .err {
-  color: #ff8a7a;
 }
 
 /* ターン表示とターン終了ボタン（画面の右下、ステータス行の上） */
@@ -651,18 +677,14 @@ body.dragging #drop-hint {
   font-size: 16px;
 }
 
-/* --- 戦闘ログ（battleLog.ts。画面の右下、ターン表示の上） --- */
-.battle-log {
+/* --- ゲームの画面のウィンドウ（戦闘ログ・地形。飾り罫の枠に題名の札を載せる） --- */
+.game-window {
   position: fixed;
-  right: 12px;
-  /* ステータス行（bottom 10px・高さ 26px）とターン表示の上 */
-  bottom: 104px;
   /*
    * #viewport の中に置き、情報札（1）より手前・行動メニュー（3）より奥にする。
-   * 左のパネルなど #viewport の後ろに並ぶ画面の部品よりも奥になる
+   * ツールバーなど #viewport の後ろに並ぶ画面の部品よりも奥になる
    */
   z-index: 2;
-  width: min(320px, calc(100vw - 24px));
   padding: 20px var(--frame-pad-x) var(--frame-pad-y);
   background: linear-gradient(rgba(48, 36, 24, 0.95), rgba(28, 20, 14, 0.95));
   border: 1px solid var(--panel-border);
@@ -670,21 +692,14 @@ body.dragging #drop-hint {
   box-shadow:
     inset 0 0 0 1px rgba(0, 0, 0, 0.5),
     0 4px 14px rgba(0, 0, 0, 0.6);
-  /* 一覧と畳むボタン以外をつかんで動かす（battleLog.ts） */
-  cursor: grab;
-  user-select: none;
-  touch-action: none;
 }
 
-.battle-log.moving {
-  cursor: grabbing;
-  box-shadow:
-    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
-    0 8px 22px rgba(0, 0, 0, 0.7);
+.game-window[hidden] {
+  display: none;
 }
 
 /* 内側の細い罫（外の罫と合わせて二重罫） */
-.battle-log::before {
+.game-window::before {
   content: '';
   position: absolute;
   inset: 5px;
@@ -694,7 +709,7 @@ body.dragging #drop-hint {
 }
 
 /* 上辺に載せる題名の札 */
-.battle-log .log-title {
+.game-window .window-title {
   position: absolute;
   left: 50%;
   top: 0;
@@ -718,8 +733,8 @@ body.dragging #drop-hint {
 }
 
 /* 札の両端の菱形 */
-.battle-log .log-title::before,
-.battle-log .log-title::after {
+.game-window .window-title::before,
+.game-window .window-title::after {
   content: '';
   position: absolute;
   top: 50%;
@@ -731,12 +746,131 @@ body.dragging #drop-hint {
   transform: rotate(45deg);
 }
 
-.battle-log .log-title::before {
+.game-window .window-title::before {
   left: -5px;
 }
 
-.battle-log .log-title::after {
+.game-window .window-title::after {
   right: -5px;
+}
+
+/* --- カーソルの HEX の地形（terrainInfo.ts。画面の左下、ステータス行の上） --- */
+.terrain-info {
+  left: 12px;
+  bottom: 50px;
+  width: min(240px, calc(100vw - 24px));
+  /* 表示するだけなので、マウスは下のマップへ通す */
+  pointer-events: none;
+}
+
+.terrain-info .terrain-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px 6px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid rgba(138, 106, 58, 0.6);
+}
+
+/* 地面の色の菱形 */
+.terrain-info .terrain-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin: 0 3px;
+  border: 1px solid var(--accent);
+  transform: rotate(45deg);
+}
+
+.terrain-info .terrain-name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #fff4d0;
+  white-space: nowrap;
+}
+
+.terrain-info .terrain-feature {
+  padding: 0 6px;
+  border: 1px solid rgba(226, 183, 90, 0.6);
+  border-radius: 2px;
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.terrain-info .terrain-feature[hidden] {
+  display: none;
+}
+
+.terrain-info .terrain-coord {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.terrain-info dl {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 2px 8px;
+  margin: 0;
+  padding: 0 2px;
+  font-size: 12px;
+}
+
+.terrain-info dt {
+  color: var(--text-dim);
+}
+
+.terrain-info dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.terrain-info dd b {
+  color: var(--accent);
+}
+
+/* 移動・攻撃の予測（移動先・攻撃の相手を選んでいる間） */
+.terrain-info .terrain-extra {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dotted rgba(138, 106, 58, 0.7);
+}
+
+.terrain-info .terrain-extra[hidden] {
+  display: none;
+}
+
+.terrain-info .blocked,
+.terrain-info .err {
+  color: #ff8a7a;
+}
+
+.terrain-info .none {
+  color: rgba(191, 174, 138, 0.6);
+}
+
+/* --- 戦闘ログ（battleLog.ts。画面の右下、ターン表示の上） --- */
+.battle-log {
+  right: 12px;
+  /* ステータス行（bottom 10px・高さ 26px）とターン表示の上 */
+  bottom: 104px;
+  width: min(320px, calc(100vw - 24px));
+  /* 一覧と畳むボタン以外をつかんで動かす（battleLog.ts） */
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.battle-log.moving {
+  cursor: grabbing;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 8px 22px rgba(0, 0, 0, 0.7);
 }
 
 .battle-log .log-toggle {

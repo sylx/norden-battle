@@ -38,10 +38,15 @@ export interface MoveStep {
   zoc: boolean;
 }
 
+/** cell に入るのに使う行動力（街道を使わないとき。null は入れない） */
+export function cellMoveCost(cell: HexCell): number | null {
+  const feature = cell.feature ? FEATURE_DEFS[cell.feature].moveCost : undefined;
+  return feature ?? TERRAIN_DEFS[cell.terrain].moveCost;
+}
+
 /** from から dir の向きの隣 to に入るのに使う行動力（null は入れない） */
 export function enterCost(from: HexCell, dir: number, to: HexCell): number | null {
-  const feature = to.feature ? FEATURE_DEFS[to.feature].moveCost : undefined;
-  const base = feature ?? TERRAIN_DEFS[to.terrain].moveCost;
+  const base = cellMoveCost(to);
   if (base === null) return null;
   return hasRoad(from, dir) ? base / 2 : base;
 }

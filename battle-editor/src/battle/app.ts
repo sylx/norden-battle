@@ -189,8 +189,8 @@ export class BattleApp {
   /** 何ターン目か（1 から） */
   turn = 1;
 
-  onHover: (cell: HexCell | null, unit: UnitData | null) => void = () => {};
-  onSelect: (cell: HexCell | null, unit: UnitData | null) => void = () => {};
+  /** カーソルの HEX が変わったとき */
+  onHover: (cell: HexCell | null) => void = () => {};
   /** 行動メニューで行動を選んだとき（決定・取消を除く） */
   onAction: (unit: UnitData, action: MenuAction) => void = () => {};
   /** 予約が増えた・減ったとき */
@@ -761,7 +761,7 @@ export class BattleApp {
   private setHover(o: Offset | null): void {
     this.hovered = o;
     this.view.setHover(o);
-    this.onHover(...this.cellAndUnit(o));
+    this.onHover(this.cellAndUnit(o)[0]);
   }
 
   /** ユニットを選択する（予約は捨てる） */
@@ -771,11 +771,10 @@ export class BattleApp {
     this.view.setFocus(o);
     this.view.setPath(null);
     this.showAttackArrow(null);
-    const [cell, unit] = this.cellAndUnit(o);
+    const unit = this.cellAndUnit(o)[1];
     const status = unit && this.statuses.get(unit);
     this.plan = unit && status ? { unit, status, legs: [], attack: null } : null;
     this.openMenu();
-    this.onSelect(cell, unit);
   }
 
   private cellAndUnit(o: Offset | null): [HexCell | null, UnitData | null] {

@@ -22,7 +22,7 @@ Pages 上のマップはビルド時点の assets/maps/ の内容。
 
 ## マップ
 
-map-editor で保存したマップ（リポジトリ直下の [assets/maps/](../assets/maps/)）を「保存済み」から選んで読み込む。
+ツールバーの「マップ」で開くウィンドウから、map-editor で保存したマップ（リポジトリ直下の [assets/maps/](../assets/maps/)）を「保存済み」で選んで読み込む。
 map-editor で保存し直したら「一覧を更新」で反映される。ローカルの JSON を開く・ドロップすることもできる。
 battle-editor からマップは書き換えない。
 
@@ -30,7 +30,10 @@ battle-editor からマップは書き換えない。
 
 ```
 src/
+  toolbar.ts         画面の上のツールバー。道具のウィンドウ（マップ・描画負荷）を開く
   battle/
-    app.ts   戦闘画面（MapView・ポインタ操作）。UI・演出はここに積み上げる
-    ui.ts    パネル（マップの読み込み・HEX 情報）
+    app.ts           戦闘画面（MapView・ポインタ操作）。UI・演出はここに積み上げる
+    ui.ts            画面の部品とつなぐ（マップの読み込み・描画負荷・ステータス行・戦闘ログ・地形）
+    terrainInfo.ts   カーソルの HEX の地形のウィンドウ（ゲームの画面で使う）
+    battleLog.ts     戦闘ログのウィンドウ
 ```

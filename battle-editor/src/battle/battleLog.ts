@@ -1,6 +1,6 @@
 /**
  * 戦闘ログのウィンドウ（画面の右下、ターン表示の上）。攻撃を実行するたびに 1 件ずつ足す。
- * 左のパネル・行動メニューより奥に表示する（style.css の z-index）。
+ * ツールバー・行動メニューより奥に表示する（style.css の z-index）。
  *
  * - 飾り罫の枠（frame.ts）の上辺に題名の札を載せ、枠の内側にもう 1 本細い罫を引いて二重罫にする。
  * - ターンが変わって最初の記録の前に、飾り罫の区切り（第 n ターン）を入れる。
@@ -54,11 +54,11 @@ export class BattleLog {
   private moved = false;
 
   constructor(parent: HTMLElement) {
-    this.root = el('section', 'battle-log');
+    this.root = el('section', 'game-window battle-log');
     this.root.id = 'battle-log';
     addFrame(this.root);
 
-    const title = el('h2', 'log-title', '戦闘記録');
+    const title = el('h2', 'window-title', '戦闘記録');
     this.count = el('span', 'log-count');
     const toggle = el('button', 'log-toggle');
     toggle.type = 'button';

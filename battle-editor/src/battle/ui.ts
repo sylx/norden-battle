@@ -1,13 +1,12 @@
-import { FEATURE_DEFS } from '@norden/map-runtime/core/features';
-import { MapParseError, parseMapData, type HexCell, type MapData } from '@norden/map-runtime/core/mapData';
-import { TERRAIN_DEFS } from '@norden/map-runtime/core/terrainTypes';
+import { MapParseError, parseMapData, type MapData } from '@norden/map-runtime/core/mapData';
 import { TEAM_DEFS, UNIT_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import { listMapFiles, loadMapFile, type MapFileInfo } from '@norden/map-runtime/mapFiles';
 import type { ForestMode } from '@norden/map-runtime/render/foliage';
 import { DEFAULT_PIXEL_RATIO } from '@norden/map-runtime/render/scene';
 import { BattleApp } from './app';
 import { BattleLog } from './battleLog';
-import { COMBAT_DEFS, isAttack } from './combat';
+import { isAttack } from './combat';
+import { TerrainInfo, type InfoRow } from './terrainInfo';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -118,41 +117,13 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
   const fps = $<HTMLOutputElement>('fps');
   setInterval(() => (fps.textContent = app.ctx.fps.toFixed(1)), 500);
 
-  // --- HEX 情報 ---
-  const renderInfo = (el: HTMLElement, cell: HexCell | null, unit: UnitData | null, extra: string[][] = []) => {
-    if (!cell) {
-      el.innerHTML = '<dt>-</dt><dd></dd>';
-      return;
-    }
-    el.innerHTML = [
-      ['座標', `(${cell.col}, ${cell.row})`],
-      ['地形', TERRAIN_DEFS[cell.terrain].name],
-      ['標高', `Lv ${cell.elevation}`],
-      ['人工物', cell.feature ? FEATURE_DEFS[cell.feature].name : '-'],
-      ['街道', cell.roads ? `${cell.roads.length} 方向` : '-'],
-      ['ユニット', unit ? `${TEAM_DEFS[unit.team].name} ${UNIT_DEFS[unit.type].name}` : '-'],
-      ...commander(unit),
-      ...extra,
-    ]
-      .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
-      .join('');
-  };
-  /** 兵数・士気と指揮官の能力 */
-  const commander = (unit: UnitData | null): string[][] => {
-    const s = unit && app.statuses.get(unit);
-    if (!s) return [];
-    return [
-      ['兵数', `${s.soldiers} / ${s.maxSoldiers}`],
-      ['士気', String(s.morale)],
-      ['指揮官', `統率 ${s.leadership} / 武力 ${s.strength}`],
-      ...(s.intercepting ? [['状態', COMBAT_DEFS[unit.type].ranged ? '迎撃の構え（射程に入った敵を 1 回撃つ）' : '迎撃の構え（被ダメージ減・反撃増）']] : []),
-    ];
-  };
-  app.onHover = (c, u) => {
+  // --- カーソルの HEX の地形 ---
+  const terrain = new TerrainInfo($('viewport'));
+  app.onHover = (c) => {
     // 移動先を選んでいる間はそこまでに使う行動力、攻撃の相手を選んでいる間は結果の予測も出す
-    const extra: string[][] = [];
+    const extra: InfoRow[] = [];
     const step = app.moveStepAt(c);
-    if (step) extra.push(['移動', `行動力 ${step.cost}（予約の合計）${step.zoc ? '<br>敵の ZOC: 入るとそれ以上動けない' : ''}`]);
+    if (step) extra.push(['移動先', `行動力 ${step.cost}（予約の合計）${step.zoc ? '<br>敵の ZOC: 入るとそれ以上動けない' : ''}`]);
     const f = app.attackPreviewAt(c);
     if (f && 'rejected' in f) extra.push(['攻撃', `<span class="err">${escapeHtml(f.rejected)}</span>`]);
     else if (f) {
@@ -165,9 +136,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
           `<br>士気 ${signed(morale.attacker)} / 敵の士気 ${signed(morale.defender)}（目安）`,
       ]);
     }
-    renderInfo($('hover-info'), c, u, extra);
+    terrain.show(c, extra);
   };
-  app.onSelect = (c, u) => renderInfo($('select-info'), c, u);
   const unitLabel = (u: UnitData) => `${TEAM_DEFS[u.team].name} ${UNIT_DEFS[u.type].name} (${u.col}, ${u.row})`;
   const back = 'Esc・範囲外クリック: メニューに戻る';
   app.onAction = (u, a) =>
@@ -265,8 +235,6 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     if (intercept && !lost) parts.push('迎撃の構えで待機（行動終了）');
     setStatus(`${unitLabel(unit)}: ${parts.join(' → ')}`);
   };
-  renderInfo($('hover-info'), null, null);
-  renderInfo($('select-info'), null, null);
 
   return {
     async loadInitial() {
