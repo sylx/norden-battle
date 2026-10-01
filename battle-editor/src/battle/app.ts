@@ -7,7 +7,7 @@
  * 移動は何回かに分けて予約でき、予約したルートは地面に矢印で出す。決定でユニットがルートに沿って歩いて
  * 最後の移動先へ動き、行動力を使う（歩いている間は操作を受け付けない）。
  *
- * ターン終了で全ユニットの行動力が最大まで戻る。
+ * ターン終了で全ユニットの行動力が最大まで戻る。敵の ZOC の中のユニットは、そのターンにまだ移動していなければ動き出せる。
  *
  * Esc: 移動先を選ぶのをやめる → 2 階層目を閉じる → 予約を 1 つ戻す → 選択を外す。
  */
@@ -21,7 +21,7 @@ import { SceneContext } from '@norden/map-runtime/render/scene';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import type { MenuAction } from './actions';
 import { ActionMenu } from './actionMenu';
-import { inEnemyZoc, movePath, moveRange, type MoveStep } from './movement';
+import { inEnemyZoc, movePath, moveRange, type MoveOptions, type MoveStep } from './movement';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
 
@@ -142,11 +142,14 @@ export class BattleApp {
     this.onTurn(this.turn);
   }
 
-  /** ターンを終える。選択と予約を捨て、全ユニットの行動力を最大まで戻す（移動のアニメーション中は何もしない） */
+  /** ターンを終える。選択と予約を捨て、全ユニットの行動力を最大まで戻して移動済みを消す（移動のアニメーション中は何もしない） */
   endTurn(): boolean {
     if (this.walk || !this.map) return false;
     this.setSelected(null);
-    for (const status of this.statuses.values()) status.ap = status.maxAp;
+    for (const status of this.statuses.values()) {
+      status.ap = status.maxAp;
+      status.moved = false;
+    }
     this.turn++;
     this.onTurn(this.turn);
     return true;
@@ -161,6 +164,11 @@ export class BattleApp {
   /** 予約した移動で使う行動力 */
   static planCost(plan: Plan): number {
     return plan.legs.at(-1)?.cost ?? 0;
+  }
+
+  /** 続きの移動を探すときの条件。そのターンにまだ移動していなければ（予約も無ければ）敵の ZOC から動き出せる */
+  static moveOptions(plan: Plan): MoveOptions {
+    return { spent: BattleApp.planCost(plan), escapeZoc: !plan.status.moved && plan.legs.length === 0 };
   }
 
   /** 予約した移動の先（予約が無ければユニットのいる HEX） */
@@ -190,7 +198,7 @@ export class BattleApp {
     const map = this.map;
     const plan = this.plan;
     if (!map || !plan) return;
-    this.moveTargets = moveRange(map, plan.unit, BattleApp.planPos(plan), plan.status.ap, BattleApp.planCost(plan));
+    this.moveTargets = moveRange(map, plan.unit, BattleApp.planPos(plan), plan.status.ap, BattleApp.moveOptions(plan));
     const cells = [...this.moveTargets.values()].map((s) => ({ col: s.col, row: s.row, mark: s.zoc }));
     this.view.setRange(cells, MOVE_RANGE_COLOR, MOVE_ZOC_COLOR);
     this.menu.suspended = true;
@@ -273,7 +281,10 @@ export class BattleApp {
     const from = { col: unit.col, row: unit.row };
     const to = BattleApp.planPos(plan);
     const cost = BattleApp.planCost(plan);
-    if (map.moveUnit(unit, to.col, to.row)) status.ap -= cost;
+    if (map.moveUnit(unit, to.col, to.row)) {
+      status.ap -= cost;
+      status.moved = true;
+    }
     this.view.rebuildUnits();
     // 動いた先で選び直す（残りの行動力でメニューを開く）
     this.setSelected({ col: unit.col, row: unit.row });
@@ -291,8 +302,8 @@ export class BattleApp {
       unit: plan.unit,
       status: plan.status,
       ap,
-      canMove: moveRange(map, plan.unit, pos, plan.status.ap, spent).size > 0,
-      inZoc: inEnemyZoc(map, plan.unit, pos),
+      canMove: moveRange(map, plan.unit, pos, plan.status.ap, BattleApp.moveOptions(plan)).size > 0,
+      zocLocked: inEnemyZoc(map, plan.unit, pos) && !BattleApp.moveOptions(plan).escapeZoc,
       planned: plan.legs.length > 0,
     });
   }

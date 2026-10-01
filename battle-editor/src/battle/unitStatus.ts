@@ -18,6 +18,8 @@ export interface UnitStatus {
   face: number;
   /** 指揮官のスキル */
   skills: SkillId[];
+  /** このターンに移動したか（していなければ敵の ZOC の中からでも動き出せる） */
+  moved: boolean;
 }
 
 export const MAX_MORALE = 100;
@@ -74,6 +76,7 @@ export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStat
       maxAp: MAX_AP,
       face,
       skills: FACE_SKILLS[face] ?? [],
+      moved: false,
     });
   }
   return out;

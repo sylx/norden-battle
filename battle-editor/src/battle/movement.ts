@@ -8,7 +8,8 @@
  *
  * ZOC（支配領域）: 敵ユニットに隣接する HEX は、その敵の ZOC。
  * - 敵の ZOC に入ったらそこで止まり、それ以上は移動できない（あとは攻撃などをするしかない）。
- * - 敵の ZOC の中にいるユニットは移動できない。
+ * - 敵の ZOC の中にいるユニットは移動できない。ただし、そのターンにまだ移動していなければ（ターンの初めは）
+ *   ZOC の中から動き出せる（escapeZoc。動いた先が ZOC ならそこで止まる）。
  * - ZOC_IGNORE の兵種は ZOC を気にせず動ける（いまは無し。騎兵などの例外はここに足す）。
  */
 import { FEATURE_DEFS } from '@norden/map-runtime/core/features';
@@ -41,17 +42,23 @@ export function enterCost(from: HexCell, dir: number, to: HexCell): number | nul
   return hasRoad(from, dir) ? base / 2 : base;
 }
 
+export interface MoveOptions {
+  /** それまでに予約した移動で使った行動力。合わせて ap 以内のところまで行ける */
+  spent?: number;
+  /** 敵の ZOC の中からでも動き出せる（そのターンにまだ移動していないとき） */
+  escapeZoc?: boolean;
+}
+
 /**
- * unit が from から移動できる HEX（from を除く）と、そこへの最短経路。
- * spent はそれまでに予約した移動で使った行動力で、合わせて ap 以内のところまで行ける。
+ * unit が from から ap の行動力で移動できる HEX（from を除く）と、そこへの最短経路。
  * キーは HEX のインデックス（row × cols + col）。
  */
-export function moveRange(map: HexMap, unit: UnitData, from: Offset, ap: number, spent = 0): Map<number, MoveStep> {
+export function moveRange(map: HexMap, unit: UnitData, from: Offset, ap: number, { spent = 0, escapeZoc = false }: MoveOptions = {}): Map<number, MoveStep> {
   const { cols } = map.layout;
   const key = (o: Offset) => o.row * cols + o.col;
   const zoc = ZOC_IGNORE.includes(unit.type) ? new Set<number>() : enemyZoc(map, unit);
-  // 敵の ZOC の中からは動けない
-  if (zoc.has(key(from))) return new Map();
+  // 敵の ZOC の中からは動けない（ターンの初めは除く）
+  if (zoc.has(key(from)) && !escapeZoc) return new Map();
   const start: MoveStep = { col: from.col, row: from.row, cost: spent, prev: null, zoc: false };
   const best = new Map<number, MoveStep>([[key(start), start]]);
   const done = new Set<number>();
