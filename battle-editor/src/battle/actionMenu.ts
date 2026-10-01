@@ -111,15 +111,15 @@ export class ActionMenu {
     const mw = this.main.offsetWidth;
     const mh = this.main.offsetHeight;
     const sw = this.openItem ? this.sub.offsetWidth + SUB_GAP : 0;
-    // 絵の右に 1・2 階層目とも入れば右、だめなら左（2 階層目も外側へ開く）
-    const onRight = sprite.r + GAP + mw + sw <= w - MARGIN || sprite.l - GAP - mw - sw < MARGIN;
+    // 1 階層目は絵の右に入れば右、だめなら左。2 階層目の開け閉めではメニューを動かさない（逃げるように見えるため）
+    const onRight = sprite.r + GAP + mw <= w - MARGIN || sprite.l - GAP - mw < MARGIN;
     let x = onRight ? sprite.r + GAP : sprite.l - GAP - mw;
     x = Math.min(Math.max(x, MARGIN), w - MARGIN - mw);
     const y = Math.min(Math.max(sprite.t, MARGIN), h - MARGIN - mh);
     this.root.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
 
     if (this.openItem) {
-      // 2 階層目は開いた項目の高さにそろえ、画面からはみ出すなら反対側へ
+      // 2 階層目は開いた項目の高さにそろえ、外側（絵と反対側）へ開く。画面からはみ出すなら内側へ
       const subRight = onRight ? x + mw + sw <= w - MARGIN : x - sw < MARGIN;
       this.sub.style.left = subRight ? `${mw + SUB_GAP}px` : `${-sw}px`;
       const top = this.openItem.offsetTop - this.body(this.sub).offsetTop;
