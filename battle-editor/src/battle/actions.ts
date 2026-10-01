@@ -114,7 +114,8 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
         return [CONFIRM, CANCEL].map((action) => ({ name: action.name, enabled: true, action }));
       }
       const action = { id: def.id, name: def.name, cost: def.cost };
-      if (def.id === 'move' && ctx.attackPlanned && !ctx.canMoveAfterAttack) return { name: def.name, enabled: false, reason: '攻撃の後は移動できない', action };
+      // 攻撃した（予約した・このターンに実行した）後は移動できない（騎兵は除く）
+      if (def.id === 'move' && (ctx.attackPlanned || status.attacked) && !ctx.canMoveAfterAttack) return { name: def.name, enabled: false, reason: '攻撃の後は移動できない', action };
       if (def.id === 'move' && zocLocked) return { name: def.name, enabled: false, reason: '敵の ZOC の中にいる', action };
       if (def.id === 'move' && !canMove) return { name: def.name, enabled: false, reason: '移動できる HEX がない', action };
       if (def.types && !def.types.includes(unit.type)) return { name: def.name, enabled: false, reason: 'この兵種は使えない', action };

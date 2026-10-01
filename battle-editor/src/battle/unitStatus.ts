@@ -22,6 +22,8 @@ export interface UnitStatus {
   moved: boolean;
   /** このターンに攻撃したか（攻撃は 1 ターンに 1 回） */
   attacked: boolean;
+  /** 攻撃してからまだ移動していないか（騎兵は敵の ZOC の中からでも動き出せる） */
+  justAttacked: boolean;
 }
 
 export const MAX_MORALE = 100;
@@ -80,6 +82,7 @@ export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStat
       skills: FACE_SKILLS[face] ?? [],
       moved: false,
       attacked: false,
+      justAttacked: false,
     });
   }
   return out;

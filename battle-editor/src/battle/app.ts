@@ -203,6 +203,7 @@ export class BattleApp {
       status.ap = status.maxAp;
       status.moved = false;
       status.attacked = false;
+      status.justAttacked = false;
     }
     this.turn++;
     this.onTurn(this.turn);
@@ -248,11 +249,12 @@ export class BattleApp {
 
   /**
    * 続きの移動を探すときの条件。そのターンにまだ移動していなければ（予約も無ければ）敵の ZOC から動き出せる。
-   * 攻撃の直後（騎兵）も ZOC から動き出せる。
+   * 攻撃の直後（騎兵。予約した攻撃の後、または実行した攻撃の後にまだ移動していない）も ZOC から動き出せる。
    */
   static moveOptions(plan: Plan): MoveOptions {
     const turnStart = !plan.status.moved && plan.legs.length === 0;
-    return { spent: BattleApp.planCost(plan), escapeZoc: turnStart || BattleApp.attackIsLast(plan) };
+    const afterAttack = BattleApp.attackIsLast(plan) || (plan.status.justAttacked && plan.legs.length === 0);
+    return { spent: BattleApp.planCost(plan), escapeZoc: turnStart || afterAttack };
   }
 
   /** 攻撃する HEX（攻撃の前の移動の先） */
@@ -433,7 +435,10 @@ export class BattleApp {
     // 移動を確定する（ユニットをこの段階の最後の移動先へ動かす）
     const { plan } = exec;
     const to = legs[legs.length - 1];
-    if (map.moveUnit(plan.unit, to.col, to.row)) plan.status.moved = true;
+    if (map.moveUnit(plan.unit, to.col, to.row)) {
+      plan.status.moved = true;
+      plan.status.justAttacked = false;
+    }
     this.view.rebuildUnits();
     this.nextPhase();
   }
@@ -483,6 +488,7 @@ export class BattleApp {
     ts.soldiers -= result.damage;
     plan.status.soldiers -= result.counter;
     plan.status.attacked = true;
+    plan.status.justAttacked = true;
     report.attack = { ...attack, result, targetDestroyed: ts.soldiers <= 0, unitDestroyed: plan.status.soldiers <= 0 };
 
     const placements = this.view.units.placements();
