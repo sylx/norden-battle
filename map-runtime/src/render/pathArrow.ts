@@ -167,8 +167,8 @@ function arrowMaterial(color: number, time: THREE.IUniform<number>, stripes: boo
         vec3 c = uColor;
         float a = 1.0;
       #ifdef STRIPES
-        // 進む向きを指す山形の縞を流す（幅の分だけ後ろへずらして山形にする）
-        float f = fract((vAlong - abs(vAcross) * 1.2) / uHexSize * 2.2 - uTime * 1.4);
+        // 進む向きを指す山形の縞を流す（中心より縁を後ろへずらして、先が前を向く山形にする）
+        float f = fract((vAlong + abs(vAcross) * 1.2) / uHexSize * 2.2 - uTime * 1.4);
         float stripe = smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.38, 0.46, f));
         c = mix(c, uStripe, stripe * 0.55);
       #else
