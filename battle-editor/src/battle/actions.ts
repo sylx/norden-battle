@@ -10,7 +10,7 @@
  * 攻撃は 1 ターンに 1 回で、攻撃を予約した後は移動できない（騎兵は除く）。
  * 退却は「特殊」の中（指揮官のスキルの後）に並べ、ターンの初めだけ選べる。行動力は使わない。
  * 一斉攻撃は直接攻撃の兵種だけで、射程内に自分のほかの味方とも隣接している敵がいるときだけ並ぶ（hasVolleyTargets）。
- * 迎撃は選んだらすぐに実行し（予約した移動があればそこまで動く）、迎撃の構えで待機して行動を終える。攻撃の後はできない。
+ * 迎撃は選んだらすぐに実行し（予約した移動があればそこまで動く）、迎撃の構えで待機して行動を終える。攻撃の後と騎兵はできない。
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { UnitStatus } from './unitStatus';
@@ -65,7 +65,8 @@ const MENU: readonly (ActionDef | GroupDef)[] = [
       { id: 'charge', name: '突撃', cost: 3, types: ['cavalry'] },
     ],
   },
-  { id: 'intercept', name: '迎撃', cost: 2 },
+  // 騎兵はできない
+  { id: 'intercept', name: '迎撃', cost: 2, types: ['infantry', 'archer', 'mage'] },
   { name: '特殊', skills: true, children: [{ id: 'retreat', name: '退却' }] },
 ];
 
@@ -129,12 +130,12 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
   const entries = MENU.map((def): MenuEntry => {
     if ('id' in def) {
       const action = { id: def.id, name: def.name, cost: def.cost };
+      if (def.types && !def.types.includes(unit.type)) return { name: def.name, enabled: false, reason: 'この兵種は使えない', action };
       // 攻撃した（予約した・このターンに実行した）後は移動できない（騎兵は除く）
       if (def.id === 'move' && (ctx.attackPlanned || status.attacked) && !ctx.canMoveAfterAttack) return { name: def.name, enabled: false, reason: '攻撃の後は移動できない', action };
       if (def.id === 'intercept' && (ctx.attackPlanned || status.attacked)) return { name: def.name, enabled: false, reason: '攻撃の後は迎撃できない', action };
       if (def.id === 'move' && zocLocked) return { name: def.name, enabled: false, reason: '敵の ZOC の中にいる', action };
       if (def.id === 'move' && !canMove) return { name: def.name, enabled: false, reason: '移動できる HEX がない', action };
-      if (def.types && !def.types.includes(unit.type)) return { name: def.name, enabled: false, reason: 'この兵種は使えない', action };
       if (lacksAp(def.cost)) return { name: def.name, enabled: false, reason: '行動力が足りない', action };
       return { name: def.name, enabled: true, action };
     }
