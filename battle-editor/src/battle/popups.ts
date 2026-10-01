@@ -5,8 +5,8 @@ import * as THREE from 'three';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 
 /** 表示している時間（秒）と、その間に浮かぶ高さ（CSS ピクセル） */
-const DURATION = 1.6;
-const RISE = 36;
+const DURATION = 3;
+const RISE = 48;
 
 interface Popup {
   el: HTMLDivElement;

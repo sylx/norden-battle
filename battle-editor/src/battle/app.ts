@@ -12,6 +12,9 @@
  *   動き出せるが、ZOC から ZOC へは移れない）。
  * - 突撃（騎兵）は相手を突き抜けて向こうの HEX へ飛び出る。飛び出る先は予約のときに決め、矢印もそこまで伸ばす。
  * - 決定でユニットがルートに沿って歩き、攻撃し、（騎兵なら）続きを歩く（その間は操作を受け付けない）。
+ *   攻撃の演出: カメラが両者へ寄り（cameraFocus.ts）、攻撃して、カメラが元へ戻る。
+ *   歩兵の通常攻撃は踏み込んで光の剣で斬る（slashFx.ts）。騎兵の通常攻撃・突撃は光るランスで貫く（lanceFx.ts）。
+ *   突撃で駆け抜けるときは、飛び出る先の HEX まで画面に収める。
  *   兵数が 0 になったユニットは消える。
  * - 迎撃（騎兵はできない）は選んだらすぐに実行する。予約した移動があればそこまで歩き、迎撃の構えで待機して行動を終える（行動力は 0 になる）。
  *   構えは次にそのユニットが行動するまで続く（ターンをまたいでも続く）。
@@ -48,11 +51,14 @@ import {
   type AttackForecast,
   type AttackResult,
 } from './combat';
+import { CameraFocus, type FocusTiming } from './cameraFocus';
 import { randomRoll } from './damage';
 import { InterceptEffects } from './interceptFx';
+import { LANCE_HIT_SEC, LanceEffects } from './lanceFx';
 import { applyMorale } from './morale';
 import { inEnemyZoc, movePath, moveRange, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
+import { SLASH_HIT_SEC, SlashEffects } from './slashFx';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
 
@@ -80,6 +86,23 @@ const CHARGE_SEC = 0.8;
 const HIT_SHAKE = 0.05;
 /** 遠隔攻撃でその場で跳ねる高さ（hexSize 比） */
 const RANGED_HOP = 0.05;
+/** 攻撃の演出で、カメラが両者へ寄る時間、攻撃した後に寄ったままにする時間、元へ戻る時間（秒） */
+const FX_ZOOM_IN_SEC = 0.45;
+const FX_HOLD_SEC = 0.45;
+const FX_ZOOM_OUT_SEC = 0.5;
+/**
+ * 攻撃の演出のときの攻撃のアニメーションの時間（秒。半分の時点で当たる）。
+ * 斬撃（歩兵）、ランスで踏み込んで貫く（騎兵の通常攻撃）、ランスを構えて駆け抜ける（突撃）
+ */
+const SLASH_STRIKE_SEC = 0.7;
+const LANCE_STRIKE_SEC = 0.7;
+const LANCE_CHARGE_SEC = 1.0;
+/** 攻撃の演出で、当たったときのカメラの揺れ（hexSize 比） */
+const SLASH_CAMERA_SHAKE = 0.04;
+const LANCE_CAMERA_SHAKE = 0.06;
+
+/** 攻撃の演出の種類。slash: 光の剣で斬る（歩兵の通常攻撃）、lance: 光るランスで貫く（騎兵の通常攻撃・突撃） */
+type StrikeFxKind = 'slash' | 'lance';
 
 /** 予約した攻撃 */
 export interface PlannedAttack {
@@ -173,6 +196,17 @@ interface Execution {
   hit: boolean;
   /** 一斉攻撃で一緒に攻撃する味方（strike の段階を始めるときに決める） */
   supporters: UnitData[];
+  /** strike の段階の演出（カメラを寄せる）。演出の無い攻撃は null */
+  fx: StrikeFx | null;
+}
+
+/** 実行中の攻撃の演出 */
+interface StrikeFx {
+  kind: StrikeFxKind;
+  /** 攻撃のアニメーションの時間（秒。カメラが寄る・戻る時間を除く） */
+  strikeSec: number;
+  /** エフェクトを出したか */
+  spawned: boolean;
 }
 
 export class BattleApp {
@@ -186,6 +220,12 @@ export class BattleApp {
   readonly popups: Popups;
   /** 迎撃の構えのユニットの足元の光の輪 */
   readonly interceptFx = new InterceptEffects();
+  /** 光の剣の斬撃（歩兵の通常攻撃） */
+  readonly slashFx = new SlashEffects();
+  /** 光るランスの突き（騎兵の通常攻撃・突撃） */
+  readonly lanceFx = new LanceEffects();
+  /** 攻撃の演出でカメラを寄せる */
+  readonly cameraFocus: CameraFocus;
   /** 戦闘中のユニットの状態 */
   statuses = new Map<UnitData, UnitStatus>();
   /** 選択中のユニットの HEX */
@@ -225,7 +265,8 @@ export class BattleApp {
     this.tags = new UnitTags(container);
     this.menu = new ActionMenu(container);
     this.popups = new Popups(container);
-    this.ctx.overlay.add(this.interceptFx.group);
+    this.cameraFocus = new CameraFocus(this.ctx);
+    this.ctx.overlay.add(this.interceptFx.group, this.slashFx.group, this.lanceFx.group);
     this.menu.onAction = (unit, action) => {
       if (action.id === 'confirm') return this.execute(false);
       if (action.id === 'intercept') return this.execute(true);
@@ -266,6 +307,9 @@ export class BattleApp {
     const map = new HexMap(data);
     this.exec = null;
     this.popups.clear();
+    this.slashFx.clear();
+    this.lanceFx.clear();
+    this.cameraFocus.stop();
     this.statuses = demoStatuses(map.allUnits());
     this.tags.setStatuses(this.statuses);
     this.view.setMap(map);
@@ -512,7 +556,7 @@ export class BattleApp {
     const walk = (legs: MoveStep[]): Phase => ({ kind: 'walk', path: legs.length > 0 ? movePath(legs) : [], commit: true });
     const phases: Phase[] = [walk(plan.legs.slice(0, split)), ...(plan.attack ? [{ kind: 'strike' as const }, walk(plan.legs.slice(split))] : [])];
     this.menu.open(null);
-    this.exec = { plan, report, phases, phase: phases[0], start: 0, duration: 0, line: null, facing: undefined, hit: false, supporters: [] };
+    this.exec = { plan, report, phases, phase: phases[0], start: 0, duration: 0, line: null, facing: undefined, hit: false, supporters: [], fx: null };
     this.nextPhase();
   }
 
@@ -534,10 +578,19 @@ export class BattleApp {
     }
     exec.start = performance.now();
     exec.hit = false;
+    exec.fx = null;
     if (phase.kind !== 'walk') {
       exec.phase = phase;
-      exec.duration = phase.kind === 'strike' && exec.plan.attack!.landing ? CHARGE_SEC : STRIKE_SEC;
       const attack = exec.plan.attack;
+      const kind = phase.kind === 'strike' ? BattleApp.strikeFx(exec.plan) : null;
+      if (kind) {
+        const strikeSec = kind === 'slash' ? SLASH_STRIKE_SEC : attack!.landing ? LANCE_CHARGE_SEC : LANCE_STRIKE_SEC;
+        exec.fx = { kind, strikeSec, spawned: false };
+        exec.duration = FX_ZOOM_IN_SEC + strikeSec + FX_HOLD_SEC + FX_ZOOM_OUT_SEC;
+        this.focusStrike(exec.plan, { in: FX_ZOOM_IN_SEC, hold: strikeSec + FX_HOLD_SEC, out: FX_ZOOM_OUT_SEC });
+      } else {
+        exec.duration = phase.kind === 'strike' && attack!.landing ? CHARGE_SEC : STRIKE_SEC;
+      }
       exec.supporters = phase.kind === 'strike' && attack?.action.id === 'volley' ? volleySupporters(map, exec.plan.unit, attack.target) : [];
       return;
     }
@@ -599,7 +652,7 @@ export class BattleApp {
     const t = Math.min((now - exec.start) / 1000 / exec.duration, 1);
     const a = map.layout.offsetToWorld(phase.shooter.col, phase.shooter.row);
     const b = map.layout.offsetToWorld(phase.at.col, phase.at.row);
-    const hop = Math.sin(Math.min(t * 2, 1) * Math.PI) * RANGED_HOP * s;
+    const hop = strikeCurve(t) * RANGED_HOP * s;
     this.view.units.moveTo(phase.shooter, new THREE.Vector3(a.x, this.view.groundAt(a.x, a.z) + hop, a.z), b.x >= a.x ? 'right' : 'left');
     if (t >= 0.5 && !exec.hit) {
       exec.hit = true;
@@ -665,16 +718,51 @@ export class BattleApp {
     if (p) this.popups.show(p, report.lost ? `迎撃 -${result.damage} 壊滅` : `迎撃 -${result.damage}`, 'damage');
   }
 
+  /** 予約した攻撃の演出の種類（演出の無い攻撃は null） */
+  static strikeFx(plan: Plan): StrikeFxKind | null {
+    const id = plan.attack?.action.id;
+    if (plan.unit.type === 'infantry' && id === 'attack') return 'slash';
+    if (plan.unit.type === 'cavalry' && (id === 'attack' || id === 'charge')) return 'lance';
+    return null;
+  }
+
+  /** 攻撃の演出で、攻撃するユニットと相手（突撃で飛び出るなら飛び出る先も）が画面に収まるところまでカメラを寄せる */
+  private focusStrike(plan: Plan, timing: FocusTiming): void {
+    const map = this.map!;
+    const attack = plan.attack!;
+    const units = this.view.units.placements().filter((p) => p.unit === plan.unit || p.unit === attack.target);
+    const self = units.find((p) => p.unit === plan.unit);
+    if (attack.landing && self) {
+      const c = map.layout.offsetToWorld(attack.landing.col, attack.landing.row);
+      units.push({ ...self, foot: new THREE.Vector3(c.x, this.view.groundAt(c.x, c.z), c.z) });
+    }
+    this.cameraFocus.play(units, timing);
+  }
+
+  /** 攻撃の演出のエフェクトを出す */
+  private spawnStrikeFx(kind: StrikeFxKind, unit: UnitData, target: UnitData, facing: Facing): void {
+    const placements = this.view.units.placements();
+    const up = placements.find((p) => p.unit === unit);
+    const tp = placements.find((p) => p.unit === target);
+    if (!tp) return;
+    if (kind === 'slash') this.slashFx.spawn(tp, facing);
+    else if (up) this.lanceFx.spawn(up, tp, this.ctx.camera);
+  }
+
   /**
    * 攻撃のアニメーションを進める。直接攻撃は相手へ踏み込み、半分の時点で当てて兵数を減らす。
    * 突撃で飛び出せるときは、相手を突き抜けて向こうの HEX まで駆け抜け、着いたらそこへ移動を確定する。
+   * 演出のある攻撃では、カメラが寄るのを待ってから攻撃し（踏み込みは、踏み込んだまま当てて戻る）、カメラが戻るのを待つ。
+   * エフェクトは、斬撃の刃が相手の中心を通る・ランスが相手を貫く時点が当たりの時点になるように出す。
    */
   private stepStrike(exec: Execution, now: number): void {
     const map = this.map!;
     const s = map.layout.size;
     const { plan } = exec;
     const attack = plan.attack!;
-    const t = Math.min((now - exec.start) / 1000 / exec.duration, 1);
+    const elapsed = (now - exec.start) / 1000;
+    const fx = exec.fx;
+    const t = fx ? THREE.MathUtils.clamp((elapsed - FX_ZOOM_IN_SEC) / fx.strikeSec, 0, 1) : Math.min(elapsed / exec.duration, 1);
     const a = map.layout.offsetToWorld(plan.unit.col, plan.unit.row);
     const b = map.layout.offsetToWorld(attack.target.col, attack.target.row);
     const facing: Facing = b.x >= a.x ? 'right' : 'left';
@@ -687,21 +775,27 @@ export class BattleApp {
       const z = a.z + (c.z - a.z) * e;
       this.view.units.moveTo(plan.unit, new THREE.Vector3(x, this.view.groundAt(x, z), z), facing);
     } else {
-      this.lunge(plan.unit, attack.target, t);
+      this.lunge(plan.unit, attack.target, fx ? holdCurve(t) : strikeCurve(t));
     }
     // 一斉攻撃は、取り囲んでいる味方も一緒に踏み込む
-    for (const u of exec.supporters) this.lunge(u, attack.target, t);
+    for (const u of exec.supporters) this.lunge(u, attack.target, strikeCurve(t));
 
+    const strikeTime = (elapsed - FX_ZOOM_IN_SEC) / (fx?.strikeSec ?? 1);
+    if (fx && !fx.spawned && strikeTime >= 0.5 - (fx.kind === 'slash' ? SLASH_HIT_SEC : LANCE_HIT_SEC) / fx.strikeSec) {
+      fx.spawned = true;
+      this.spawnStrikeFx(fx.kind, plan.unit, attack.target, facing);
+    }
     if (t >= 0.5 && !exec.hit) {
       exec.hit = true;
       this.applyAttack(exec);
+      if (fx) this.cameraFocus.shake((fx.kind === 'slash' ? SLASH_CAMERA_SHAKE : LANCE_CAMERA_SHAKE) * s);
     }
     if (exec.hit) {
       // 当たった相手を揺らす
       const shake = Math.sin(t * 60) * HIT_SHAKE * s * (1 - t) * 2;
       this.view.units.moveTo(attack.target, new THREE.Vector3(b.x + shake, this.view.groundAt(b.x, b.z), b.z));
     }
-    if (t < 1) return;
+    if (elapsed < exec.duration) return;
     // 攻撃で壊滅したら飛び出し・続きの移動はしない
     if (exec.report.attack?.unitDestroyed) exec.phases = [];
     else if (landing && map.moveUnit(plan.unit, landing.col, landing.row)) plan.status.moved = true;
@@ -709,13 +803,12 @@ export class BattleApp {
     this.nextPhase();
   }
 
-  /** unit が target を攻撃する動き。直接攻撃は相手へ踏み込んで戻る。遠隔攻撃はその場で小さく跳ねる（t は 0〜1） */
-  private lunge(unit: UnitData, target: Offset, t: number): void {
+  /** unit が target を攻撃する動き。直接攻撃は相手へ踏み込む。遠隔攻撃はその場で小さく跳ねる（k は踏み込み・跳ねる量の 0〜1） */
+  private lunge(unit: UnitData, target: Offset, k: number): void {
     const map = this.map!;
     const a = map.layout.offsetToWorld(unit.col, unit.row);
     const b = map.layout.offsetToWorld(target.col, target.row);
     const ranged = COMBAT_DEFS[unit.type].ranged;
-    const k = Math.sin(Math.min(t * 2, 1) * Math.PI);
     const lunge = ranged ? 0 : k * STRIKE_LUNGE;
     const x = a.x + (b.x - a.x) * lunge;
     const z = a.z + (b.z - a.z) * lunge;
@@ -865,6 +958,9 @@ export class BattleApp {
     if (exec?.phase.kind === 'walk') this.stepWalk(exec, exec.phase, performance.now());
     else if (exec?.phase.kind === 'strike') this.stepStrike(exec, performance.now());
     else if (exec?.phase.kind === 'intercept') this.stepIntercept(exec, exec.phase, performance.now());
+    this.cameraFocus.update(performance.now());
+    this.slashFx.update(this.ctx.camera);
+    this.lanceFx.update(this.ctx.camera);
     // 輪は描画の前に足元へ合わせる（移動のアニメーションで動かした絵に同じフレームで付いていく）
     this.interceptFx.update(this.view.units.placements(), this.statuses, this.map?.layout.size ?? 1, this.view.display.units);
     this.view.render();
@@ -873,4 +969,17 @@ export class BattleApp {
     this.menu.update(this.menuAnchor(placements), this.ctx.camera);
     this.popups.update(this.ctx.camera);
   }
+}
+
+/** 攻撃の踏み込み・跳ねる量（t は攻撃のアニメーションの 0〜1）。前半で踏み込んで戻る */
+function strikeCurve(t: number): number {
+  return Math.sin(Math.min(t * 2, 1) * Math.PI);
+}
+
+/** 演出のある攻撃の踏み込みの量（t は 0〜1）。素早く踏み込み、踏み込んだまま当てて（半分の時点）、ゆっくり戻る */
+function holdCurve(t: number): number {
+  if (t < 0.3) return 1 - (1 - t / 0.3) ** 2;
+  if (t < 0.65) return 1;
+  const u = (t - 0.65) / 0.35;
+  return 1 - u * u * (3 - 2 * u);
 }
