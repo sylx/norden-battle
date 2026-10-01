@@ -214,9 +214,9 @@ export class MapView {
     this.units.setFocus(o);
   }
 
-  /** 範囲（移動範囲など）の HEX を塗り、外周を縁取る。null で消す */
-  setRange(cells: Iterable<Offset> | null, color?: THREE.ColorRepresentation): void {
-    this.overlay.setRange(cells, color);
+  /** 範囲（移動範囲など）の HEX を塗り、外周を縁取る。mark の付いた HEX には印を付ける。null で消す */
+  setRange(cells: Iterable<Offset & { mark?: boolean }> | null, color?: THREE.ColorRepresentation, markColor?: THREE.ColorRepresentation): void {
+    this.overlay.setRange(cells, color, markColor);
   }
 
   /** 経路（出発地 → 到着地の HEX）に沿って地面に矢印を出す。null で消す */

@@ -25,8 +25,9 @@ import { movePath, moveRange, type MoveStep } from './movement';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
 
-/** 移動できる HEX の色 */
+/** 移動できる HEX の色と、そのうち敵の ZOC で止まる HEX の印の色 */
 const MOVE_RANGE_COLOR = 0x4aa8ff;
+const MOVE_ZOC_COLOR = 0xff8a3a;
 /** 移動のアニメーションの速さ（1 秒に進む HEX 数）と、最短の時間（秒） */
 const WALK_HEX_PER_SEC = 3.5;
 const WALK_MIN_SEC = 0.3;
@@ -190,7 +191,8 @@ export class BattleApp {
     const plan = this.plan;
     if (!map || !plan) return;
     this.moveTargets = moveRange(map, plan.unit, BattleApp.planPos(plan), plan.status.ap, BattleApp.planCost(plan));
-    this.view.setRange(this.moveTargets.values(), MOVE_RANGE_COLOR);
+    const cells = [...this.moveTargets.values()].map((s) => ({ col: s.col, row: s.row, mark: s.zoc }));
+    this.view.setRange(cells, MOVE_RANGE_COLOR, MOVE_ZOC_COLOR);
     this.menu.suspended = true;
     this.setHover(this.hovered);
   }
