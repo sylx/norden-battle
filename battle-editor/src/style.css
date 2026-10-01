@@ -576,6 +576,10 @@ body.dragging #drop-hint {
   font-weight: 600;
 }
 
+.action-menu .menu-item.cancel {
+  color: var(--text-dim);
+}
+
 .action-menu .menu-item.disabled {
   cursor: default;
   color: rgba(191, 174, 138, 0.45);

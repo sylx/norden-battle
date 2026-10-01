@@ -9,6 +9,7 @@
  *
  * ターン終了で全ユニットの行動力が最大まで戻る。敵の ZOC の中のユニットは、そのターンにまだ移動していなければ動き出せる。
  *
+ * メニューの「取消」で予約をすべて取り消す。
  * Esc: 移動先を選ぶのをやめる → 2 階層目を閉じる → 予約を 1 つ戻す → 選択を外す。
  */
 import * as THREE from 'three';
@@ -100,6 +101,7 @@ export class BattleApp {
     this.menu = new ActionMenu(container);
     this.menu.onAction = (unit, action) => {
       if (action.id === 'confirm') return this.execute();
+      if (action.id === 'cancel') return this.clearPlan();
       if (action.id === 'move') this.startMove();
       this.onAction(unit, action);
     };
@@ -224,6 +226,12 @@ export class BattleApp {
     const plan = this.plan!;
     plan.legs.push(step);
     this.endTargeting();
+    this.planChanged();
+  }
+
+  /** 予約をすべて取り消す（ユニットのいる HEX でメニューを開き直す） */
+  private clearPlan(): void {
+    this.plan!.legs = [];
     this.planChanged();
   }
 

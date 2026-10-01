@@ -149,8 +149,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     const last = plan.legs.at(-1);
     setStatus(
       last
-        ? `${unitLabel(plan.unit)}: (${last.col}, ${last.row}) まで移動を予約（${plan.legs.length} 回・行動力 ${last.cost}）/ 決定: 実行 / Esc: 1 つ戻す`
-        : `${unitLabel(plan.unit)}: 予約なし / ${idleStatus}`,
+        ? `${unitLabel(plan.unit)}: (${last.col}, ${last.row}) まで移動を予約（${plan.legs.length} 回・行動力 ${last.cost}）/ 決定: 実行 / 取消: すべて取り消す / Esc: 1 つ戻す`
+        : `${unitLabel(plan.unit)}: 予約を取り消しました / ${idleStatus}`,
     );
   };
   app.onMoveCancel = () => setStatus(idleStatus);

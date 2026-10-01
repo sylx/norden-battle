@@ -131,7 +131,7 @@ export class ActionMenu {
     const li = el('li', 'menu-item');
     li.append(el('span', 'name', entry.name));
     if (entry.action?.cost !== undefined) li.append(cost(entry.action.cost));
-    if (entry.action?.id === 'confirm') li.classList.add('confirm');
+    if (entry.action?.id === 'confirm' || entry.action?.id === 'cancel') li.classList.add(entry.action.id);
     if (entry.children) li.append(el('span', 'arrow'));
     if (!entry.enabled) {
       li.classList.add('disabled');

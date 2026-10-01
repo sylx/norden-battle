@@ -6,12 +6,12 @@
  * 選べるかどうかは残り行動力・兵種・指揮官のスキルで決まる。コスト・兵種の制限は仮の値。
  *
  * 行動は予約してから最後にまとめて実行する。移動を予約すると、残り行動力は予約した分を引いたものになり、
- * 「退却」の代わりに予約を実行する「決定」が並ぶ。
+ * 「退却」の代わりに予約を実行する「決定」と、予約をすべて取り消す「取消」が並ぶ。
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { UnitStatus } from './unitStatus';
 
-export type ActionId = 'move' | 'attack' | 'volley' | 'charge' | 'intercept' | 'retreat' | 'confirm' | `skill:${SkillId}`;
+export type ActionId = 'move' | 'attack' | 'volley' | 'charge' | 'intercept' | 'retreat' | 'confirm' | 'cancel' | `skill:${SkillId}`;
 
 /** 指揮官のスキル（特殊の項目） */
 export type SkillId = 'betray' | 'inspire' | 'fireAttack' | 'ambush';
@@ -76,11 +76,12 @@ export interface MenuContext {
   canMove: boolean;
   /** 敵の ZOC の中にいて移動できないか（ターンの初めは ZOC の中でも動ける） */
   zocLocked: boolean;
-  /** 予約した行動があるか（「退却」の代わりに「決定」を出す） */
+  /** 予約した行動があるか（「退却」の代わりに「決定」「取消」を出す） */
   planned: boolean;
 }
 
 const CONFIRM: MenuAction = { id: 'confirm', name: '決定' };
+const CANCEL: MenuAction = { id: 'cancel', name: '取消' };
 
 export interface MenuEntry {
   name: string;
@@ -96,9 +97,11 @@ export interface MenuEntry {
 /** ユニットの行動メニューの 1 階層目 */
 export function buildActionMenu({ unit, status, ap, canMove, zocLocked, planned }: MenuContext): MenuEntry[] {
   const lacksAp = (cost: number | undefined) => ap < (cost ?? 0);
-  return MENU.map((def): MenuEntry => {
+  return MENU.flatMap((def): MenuEntry | MenuEntry[] => {
     if ('id' in def) {
-      if (def.id === 'retreat' && planned) return { name: CONFIRM.name, enabled: true, action: CONFIRM };
+      if (def.id === 'retreat' && planned) {
+        return [CONFIRM, CANCEL].map((action) => ({ name: action.name, enabled: true, action }));
+      }
       const action = { id: def.id, name: def.name, cost: def.cost };
       if (def.id === 'move' && zocLocked) return { name: def.name, enabled: false, reason: '敵の ZOC の中にいる', action };
       if (def.id === 'move' && !canMove) return { name: def.name, enabled: false, reason: '移動できる HEX がない', action };
