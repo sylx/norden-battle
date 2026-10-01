@@ -5,6 +5,7 @@
  * - ターンが変わって最初の記録の前に、飾り罫の区切り（第 n ターン）を入れる。
  * - 新しい記録は下に足し、いちばん下までスクロールする（上を読んでいる間は動かさない）。
  * - 題名の横のボタンで畳める。マップを読み込み直すと空にする。
+ * - 記録の一覧と畳むボタン以外（題名の札・枠）をつかんでドラッグで動かせる。画面の外へは出さない。
  */
 import { TEAM_DEFS, UNIT_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import type { Offset } from '@norden/map-runtime/core/hex';
@@ -30,6 +31,9 @@ export interface AttackLogEntry {
 
 /** 下端からこれ以内にいれば「最新を見ている」とみなして自動でスクロールする（CSS ピクセル） */
 const STICK_BOTTOM = 24;
+/** 動かすときに空ける画面の端との間（上は題名の札が枠からはみ出す分も空ける） */
+const MARGIN = 6;
+const MARGIN_TOP = 16;
 
 export class BattleLog {
   private readonly root: HTMLElement;
@@ -37,6 +41,10 @@ export class BattleLog {
   private readonly count: HTMLElement;
   private lastTurn = 0;
   private entries = 0;
+  /** ドラッグ中のポインターと、つかんだ位置（ウィンドウの左上から） */
+  private drag: { id: number; dx: number; dy: number } | null = null;
+  /** 一度でも動かしたか（動かすまでは CSS の右下の位置のまま） */
+  private moved = false;
 
   constructor(parent: HTMLElement) {
     this.root = el('section', 'battle-log');
@@ -52,11 +60,13 @@ export class BattleLog {
       const collapsed = this.root.classList.toggle('collapsed');
       toggle.title = collapsed ? '広げる' : '畳む';
       if (!collapsed) this.list.scrollTop = this.list.scrollHeight;
+      this.clampToView();
     });
     this.list = el('ol', 'log-list');
     this.root.append(title, toggle, this.count, this.list);
     parent.append(this.root);
     this.clear();
+    this.setupDrag();
   }
 
   clear(): void {
@@ -92,6 +102,50 @@ export class BattleLog {
     this.entries++;
     this.updateCount();
     if (stick) this.list.scrollTop = this.list.scrollHeight;
+    this.clampToView();
+  }
+
+  private setupDrag(): void {
+    const root = this.root;
+    root.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || (e.target as Element).closest('.log-list, .log-toggle')) return;
+      const r = root.getBoundingClientRect();
+      this.drag = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top };
+      root.setPointerCapture(e.pointerId);
+      root.classList.add('moving');
+      e.preventDefault();
+    });
+    root.addEventListener('pointermove', (e) => {
+      if (this.drag?.id === e.pointerId) this.moveTo(e.clientX - this.drag.dx, e.clientY - this.drag.dy);
+    });
+    const end = (e: PointerEvent) => {
+      if (this.drag?.id !== e.pointerId) return;
+      this.drag = null;
+      root.classList.remove('moving');
+    };
+    root.addEventListener('pointerup', end);
+    root.addEventListener('pointercancel', end);
+    window.addEventListener('resize', () => this.clampToView());
+  }
+
+  /** 左上を (x, y) へ動かす（画面からはみ出さないように詰める） */
+  private moveTo(x: number, y: number): void {
+    const w = this.root.offsetWidth;
+    const h = this.root.offsetHeight;
+    const left = Math.max(MARGIN, Math.min(x, window.innerWidth - MARGIN - w));
+    const top = Math.max(MARGIN_TOP, Math.min(y, window.innerHeight - MARGIN - h));
+    const st = this.root.style;
+    st.left = `${Math.round(left)}px`;
+    st.top = `${Math.round(top)}px`;
+    st.right = st.bottom = 'auto';
+    this.moved = true;
+  }
+
+  /** 動かした後に画面の大きさ・ウィンドウの高さが変わったら、はみ出さないように詰め直す */
+  private clampToView(): void {
+    if (!this.moved) return;
+    const r = this.root.getBoundingClientRect();
+    this.moveTo(r.left, r.top);
   }
 
   private updateCount(): void {

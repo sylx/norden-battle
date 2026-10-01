@@ -662,6 +662,17 @@ body.dragging #drop-hint {
   box-shadow:
     inset 0 0 0 1px rgba(0, 0, 0, 0.5),
     0 4px 14px rgba(0, 0, 0, 0.6);
+  /* 一覧と畳むボタン以外をつかんで動かす（battleLog.ts） */
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.battle-log.moving {
+  cursor: grabbing;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 8px 22px rgba(0, 0, 0, 0.7);
 }
 
 /* 内側の細い罫（外の罫と合わせて二重罫） */
@@ -732,6 +743,7 @@ body.dragging #drop-hint {
   border: 1px solid rgba(226, 183, 90, 0.5);
   border-radius: 2px;
   background: rgba(0, 0, 0, 0.3);
+  cursor: pointer;
 }
 
 .battle-log .log-toggle::before {
@@ -772,6 +784,9 @@ body.dragging #drop-hint {
 }
 
 .battle-log .log-list {
+  cursor: auto;
+  user-select: text;
+  touch-action: pan-y;
   list-style: none;
   margin: 0;
   padding: 0 4px 0 2px;
