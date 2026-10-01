@@ -166,6 +166,10 @@ button:hover {
   margin: 0;
 }
 
+.info .err {
+  color: #ff8a7a;
+}
+
 /* ターン表示とターン終了ボタン（画面の右下、ステータス行の上） */
 #turn-bar {
   position: fixed;

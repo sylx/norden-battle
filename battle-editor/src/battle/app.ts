@@ -6,6 +6,8 @@
  * ユニットを選択 → 行動メニュー → 移動 → 移動先を選ぶ → 移動先でメニュー → … → 攻撃 → 相手を選ぶ → 決定。
  * - 移動は何回かに分けて予約でき、予約したルートは地面に矢印で出す。
  * - 攻撃は 1 ターンに 1 回で、予約した移動先から射程内の敵を選ぶ。相手へ赤い矢印を出す（遠隔攻撃は放物線）。
+ *   一斉攻撃は、ほかの味方とも隣接している敵（金の斜線）しか選べない。ほかの敵を選ぶと「包囲していません」でやり直し。
+ *   実行すると、相手に隣接している味方も一緒に踏み込んで攻撃する。
  *   攻撃を予約した後は移動できない。騎兵だけは攻撃の後にも移動を予約できる（ZOC の中からは動けないので、
  *   実際に動けるのは相手を壊滅させて ZOC が消えたときなど）。
  * - 突撃（騎兵）は相手を突き抜けて向こうの HEX へ飛び出る。飛び出る先は予約のときに決め、矢印もそこまで伸ばす。
@@ -40,6 +42,7 @@ import {
   COMBAT_DEFS,
   interceptorsAt,
   isAttack,
+  volleySupporters,
   type AttackForecast,
   type AttackResult,
 } from './combat';
@@ -54,8 +57,11 @@ import { demoStatuses, type UnitStatus } from './unitStatus';
 /** 移動できる HEX の色と、そのうち敵の ZOC で止まる HEX の印の色 */
 const MOVE_RANGE_COLOR = 0x4aa8ff;
 const MOVE_ZOC_COLOR = 0xff8a3a;
-/** 攻撃できる相手の HEX の色 */
+/** 攻撃できる相手の HEX の色と、一斉攻撃でそのうち選べる（味方と取り囲んだ）相手の印の色 */
 const ATTACK_RANGE_COLOR = 0xff4a3a;
+const VOLLEY_MARK_COLOR = 0xffd060;
+/** 一斉攻撃で、ほかの味方と取り囲んでいない相手を選んだときの知らせ */
+const NOT_SURROUNDED = '包囲していません';
 /** 移動のアニメーションの速さ（1 秒に進む HEX 数）と、最短の時間（秒） */
 const WALK_HEX_PER_SEC = 3.5;
 const WALK_MIN_SEC = 0.3;
@@ -158,6 +164,8 @@ interface Execution {
   facing: Facing | undefined;
   /** 攻撃が当たった（兵数を減らした）か */
   hit: boolean;
+  /** 一斉攻撃で一緒に攻撃する味方（strike の段階を始めるときに決める） */
+  supporters: UnitData[];
 }
 
 export class BattleApp {
@@ -189,6 +197,8 @@ export class BattleApp {
   onPlanChange: (plan: Plan) => void = () => {};
   /** 移動先・攻撃の相手を選ぶ状態をやめたとき */
   onTargetCancel: () => void = () => {};
+  /** 選べない攻撃の相手を選んだとき（選び直しになる） */
+  onTargetReject: (reason: string) => void = () => {};
   /** ターンが変わったとき */
   onTurn: (turn: number) => void = () => {};
   /** 決定で予約を実行し終えたとき */
@@ -277,16 +287,27 @@ export class BattleApp {
     return this.targeting.cells.get(o.row * this.map.layout.cols + o.col) ?? null;
   }
 
-  /** 攻撃の相手を選ぶ状態のとき、o のユニットを攻撃したときの結果の予測（攻撃できなければ null） */
-  attackPreviewAt(o: Offset | null): AttackForecast | null {
+  /**
+   * 攻撃の相手を選ぶ状態のとき、o のユニットを攻撃したときの結果の予測（攻撃できなければ null）。
+   * 範囲内でも選べない相手（一斉攻撃で取り囲んでいない）なら、その理由
+   */
+  attackPreviewAt(o: Offset | null): AttackForecast | { rejected: string } | null {
     const map = this.map;
     const plan = this.plan;
     if (!o || this.targeting?.kind !== 'attack' || !map || !plan) return null;
     const target = this.targeting.cells.get(o.row * map.layout.cols + o.col);
     const ts = target && this.statuses.get(target);
     if (!target || !ts) return null;
+    const reason = this.rejectReason(this.targeting.action, target);
+    if (reason) return { rejected: reason };
     const attacker = { unit: plan.unit, status: plan.status, pos: BattleApp.planPos(plan) };
     return attackForecast(map, attacker, { unit: target, status: ts, pos: target }, this.targeting.action.id);
+  }
+
+  /** action で target を攻撃できない理由（できれば null）。一斉攻撃は、ほかの味方とも隣接している相手しか選べない */
+  private rejectReason(action: MenuAction, target: UnitData): string | null {
+    if (action.id !== 'volley') return null;
+    return volleySupporters(this.map!, this.plan!.unit, target).length > 0 ? null : NOT_SURROUNDED;
   }
 
   static planned(plan: Plan): boolean {
@@ -338,7 +359,12 @@ export class BattleApp {
     if (t && map) {
       const key = o ? o.row * map.layout.cols + o.col : -1;
       if (t.kind === 'move' && t.cells.has(key)) this.addLeg(t.cells.get(key)!);
-      else if (t.kind === 'attack' && t.cells.has(key)) this.setAttack(t.action, t.cells.get(key)!);
+      else if (t.kind === 'attack' && t.cells.has(key)) {
+        const target = t.cells.get(key)!;
+        const reason = this.rejectReason(t.action, target);
+        if (reason) this.onTargetReject(reason);
+        else this.setAttack(t.action, target);
+      }
       // ほかのユニットは選び直し、それ以外（範囲外・自分）はメニューに戻る
       else if (unit && !isSelf) this.setSelected(o);
       else this.cancelTargeting();
@@ -371,7 +397,9 @@ export class BattleApp {
     const cols = map.layout.cols;
     const cells = new Map(attackTargets(map, plan.unit, BattleApp.planPos(plan)).map((u) => [u.row * cols + u.col, u]));
     this.targeting = { kind: 'attack', action, cells };
-    this.view.setRange(cells.values(), ATTACK_RANGE_COLOR);
+    // 一斉攻撃は、選べる（ほかの味方と取り囲んだ）相手に印を付ける
+    const range = [...cells.values()].map((u) => ({ col: u.col, row: u.row, mark: action.id === 'volley' && !this.rejectReason(action, u) }));
+    this.view.setRange(range, ATTACK_RANGE_COLOR, VOLLEY_MARK_COLOR);
     this.menu.suspended = true;
     this.setHover(this.hovered);
   }
@@ -458,7 +486,7 @@ export class BattleApp {
     const walk = (legs: MoveStep[]): Phase => ({ kind: 'walk', path: legs.length > 0 ? movePath(legs) : [], commit: true });
     const phases: Phase[] = [walk(plan.legs.slice(0, split)), ...(plan.attack ? [{ kind: 'strike' as const }, walk(plan.legs.slice(split))] : [])];
     this.menu.open(null);
-    this.exec = { plan, report, phases, phase: phases[0], start: 0, duration: 0, line: null, facing: undefined, hit: false };
+    this.exec = { plan, report, phases, phase: phases[0], start: 0, duration: 0, line: null, facing: undefined, hit: false, supporters: [] };
     this.nextPhase();
   }
 
@@ -483,6 +511,8 @@ export class BattleApp {
     if (phase.kind !== 'walk') {
       exec.phase = phase;
       exec.duration = phase.kind === 'strike' && exec.plan.attack!.landing ? CHARGE_SEC : STRIKE_SEC;
+      const attack = exec.plan.attack;
+      exec.supporters = phase.kind === 'strike' && attack?.action.id === 'volley' ? volleySupporters(map, exec.plan.unit, attack.target) : [];
       return;
     }
     const { path } = phase;
@@ -599,15 +629,10 @@ export class BattleApp {
       const z = a.z + (c.z - a.z) * e;
       this.view.units.moveTo(plan.unit, new THREE.Vector3(x, this.view.groundAt(x, z), z), facing);
     } else {
-      // 直接攻撃は相手へ踏み込んで戻る。遠隔攻撃はその場で小さく跳ねる
-      const ranged = COMBAT_DEFS[plan.unit.type].ranged;
-      const k = Math.sin(Math.min(t * 2, 1) * Math.PI);
-      const lunge = ranged ? 0 : k * STRIKE_LUNGE;
-      const ax = a.x + (b.x - a.x) * lunge;
-      const az = a.z + (b.z - a.z) * lunge;
-      const hop = ranged ? k * RANGED_HOP * s : 0;
-      this.view.units.moveTo(plan.unit, new THREE.Vector3(ax, this.view.groundAt(ax, az) + hop, az), facing);
+      this.lunge(plan.unit, attack.target, t);
     }
+    // 一斉攻撃は、取り囲んでいる味方も一緒に踏み込む
+    for (const u of exec.supporters) this.lunge(u, attack.target, t);
 
     if (t >= 0.5 && !exec.hit) {
       exec.hit = true;
@@ -624,6 +649,20 @@ export class BattleApp {
     else if (landing && map.moveUnit(plan.unit, landing.col, landing.row)) plan.status.moved = true;
     this.view.rebuildUnits();
     this.nextPhase();
+  }
+
+  /** unit が target を攻撃する動き。直接攻撃は相手へ踏み込んで戻る。遠隔攻撃はその場で小さく跳ねる（t は 0〜1） */
+  private lunge(unit: UnitData, target: Offset, t: number): void {
+    const map = this.map!;
+    const a = map.layout.offsetToWorld(unit.col, unit.row);
+    const b = map.layout.offsetToWorld(target.col, target.row);
+    const ranged = COMBAT_DEFS[unit.type].ranged;
+    const k = Math.sin(Math.min(t * 2, 1) * Math.PI);
+    const lunge = ranged ? 0 : k * STRIKE_LUNGE;
+    const x = a.x + (b.x - a.x) * lunge;
+    const z = a.z + (b.z - a.z) * lunge;
+    const hop = ranged ? k * RANGED_HOP * map.layout.size : 0;
+    this.view.units.moveTo(unit, new THREE.Vector3(x, this.view.groundAt(x, z) + hop, z), b.x >= a.x ? 'right' : 'left');
   }
 
   /** 攻撃の結果（ランダム係数を振る）を兵数・士気に反映し、頭上に減った数を出す */
@@ -658,7 +697,8 @@ export class BattleApp {
     const at = (u: UnitData) => placements.find((p) => p.unit === u);
     const tp = at(attack.target);
     const up = at(plan.unit);
-    if (tp) this.popups.show(tp, report.attack.targetDestroyed ? `-${result.damage} 壊滅` : `-${result.damage}`, 'damage');
+    const label = result.supporters > 0 ? `一斉 -${result.damage}` : `-${result.damage}`;
+    if (tp) this.popups.show(tp, report.attack.targetDestroyed ? `${label} 壊滅` : label, 'damage');
     if (up && result.direct) this.popups.show(up, report.attack.unitDestroyed ? `-${result.counter} 壊滅` : `-${result.counter}`, 'counter');
   }
 
@@ -691,6 +731,7 @@ export class BattleApp {
     if (!map || !plan) return this.menu.open(null);
     const pos = BattleApp.planPos(plan);
     const options = BattleApp.moveOptions(plan);
+    const targets = attackTargets(map, plan.unit, pos);
     this.menu.open({
       unit: plan.unit,
       status: plan.status,
@@ -701,7 +742,8 @@ export class BattleApp {
       planned: BattleApp.planned(plan),
       attackPlanned: !!plan.attack,
       canMoveAfterAttack: !!COMBAT_DEFS[plan.unit.type].moveAfterAttack,
-      hasTargets: attackTargets(map, plan.unit, pos).length > 0,
+      hasTargets: targets.length > 0,
+      hasVolleyTargets: targets.some((t) => volleySupporters(map, plan.unit, t).length > 0),
     });
   }
 

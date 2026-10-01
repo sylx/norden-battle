@@ -8,6 +8,7 @@
  * 行動は予約してから最後にまとめて実行する。移動・攻撃を予約すると、残り行動力は予約した分を引いたものになり、
  * 「退却」の代わりに予約を実行する「決定」と、予約をすべて取り消す「取消」が並ぶ。
  * 攻撃は 1 ターンに 1 回で、攻撃を予約した後は移動できない（騎兵は除く）。退却はターンの初めだけ。
+ * 一斉攻撃は直接攻撃の兵種だけで、射程内に自分のほかの味方とも隣接している敵がいるときだけ並ぶ（hasVolleyTargets）。
  * 迎撃は選んだらすぐに実行し（予約した移動があればそこまで動く）、迎撃の構えで待機して行動を終える。攻撃の後はできない。
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
@@ -56,7 +57,8 @@ const MENU: readonly (ActionDef | GroupDef)[] = [
     attack: true,
     children: [
       { id: 'attack', name: '通常攻撃', cost: 2 },
-      { id: 'volley', name: '一斉攻撃', cost: 3, types: ['archer', 'mage'] },
+      // 直接攻撃の兵種だけ（間接の弓兵はできない）
+      { id: 'volley', name: '一斉攻撃', cost: 4, types: ['infantry', 'cavalry', 'mage'] },
       { id: 'charge', name: '突撃', cost: 3, types: ['cavalry'] },
     ],
   },
@@ -91,6 +93,8 @@ export interface MenuContext {
   canMoveAfterAttack: boolean;
   /** 攻撃できる敵がいるか（予約した移動先から） */
   hasTargets: boolean;
+  /** 一斉攻撃できる敵（攻撃できる敵のうち、自分のほかの味方とも隣接している敵）がいるか */
+  hasVolleyTargets: boolean;
 }
 
 const CONFIRM: MenuAction = { id: 'confirm', name: '決定' };
@@ -136,7 +140,7 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
         ? status.skills.map((s) => ({ id: `skill:${s}`, name: SKILL_DEFS[s].name, cost: SKILL_DEFS[s].cost }))
         : def.children.filter((c) => !c.types || c.types.includes(unit.type)).map(({ id, name, cost }) => ({ id, name, cost }));
     if (cands.length === 0) return { name: def.name, enabled: false, reason: def.children === 'skills' ? 'スキルがない' : 'この兵種は使えない' };
-    const children = cands.filter((c) => !lacksAp(c.cost));
+    const children = cands.filter((c) => !lacksAp(c.cost) && (c.id !== 'volley' || ctx.hasVolleyTargets));
     if (children.length === 0) return { name: def.name, enabled: false, reason: '行動力が足りない' };
     return { name: def.name, enabled: true, children };
   });

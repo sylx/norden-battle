@@ -153,11 +153,13 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     const step = app.moveStepAt(c);
     if (step) extra.push(['移動', `行動力 ${step.cost}（予約の合計）${step.zoc ? '<br>敵の ZOC: 入るとそれ以上動けない' : ''}`]);
     const f = app.attackPreviewAt(c);
-    if (f) {
-      const { direct, encircled, morale } = f.expected;
+    if (f && 'rejected' in f) extra.push(['攻撃', `<span class="err">${escapeHtml(f.rejected)}</span>`]);
+    else if (f) {
+      const { direct, encircled, supporters, morale } = f.expected;
       extra.push([
         '攻撃',
-        `敵 ${range(f.damage)}${encircled ? '（包囲 ×1.2）' : ''}<br>` +
+        (supporters > 0 ? `一斉攻撃: 味方 ${supporters} 隊が加わる<br>` : '') +
+          `敵 ${range(f.damage)}${encircled ? '（包囲 ×1.2）' : ''}<br>` +
           (direct ? `反撃 ${range(f.counter)}` : '反撃なし') +
           `<br>士気 ${signed(morale.attacker)} / 敵の士気 ${signed(morale.defender)}（目安）`,
       ]);
@@ -171,7 +173,9 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     setStatus(
       a.id === 'move'
         ? `${unitLabel(u)}: 移動先を選んでください（青い HEX。橙の斜線は敵の ZOC で、入るとそれ以上動けない）/ ${back}`
-        : isAttack(a.id)
+        : a.id === 'volley'
+          ? `${unitLabel(u)}: ${escapeHtml(a.name)}の相手を選んでください（金の斜線: ほかの味方とも接している敵）/ ${back}`
+          : isAttack(a.id)
           ? `${unitLabel(u)}: ${escapeHtml(a.name)}の相手を選んでください（赤い HEX）/ ${back}`
           : // 移動・攻撃以外の処理はまだ無いので、選んだものを知らせるだけ
             `${unitLabel(u)}: 「${escapeHtml(a.name)}」を選択${a.cost !== undefined ? `（行動力 ${a.cost}）` : ''}— 未実装`,
@@ -197,6 +201,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     );
   };
   app.onTargetCancel = () => setStatus(idleStatus);
+  app.onTargetReject = (reason) =>
+    setStatus(`<span class="err">${escapeHtml(reason)}</span> — ほかの味方とも接している敵（金の斜線）を選んでください / ${back}`);
   // --- ターン ---
   app.onTurn = (turn) => ($('turn-number').textContent = String(turn));
   $('btn-end-turn').addEventListener('click', () => {
@@ -236,7 +242,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
         turn: app.turn,
         attacker: unit,
         target: attack.target,
-        actionName: attack.action.name,
+        // 一斉攻撃は加わった隊の数（自分を含む）も出す
+        actionName: result.supporters > 0 ? `${attack.action.name} ${result.supporters + 1}隊` : attack.action.name,
         damage: result.damage,
         counter: result.counter,
         direct: result.direct,

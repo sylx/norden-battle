@@ -9,8 +9,9 @@
  *   ランダム = 1 + roll × RANDOM_SPREAD（roll は −1〜1）
  *
  *   迎撃     = 相手が迎撃の構えの近接ユニットなら INTERCEPT_GUARD
+ *   一斉攻撃 = 一斉攻撃なら 1 + 加わる味方の数 × VOLLEY_BONUS
  *
- *   ダメージ = (兵の力 × 統率 + 武力) × 士気 × 包囲 × 迎撃 × ランダム（0〜相手の兵数）
+ *   ダメージ = (兵の力 × 統率 + 武力) × 士気 × 包囲 × 迎撃 × 一斉攻撃 × ランダム（0〜相手の兵数）
  *
  * 反撃は、攻撃された側が攻撃した側へ通常攻撃をしたときのダメージ × COUNTER_RATE
  * （攻撃された側が迎撃の構えの近接ユニットなら、さらに × INTERCEPT_COUNTER）。
@@ -33,7 +34,7 @@ export type AttackKind = ActionId | 'interceptFire';
 /** 攻撃の種類ごとの、兵種の攻撃力に掛ける倍率。ここにある行動が攻撃 */
 export const ATTACK_POWER: Partial<Record<AttackKind, number>> = {
   attack: 0.8,
-  volley: 1.0,
+  volley: 0.8,
   charge: 0.8,
   interceptFire: 0.5,
 };
@@ -57,6 +58,8 @@ const COUNTER_RATE = 0.1;
 /** 迎撃の構えの近接ユニットが受けるダメージと、返す反撃の倍率 */
 const INTERCEPT_GUARD = 0.7;
 const INTERCEPT_COUNTER = 1.5;
+/** 一斉攻撃に加わる味方 1 隊あたりのダメージの増え方 */
+const VOLLEY_BONUS = 0.3;
 
 /** ダメージの計算に使う、ユニットの状態 */
 export interface Fighter extends Pick<UnitStatus, 'soldiers' | 'morale' | 'leadership' | 'strength'> {
@@ -65,6 +68,8 @@ export interface Fighter extends Pick<UnitStatus, 'soldiers' | 'morale' | 'leade
   encircled: boolean;
   /** 迎撃の構えの近接ユニットか（受けるダメージが減り、反撃が増える） */
   guarding: boolean;
+  /** 一斉攻撃に加わる味方の数（一斉攻撃のときだけ効く） */
+  supporters: number;
 }
 
 /** −1〜1 の乱数（ランダム係数の roll） */
@@ -83,8 +88,9 @@ export function calcDamage(att: Fighter, def: Fighter, action: AttackKind, roll:
   const morale = 1 + (att.morale - 50) * MORALE_RATE;
   const encircled = def.encircled ? ENCIRCLED_RATE : 1;
   const guard = def.guarding ? INTERCEPT_GUARD : 1;
+  const volley = action === 'volley' ? 1 + att.supporters * VOLLEY_BONUS : 1;
   const random = 1 + roll * RANDOM_SPREAD;
-  const raw = Math.max(0, troops * leadership + strength) * morale * encircled * guard * random;
+  const raw = Math.max(0, troops * leadership + strength) * morale * encircled * guard * volley * random;
   return Math.min(def.soldiers, Math.round(raw));
 }
 

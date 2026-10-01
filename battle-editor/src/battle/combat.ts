@@ -11,6 +11,8 @@
  * - 迎撃（app.ts）: 近接ユニットは構えている間、受けるダメージが減って反撃が増える（damage.ts）。
  *   間接（ranged）ユニットは構えている間、射程に入った敵へ 1 回だけ自動で攻撃する（interceptFire。反撃は受けない）。
  * - 包囲（movement.ts の encircled）されている相手へのダメージは増える。
+ * - 一斉攻撃は直接攻撃の兵種だけで、相手が攻撃する自分のほかの味方とも隣接している（取り囲んでいる）ときにできる。
+ *   隣接している味方（volleySupporters）も一緒に攻撃する演出が入り、その数だけダメージが増える（damage.ts）。
  * - 攻撃の後、与えたダメージと反撃で受けたダメージの比で両軍の士気が増減する。
  */
 import { axialDistance, type Offset } from '@norden/map-runtime/core/hex';
@@ -86,6 +88,8 @@ export interface AttackResult {
   direct: boolean;
   /** 相手が包囲されているか（ダメージが増える） */
   encircled: boolean;
+  /** 一斉攻撃に加わった味方の数（一斉攻撃でなければ 0） */
+  supporters: number;
   /** 士気の増減 */
   morale: MoraleChange;
 }
@@ -101,12 +105,13 @@ export interface AttackRolls {
  * 包囲は両者をそれぞれの pos に置いて判定する（予約中・移動の途中はまだそこにいないため）。
  */
 export function attackResult(map: HexMap, attacker: Combatant, defender: Combatant, kind: AttackKind, rolls: AttackRolls): AttackResult {
-  const att = fighter(attacker, encircledAt(map, attacker, defender));
+  const supporters = kind === 'volley' ? volleySupporters(map, attacker.unit, defender.pos).length : 0;
+  const att = { ...fighter(attacker, encircledAt(map, attacker, defender)), supporters };
   const def = fighter(defender, encircledAt(map, defender, attacker));
   const direct = kind !== 'interceptFire' && hexDistance(map, attacker.pos, defender.pos) <= 1;
   const damage = calcDamage(att, def, kind, rolls.damage);
   const counter = direct ? calcCounter(att, { ...def, soldiers: def.soldiers - damage }, rolls.counter) : 0;
-  return { damage, counter, direct, encircled: def.encircled, morale: moraleChange(damage, counter, att.strength, def.strength) };
+  return { damage, counter, direct, encircled: def.encircled, supporters, morale: moraleChange(damage, counter, att.strength, def.strength) };
 }
 
 /** 攻撃の結果の予測（ランダム係数が真ん中のときの結果と、ダメージ・反撃の幅） */
@@ -127,7 +132,12 @@ export function attackForecast(map: HexMap, attacker: Combatant, defender: Comba
 function fighter({ unit, status }: Combatant, encircled: boolean): Fighter {
   const { soldiers, morale, leadership, strength } = status;
   const guarding = status.intercepting && !COMBAT_DEFS[unit.type].ranged;
-  return { type: unit.type, soldiers, morale, leadership, strength, encircled, guarding };
+  return { type: unit.type, soldiers, morale, leadership, strength, encircled, guarding, supporters: 0 };
+}
+
+/** target を一斉攻撃するときに加わる味方（target に隣接している、attacker 以外の attacker の味方） */
+export function volleySupporters(map: HexMap, attacker: UnitData, target: Offset): UnitData[] {
+  return map.allUnits().filter((u) => u.team === attacker.team && u !== attacker && hexDistance(map, u, target) === 1);
 }
 
 /** who が who.pos で包囲されているか（other は other.pos にいるとして判定する） */
