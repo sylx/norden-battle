@@ -2,12 +2,13 @@
  * ユニットの行動の定義と、行動メニューの項目の組み立て。
  *
  * メニューは 2 階層。1 階層目は常に全部並べ、選べないものは無効にする。
- * 2 階層目（攻撃の種類・指揮官のスキル）は選べるものだけを並べる。
+ * 2 階層目（攻撃の種類・指揮官のスキルと退却）は選べるものだけを並べる。
  * 選べるかどうかは残り行動力・兵種・指揮官のスキルで決まる。コスト・兵種の制限は仮の値。
  *
  * 行動は予約してから最後にまとめて実行する。移動・攻撃を予約すると、残り行動力は予約した分を引いたものになり、
- * 「退却」の代わりに予約を実行する「決定」と、予約をすべて取り消す「取消」が並ぶ。
- * 攻撃は 1 ターンに 1 回で、攻撃を予約した後は移動できない（騎兵は除く）。退却はターンの初めだけ。
+ * 最後に予約を実行する「決定」と、予約をすべて取り消す「取消」が並ぶ。
+ * 攻撃は 1 ターンに 1 回で、攻撃を予約した後は移動できない（騎兵は除く）。
+ * 退却は「特殊」の中（指揮官のスキルの後）に並べ、ターンの初めだけ選べる。行動力は使わない。
  * 一斉攻撃は直接攻撃の兵種だけで、射程内に自分のほかの味方とも隣接している敵がいるときだけ並ぶ（hasVolleyTargets）。
  * 迎撃は選んだらすぐに実行し（予約した移動があればそこまで動く）、迎撃の構えで待機して行動を終える。攻撃の後はできない。
  */
@@ -45,8 +46,10 @@ interface GroupDef {
   name: string;
   /** 攻撃の項目（攻撃できる相手・攻撃済みかで選べるかが変わる） */
   attack?: boolean;
-  /** 2 階層目。'skills' は指揮官のスキル */
-  children: readonly ActionDef[] | 'skills';
+  /** 2 階層目の先頭に指揮官のスキルを並べる */
+  skills?: boolean;
+  /** 2 階層目 */
+  children: readonly ActionDef[];
 }
 
 /** 1 階層目の並び */
@@ -63,8 +66,7 @@ const MENU: readonly (ActionDef | GroupDef)[] = [
     ],
   },
   { id: 'intercept', name: '迎撃', cost: 2 },
-  { name: '特殊', children: 'skills' },
-  { id: 'retreat', name: '退却', cost: 1 },
+  { name: '特殊', skills: true, children: [{ id: 'retreat', name: '退却' }] },
 ];
 
 export interface MenuAction {
@@ -85,7 +87,7 @@ export interface MenuContext {
   zocLocked: boolean;
   /** ターンの初めか（まだ移動も攻撃もしておらず、予約も無い）。退却はこのときだけ */
   turnStart: boolean;
-  /** 予約した行動があるか（「退却」の代わりに「決定」「取消」を出す） */
+  /** 予約した行動があるか（最後に「決定」「取消」を出す） */
   planned: boolean;
   /** 攻撃を予約したか（それ以上は攻撃できない。移動は canMoveAfterAttack のときだけ） */
   attackPlanned: boolean;
@@ -115,15 +117,20 @@ export interface MenuEntry {
 export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
   const { unit, status, ap, canMove, zocLocked, planned } = ctx;
   const lacksAp = (cost: number | undefined) => ap < (cost ?? 0);
-  return MENU.flatMap((def): MenuEntry | MenuEntry[] => {
+  /** 2 階層目の行動を選べない理由（選べるなら null） */
+  const childReason = (c: MenuAction): string | null =>
+    lacksAp(c.cost)
+      ? '行動力が足りない'
+      : c.id === 'volley' && !ctx.hasVolleyTargets
+        ? '取り囲んだ敵がいない'
+        : c.id === 'retreat' && !ctx.turnStart
+          ? 'ターンの初めしか退却できない'
+          : null;
+  const entries = MENU.map((def): MenuEntry => {
     if ('id' in def) {
-      if (def.id === 'retreat' && planned) {
-        return [CONFIRM, CANCEL].map((action) => ({ name: action.name, enabled: true, action }));
-      }
       const action = { id: def.id, name: def.name, cost: def.cost };
       // 攻撃した（予約した・このターンに実行した）後は移動できない（騎兵は除く）
       if (def.id === 'move' && (ctx.attackPlanned || status.attacked) && !ctx.canMoveAfterAttack) return { name: def.name, enabled: false, reason: '攻撃の後は移動できない', action };
-      if (def.id === 'retreat' && !ctx.turnStart) return { name: def.name, enabled: false, reason: 'ターンの初めしか退却できない', action };
       if (def.id === 'intercept' && (ctx.attackPlanned || status.attacked)) return { name: def.name, enabled: false, reason: '攻撃の後は迎撃できない', action };
       if (def.id === 'move' && zocLocked) return { name: def.name, enabled: false, reason: '敵の ZOC の中にいる', action };
       if (def.id === 'move' && !canMove) return { name: def.name, enabled: false, reason: '移動できる HEX がない', action };
@@ -135,13 +142,15 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
       const reason = status.attacked ? 'このターンは攻撃済み' : ctx.attackPlanned ? '攻撃は予約済み' : !ctx.hasTargets ? '攻撃できる敵がいない' : null;
       if (reason) return { name: def.name, enabled: false, reason };
     }
-    const cands: MenuAction[] =
-      def.children === 'skills'
-        ? status.skills.map((s) => ({ id: `skill:${s}`, name: SKILL_DEFS[s].name, cost: SKILL_DEFS[s].cost }))
-        : def.children.filter((c) => !c.types || c.types.includes(unit.type)).map(({ id, name, cost }) => ({ id, name, cost }));
-    if (cands.length === 0) return { name: def.name, enabled: false, reason: def.children === 'skills' ? 'スキルがない' : 'この兵種は使えない' };
-    const children = cands.filter((c) => !lacksAp(c.cost) && (c.id !== 'volley' || ctx.hasVolleyTargets));
-    if (children.length === 0) return { name: def.name, enabled: false, reason: '行動力が足りない' };
+    const cands: MenuAction[] = [
+      ...(def.skills ? status.skills.map((s) => ({ id: `skill:${s}` as const, name: SKILL_DEFS[s].name, cost: SKILL_DEFS[s].cost })) : []),
+      ...def.children.filter((c) => !c.types || c.types.includes(unit.type)).map(({ id, name, cost }) => ({ id, name, cost })),
+    ];
+    if (cands.length === 0) return { name: def.name, enabled: false, reason: 'この兵種は使えない' };
+    const children = cands.filter((c) => childReason(c) === null);
+    if (children.length === 0) return { name: def.name, enabled: false, reason: childReason(cands[0])! };
     return { name: def.name, enabled: true, children };
   });
+  if (planned) entries.push(...[CONFIRM, CANCEL].map((action) => ({ name: action.name, enabled: true, action })));
+  return entries;
 }
