@@ -204,6 +204,8 @@ body.dragging #drop-hint {
 .unit-tags {
   position: absolute;
   inset: 0;
+  /* 札どうしの z-index（unitTags.ts で付ける）をこの中に閉じ込め、行動メニューより奥に置く */
+  z-index: 1;
   overflow: hidden;
   pointer-events: none;
 }
@@ -341,7 +343,8 @@ body.dragging #drop-hint {
   position: absolute;
   left: 0;
   top: 0;
-  z-index: 10;
+  /* 情報札（.unit-tags）より手前 */
+  z-index: 2;
   user-select: none;
   will-change: transform;
 }
