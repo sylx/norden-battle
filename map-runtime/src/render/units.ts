@@ -6,6 +6,7 @@
  * スプライト同士は奥から順に描かれるので、手前のユニットが奥のユニットに重なる。
  */
 import * as THREE from 'three';
+import type { Offset } from '../core/hex';
 import type { HexMap } from '../core/mapData';
 import { Heightmap, type TerrainData } from '../core/terrainGen';
 import { unitFacings, type UnitData } from '../core/units';
@@ -26,8 +27,20 @@ const BRIDGE_DECK = 0.14;
 /** クリック判定で「描かれている」とみなす不透明度 */
 const PICK_ALPHA = 0.25;
 
+/** 選択中のユニットを囲む光の、画像の外へはみ出す幅（画像の高さ比） */
+const GLOW_PAD = 0.1;
+/** 光の縁取りの太さ・外側のにじみの広がり（画像の高さ比） */
+const GLOW_LINE = 0.018;
+const GLOW_SPREAD = 0.07;
+const GLOW_COLOR = 0xffc23a;
+/** 選択中のユニットがあるとき、ほかのユニットの明るさ */
+const DIM = 0.5;
+
 const SHADOW_ORDER = 9;
 const SPRITE_ORDER = 10;
+/** 選択中のユニットとその光は、ほかのユニットより手前に描く */
+const GLOW_ORDER = 11;
+const FOCUS_ORDER = 12;
 
 interface UnitSprite {
   sprite: THREE.Sprite;
@@ -60,9 +73,42 @@ export class UnitLayer {
   });
   /** 表示倍率。変えたら build() し直す */
   scale = 1.75;
+  /** 選択中のユニットの光の明滅に使う時間（秒）。描画のたびに進める */
+  readonly time: THREE.IUniform<number> = { value: 0 };
+  private focus: Offset | null = null;
+  private readonly glow = createGlowSprite(this.time);
 
   constructor() {
     this.group.name = 'units';
+    this.glow.visible = false;
+    this.glow.renderOrder = GLOW_ORDER;
+    this.group.add(this.glow);
+  }
+
+  /** 選択中のユニットを光で囲み、ほかのユニットを暗くする（null で解除） */
+  setFocus(o: Offset | null): void {
+    this.focus = o;
+    const target = o ? this.sprites.find(({ unit }) => unit.col === o.col && unit.row === o.row) : undefined;
+    for (const { sprite } of this.sprites) {
+      sprite.material.color.setScalar(target && sprite !== target.sprite ? DIM : 1);
+      sprite.renderOrder = sprite === target?.sprite ? FOCUS_ORDER : SPRITE_ORDER;
+    }
+    this.glow.visible = !!target;
+    if (!target) return;
+    const { sprite, image } = target;
+    const w = sprite.scale.x;
+    const h = sprite.scale.y;
+    const pad = GLOW_PAD * h;
+    const u = this.glow.material.userData.uniforms as GlowUniforms;
+    this.glow.material.map = image.texture;
+    u.uGlowSize.value.set(w, h);
+    u.uGlowPad.value = pad;
+    u.uGlowWidth.value.set(GLOW_LINE * h, GLOW_SPREAD * h);
+    u.uGlowFlip.value = image.texture.repeat.x < 0 ? 1 : 0;
+    this.glow.position.copy(sprite.position);
+    this.glow.scale.set(w + 2 * pad, h + 2 * pad, 1);
+    // 画像の足元とそろえる（光は足元の下にも少しはみ出す）
+    this.glow.center.set(0.5, pad / (h + 2 * pad));
   }
 
   build(map: HexMap, data: TerrainData): void {
@@ -105,6 +151,7 @@ export class UnitLayer {
       this.group.add(sprite);
       this.sprites.push({ sprite, image, unit });
     }
+    this.setFocus(this.focus);
   }
 
   /** 置いたユニットの画像の位置と大きさ（足元のワールド座標・ワールド単位の幅と高さ）。画面上に情報を重ねる用 */
@@ -131,10 +178,12 @@ export class UnitLayer {
     this.art.dispose();
     this.shadowTexture.dispose();
     this.shadowMaterial.dispose();
+    this.glow.material.dispose();
   }
 
   private clear(): void {
     for (const child of [...this.group.children]) {
+      if (child === this.glow) continue;
       this.group.remove(child);
       // 影のマテリアルとテクスチャは共有なので、捨てるのは影のジオメトリとスプライトのマテリアルだけ
       if (child instanceof THREE.Mesh) child.geometry.dispose();
@@ -201,4 +250,86 @@ function createShadowTexture(): THREE.Texture {
   g.fillStyle = grad;
   g.fillRect(0, 0, N, N);
   return new THREE.CanvasTexture(canvas);
+}
+
+interface GlowUniforms {
+  [name: string]: THREE.IUniform;
+  /** 光で囲む画像の幅と高さ（ワールド単位） */
+  uGlowSize: THREE.IUniform<THREE.Vector2>;
+  /** 画像の外へはみ出す幅（ワールド単位） */
+  uGlowPad: THREE.IUniform<number>;
+  /** x = 縁取りの太さ、y = にじみの広がり（ワールド単位） */
+  uGlowWidth: THREE.IUniform<THREE.Vector2>;
+  /** 画像を左右反転して使っているか */
+  uGlowFlip: THREE.IUniform<number>;
+  uTime: THREE.IUniform<number>;
+}
+
+/**
+ * 選択中のユニットの画像を囲む光。画像より一回り大きいスプライトで、
+ * 画像の不透明部分を周囲から拾って太らせた形を、脈打つ光の色で塗る（本体はこの上に重ねて描く）。
+ */
+function createGlowSprite(time: THREE.IUniform<number>): THREE.Sprite {
+  const uniforms: GlowUniforms = {
+    uGlowSize: { value: new THREE.Vector2(1, 1) },
+    uGlowPad: { value: 0 },
+    uGlowWidth: { value: new THREE.Vector2() },
+    uGlowFlip: { value: 0 },
+    uTime: time,
+  };
+  const material = new THREE.SpriteMaterial({
+    // map は選択中のユニットの画像に差し替える（シェーダで map を使うため最初から何か入れておく）
+    map: new THREE.Texture(),
+    color: GLOW_COLOR,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+    fog: false,
+  });
+  material.userData.uniforms = uniforms;
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vGlowUv;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvGlowUv = uv;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <map_pars_fragment>',
+        /* glsl */ `#include <map_pars_fragment>
+varying vec2 vGlowUv;
+uniform vec2 uGlowSize;
+uniform float uGlowPad;
+uniform vec2 uGlowWidth;
+uniform int uGlowFlip;
+uniform float uTime;
+float glowAlpha(vec2 q) {
+  if (q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) return 0.0;
+  if (uGlowFlip == 1) q.x = 1.0 - q.x;
+  return texture2D(map, q).a;
+}`,
+      )
+      .replace(
+        '#include <map_fragment>',
+        /* glsl */ `
+// このスプライト上の位置 → 画像の uv
+vec2 gq = (vGlowUv * (uGlowSize + 2.0 * uGlowPad) - uGlowPad) / uGlowSize;
+float gLine = 0.0;
+float gSpread = 0.0;
+for (int i = 0; i < 16; i++) {
+  float ang = float(i) * 0.39269908;
+  vec2 d = vec2(cos(ang), sin(ang)) / uGlowSize;
+  gLine = max(gLine, glowAlpha(gq + d * uGlowWidth.x));
+  gSpread += glowAlpha(gq + d * uGlowWidth.y) + glowAlpha(gq + d * uGlowWidth.y * 0.5);
+}
+gSpread = min(gSpread / 16.0, 1.0);
+float gPulse = 0.5 + 0.5 * sin(uTime * 4.0);
+float gA = max(gLine, gSpread * (0.45 + 0.45 * gPulse));
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.97, 0.85), gLine * gPulse);
+diffuseColor.a *= gA;
+`,
+      );
+  };
+  material.customProgramCacheKey = () => 'unit-glow';
+  return new THREE.Sprite(material);
 }

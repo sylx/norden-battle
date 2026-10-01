@@ -202,15 +202,17 @@ export class MapView {
     this.overlay.uniforms.uSelected.value.set(o?.col ?? -1, o?.row ?? -1);
   }
 
-  /** 選択中のユニットの HEX を脈打つ光で強調する（null で解除） */
+  /** 選択中のユニットの HEX と画像を脈打つ光で強調し、ほかのユニットを暗くする（null で解除） */
   setFocus(o: Offset | null): void {
     this.overlay.uniforms.uFocus.value.set(o?.col ?? -1, o?.row ?? -1);
+    this.units.setFocus(o);
   }
 
   /** 毎フレーム呼ぶ（風揺れの時間を進めて描画する） */
   render(): void {
     windUniforms.uTime.value = performance.now() / 1000;
     this.overlay.uniforms.uTime.value = windUniforms.uTime.value;
+    this.units.time.value = windUniforms.uTime.value;
     // 俯角を変えたら板絵を焼き直す
     this.decor?.forest.setPitch(this.ctx.pitch);
     this.ctx.render();
