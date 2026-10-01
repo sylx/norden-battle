@@ -9,13 +9,14 @@
  * 最後に予約を実行する「決定」と、予約をすべて取り消す「取消」が並ぶ。
  * 攻撃は 1 ターンに 1 回で、攻撃を予約した後は移動できない（騎兵は除く）。
  * 退却は「特殊」の中（指揮官のスキルの後）に並べ、ターンの初めだけ選べる。行動力は使わない。
+ * 魔術師は通常攻撃の代わりにサンダーフォール（行動力 4。最大行動力と同じなので移動した後は撃てない）。
  * 一斉攻撃は直接攻撃の兵種だけで、射程内に自分のほかの味方とも隣接している敵がいるときだけ並ぶ（hasVolleyTargets）。
  * 迎撃は選んだらすぐに実行し（予約した移動があればそこまで動く）、迎撃の構えで待機して行動を終える。攻撃の後と騎兵はできない。
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { UnitStatus } from './unitStatus';
 
-export type ActionId = 'move' | 'attack' | 'volley' | 'charge' | 'intercept' | 'retreat' | 'confirm' | 'cancel' | `skill:${SkillId}`;
+export type ActionId = 'move' | 'attack' | 'volley' | 'charge' | 'thunderfall' | 'intercept' | 'retreat' | 'confirm' | 'cancel' | `skill:${SkillId}`;
 
 /** 指揮官のスキル（特殊の項目） */
 export type SkillId = 'betray' | 'inspire' | 'fireAttack' | 'ambush';
@@ -59,10 +60,12 @@ const MENU: readonly (ActionDef | GroupDef)[] = [
     name: '攻撃',
     attack: true,
     children: [
-      { id: 'attack', name: '通常攻撃', cost: 2 },
-      // 直接攻撃の兵種だけ（間接の弓兵はできない）
-      { id: 'volley', name: '一斉攻撃', cost: 4, types: ['infantry', 'cavalry', 'mage'] },
+      { id: 'attack', name: '通常攻撃', cost: 2, types: ['infantry', 'archer', 'cavalry'] },
+      // 直接攻撃の兵種だけ（間接の弓兵・魔術師はできない）
+      { id: 'volley', name: '一斉攻撃', cost: 4, types: ['infantry', 'cavalry'] },
       { id: 'charge', name: '突撃', cost: 3, types: ['cavalry'] },
+      // 魔術師の攻撃（間接攻撃。魔法の名前はいずれ指揮官の属性で変えるかもしれない）
+      { id: 'thunderfall', name: 'サンダーフォール', cost: 4, types: ['mage'] },
     ],
   },
   // 騎兵はできない

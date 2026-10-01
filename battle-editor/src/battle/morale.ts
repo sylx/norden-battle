@@ -5,7 +5,7 @@
  *   攻撃した側 +WIN_GAIN〜0、攻撃された側 −WIN_LOSS〜0（比が 0 で最大、LOSING_RATIO で 0）。
  * - 比が LOSING_RATIO より大きい（反撃で受けたダメージが与えたダメージの 3 割より多い）:
  *   攻撃した側 0〜−LOSE_LOSS（比が 1 以上で最大）、攻撃された側は変わらない。
- * - 武力の高い指揮官は、自分の士気が上がる量と、相手の士気が下がる量を増やす
+ * - 武力（魔術師は知力）の高い指揮官は、自分の士気が上がる量と、相手の士気が下がる量を増やす
  *   （武力 STRONG_FROM で 0、100 で +STRENGTH_BONUS の割合）。
  */
 import { MAX_MORALE, type UnitStatus } from './unitStatus';
@@ -28,7 +28,7 @@ function strengthBonus(strength: number): number {
   return 1 + (Math.max(0, strength - STRONG_FROM) / (100 - STRONG_FROM)) * STRENGTH_BONUS;
 }
 
-/** dealt を与えて taken の反撃を受けたときの士気の増減。strength はそれぞれの指揮官の武力 */
+/** dealt を与えて taken の反撃を受けたときの士気の増減。strength はそれぞれの指揮官の武力（魔術師は知力） */
 export function moraleChange(dealt: number, taken: number, attackerStrength: number, defenderStrength: number): MoraleChange {
   if (dealt <= 0 && taken <= 0) return { attacker: 0, defender: 0 };
   const ratio = dealt > 0 ? taken / dealt : Infinity;

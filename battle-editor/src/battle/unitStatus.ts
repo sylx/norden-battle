@@ -18,9 +18,10 @@ export interface UnitStatus {
   face: number;
   /** 指揮官のスキル */
   skills: SkillId[];
-  /** 指揮官の統率・武力（0..100。ダメージ・士気の増減に効く。damage.ts・morale.ts） */
+  /** 指揮官の統率・武力・知力（0..100。ダメージ・士気の増減に効く。damage.ts・morale.ts）。魔術師は武力の代わりに知力を使う */
   leadership: number;
   strength: number;
+  intelligence: number;
   /** このターンに移動したか（移動も攻撃もしていなければ敵の ZOC の中からでも動き出せる） */
   moved: boolean;
   /** このターンに攻撃したか（攻撃は 1 ターンに 1 回） */
@@ -67,17 +68,17 @@ const FACE_SKILLS: SkillId[][] = [
   ['inspire', 'ambush', 'betray'],
 ];
 
-/** 顔ごとの指揮官の統率・武力（仮） */
-const FACE_ABILITIES: [leadership: number, strength: number][] = [
-  [82, 64],
-  [58, 77],
-  [45, 40],
-  [70, 88],
-  [90, 52],
-  [36, 72],
-  [64, 58],
-  [52, 94],
-  [76, 70],
+/** 顔ごとの指揮官の統率・武力・知力（仮） */
+const FACE_ABILITIES: [leadership: number, strength: number, intelligence: number][] = [
+  [82, 64, 71],
+  [58, 77, 48],
+  [45, 40, 92],
+  [70, 88, 35],
+  [90, 52, 80],
+  [36, 72, 55],
+  [64, 58, 66],
+  [52, 94, 30],
+  [76, 70, 84],
 ];
 
 /** 表示確認用の仮の状態。兵士数・士気は HEX の位置から決まるばらつき、行動力は満タン、顔は軍ごとに順に割り当てる */
@@ -106,6 +107,7 @@ export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStat
       skills: FACE_SKILLS[face] ?? [],
       leadership: FACE_ABILITIES[face]?.[0] ?? 50,
       strength: FACE_ABILITIES[face]?.[1] ?? 50,
+      intelligence: FACE_ABILITIES[face]?.[2] ?? 50,
       moved: false,
       attacked: false,
       justAttacked: false,

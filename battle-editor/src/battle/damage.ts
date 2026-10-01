@@ -3,7 +3,7 @@
  *
  *   兵の力   = 兵数 × DAMAGE_RATE × 兵種の攻撃力 × 攻撃の種類の倍率 ÷ 相手の兵種の防御力（兵数が多いほど大きい）
  *   統率     = (1 + (統率 − 50) × LEADERSHIP_ATTACK) × (1 − (相手の統率 − 50) × LEADERSHIP_GUARD)
- *   武力     = 武力 × STRENGTH_ATTACK − 相手の武力 × STRENGTH_GUARD（兵数に関わらず一定のダメージ・軽減）
+ *   武力     = 武力 × STRENGTH_ATTACK − 相手の武力 × STRENGTH_GUARD（兵数に関わらず一定のダメージ・軽減。魔術師は武力の代わりに知力）
  *   士気     = 1 + (士気 − 50) × MORALE_RATE（50 より高ければ増え、低ければ減る）
  *   包囲     = 相手が包囲されていれば ENCIRCLED_RATE
  *   ランダム = 1 + roll × RANDOM_SPREAD（roll は −1〜1）
@@ -36,6 +36,7 @@ export const ATTACK_POWER: Partial<Record<AttackKind, number>> = {
   attack: 0.8,
   volley: 0.8,
   charge: 0.8,
+  thunderfall: 1.0,
   interceptFire: 0.5,
 };
 
@@ -61,7 +62,7 @@ const INTERCEPT_COUNTER = 1.5;
 /** 一斉攻撃に加わる味方 1 隊あたりのダメージの増え方 */
 const VOLLEY_BONUS = 0.3;
 
-/** ダメージの計算に使う、ユニットの状態 */
+/** ダメージの計算に使う、ユニットの状態（strength は武力。魔術師は知力を入れる） */
 export interface Fighter extends Pick<UnitStatus, 'soldiers' | 'morale' | 'leadership' | 'strength'> {
   type: UnitType;
   /** 包囲されているか */

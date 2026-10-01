@@ -1,9 +1,11 @@
 /**
  * 攻撃の判定（値は仮）。ダメージの計算は damage.ts、士気の増減は morale.ts。
  *
- * - 兵種ごとの射程（minRange〜maxRange、HEX の距離）。弓兵は 1〜2、ほかは 1。
+ * - 兵種ごとの射程（minRange〜maxRange、HEX の距離）。弓兵は 1〜2、魔術師は 1〜3、ほかは 1。
  *   隣接したユニットを攻撃できない兵種（砲兵など）は minRange = 2 にする。
- * - ranged の兵種（弓兵）の攻撃は放物線の矢印で出す。
+ * - ranged の兵種（弓兵・魔術師）の攻撃は放物線の矢印で出す。
+ * - magic の兵種（魔術師）は、指揮官の武力の代わりに知力を使う（ダメージ・士気の増減）。
+ *   攻撃（サンダーフォール）は隣接した相手にも間接攻撃で、反撃を受けない（INDIRECT_KINDS）。
  * - moveAfterAttack の兵種（騎兵）だけ、攻撃の後に移動できる（一撃離脱）。攻撃の直後は敵の ZOC の中からでも動き出せる。
  * - 突撃（騎兵）は隣の相手を攻撃した後、相手を突き抜けて同じ向きの向こうの HEX へ飛び出る（chargeLanding）。
  *   その HEX にユニットがいる・通れない地形・マップの外なら飛び出さない。行動力は突撃の分だけで、ZOC は関係ない。
@@ -32,14 +34,24 @@ export interface CombatDef {
   ranged: boolean;
   /** 攻撃の後に移動できる */
   moveAfterAttack?: boolean;
+  /** 指揮官の武力の代わりに知力を使う */
+  magic?: boolean;
 }
 
 export const COMBAT_DEFS: Record<UnitType, CombatDef> = {
   infantry: { minRange: 1, maxRange: 1, ranged: false },
   archer: { minRange: 1, maxRange: 2, ranged: true },
   cavalry: { minRange: 1, maxRange: 1, ranged: false, moveAfterAttack: true },
-  mage: { minRange: 1, maxRange: 1, ranged: false },
+  mage: { minRange: 1, maxRange: 3, ranged: true, magic: true },
 };
+
+/** 隣接した相手へでも間接攻撃になる（反撃を受けない）攻撃の種類 */
+const INDIRECT_KINDS: readonly AttackKind[] = ['interceptFire', 'thunderfall'];
+
+/** 指揮官の武力（magic の兵種は知力）。ダメージ・士気の増減に使う */
+export function mightOf(unit: UnitData, status: UnitStatus): number {
+  return COMBAT_DEFS[unit.type].magic ? status.intelligence : status.strength;
+}
 
 export function isAttack(id: ActionId): boolean {
   return id in ATTACK_POWER;
@@ -108,7 +120,7 @@ export function attackResult(map: HexMap, attacker: Combatant, defender: Combata
   const supporters = kind === 'volley' ? volleySupporters(map, attacker.unit, defender.pos).length : 0;
   const att = { ...fighter(attacker, encircledAt(map, attacker, defender)), supporters };
   const def = fighter(defender, encircledAt(map, defender, attacker));
-  const direct = kind !== 'interceptFire' && hexDistance(map, attacker.pos, defender.pos) <= 1;
+  const direct = !INDIRECT_KINDS.includes(kind) && hexDistance(map, attacker.pos, defender.pos) <= 1;
   const damage = calcDamage(att, def, kind, rolls.damage);
   const counter = direct ? calcCounter(att, { ...def, soldiers: def.soldiers - damage }, rolls.counter) : 0;
   return { damage, counter, direct, encircled: def.encircled, supporters, morale: moraleChange(damage, counter, att.strength, def.strength) };
@@ -130,9 +142,9 @@ export function attackForecast(map: HexMap, attacker: Combatant, defender: Comba
 }
 
 function fighter({ unit, status }: Combatant, encircled: boolean): Fighter {
-  const { soldiers, morale, leadership, strength } = status;
+  const { soldiers, morale, leadership } = status;
   const guarding = status.intercepting && !COMBAT_DEFS[unit.type].ranged;
-  return { type: unit.type, soldiers, morale, leadership, strength, encircled, guarding, supporters: 0 };
+  return { type: unit.type, soldiers, morale, leadership, strength: mightOf(unit, status), encircled, guarding, supporters: 0 };
 }
 
 /** target を一斉攻撃するときに加わる味方（target に隣接している、attacker 以外の attacker の味方） */
