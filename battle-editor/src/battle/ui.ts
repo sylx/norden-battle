@@ -203,6 +203,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
           attackerLeft: app.statuses.get(i.unit)?.soldiers ?? 0,
           targetLeft: i.targetLeft,
           landing: null,
+          halted: i.halted,
         });
         parts.push(`${teamUnit(i.unit)}の迎撃: -${result.damage}${i.targetLeft <= 0 ? '（壊滅）' : ''}`);
       }

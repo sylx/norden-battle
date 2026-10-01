@@ -136,6 +136,8 @@ export interface InterceptReport {
   targetLeft: number;
   /** 予約した攻撃の後の移動で受けたか */
   afterAttack: boolean;
+  /** この迎撃で足止めされたか（同じ HEX で続けて撃たれたときは最後の 1 回） */
+  halted: boolean;
 }
 
 /** 移動先・攻撃の相手を選んでいる状態 */
@@ -622,6 +624,9 @@ export class BattleApp {
     const map = this.map!;
     const unit = exec.plan.unit;
     exec.report.halted = true;
+    // 足止めは最後に撃った迎撃の記録に付ける
+    for (const r of exec.report.intercepts) r.halted = false;
+    exec.report.intercepts.at(-1)!.halted = true;
     const rest: Phase[] = [];
     for (const p of exec.phases) {
       if (p.kind !== 'intercept' || p.at.col !== phase.at.col || p.at.row !== phase.at.row) break;
@@ -655,7 +660,7 @@ export class BattleApp {
     applyMorale(ss, result.morale.attacker);
     ss.intercepting = false;
     report.lost = plan.status.soldiers <= 0;
-    report.intercepts.push({ unit: phase.shooter, result, targetLeft: Math.max(0, plan.status.soldiers), afterAttack: !!report.attack });
+    report.intercepts.push({ unit: phase.shooter, result, targetLeft: Math.max(0, plan.status.soldiers), afterAttack: !!report.attack, halted: false });
     const p = this.view.units.placements().find((x) => x.unit === plan.unit);
     if (p) this.popups.show(p, report.lost ? `迎撃 -${result.damage} 壊滅` : `迎撃 -${result.damage}`, 'damage');
   }

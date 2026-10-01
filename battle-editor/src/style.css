@@ -1182,3 +1182,7 @@ body.dragging #drop-hint {
 .battle-log .log-note::before {
   content: '▸ ';
 }
+
+.battle-log .log-note.halted {
+  color: #ff9a7a;
+}

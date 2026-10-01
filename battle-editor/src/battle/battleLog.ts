@@ -34,6 +34,8 @@ export interface AttackLogEntry {
   targetLeft: number;
   /** 突撃で飛び出た HEX */
   landing: Offset | null;
+  /** 迎撃で相手の行動を止めたか */
+  halted?: boolean;
 }
 
 /** 下端からこれ以内にいれば「最新を見ている」とみなして自動でスクロールする（CSS ピクセル） */
@@ -105,6 +107,7 @@ export class BattleLog {
     else result.append(withMorale(el('span', 'log-none', '反撃なし'), e.morale.attacker));
     li.append(who, result);
     if (e.landing && e.attackerLeft > 0) li.append(el('div', 'log-note', `(${e.landing.col}, ${e.landing.row}) へ突破`));
+    if (e.halted && e.targetLeft > 0) li.append(el('div', 'log-note halted', '迎撃で足止めされ、行動を中断'));
     li.addEventListener('animationend', () => li.classList.remove('fresh'), { once: true });
     this.list.append(li);
 
