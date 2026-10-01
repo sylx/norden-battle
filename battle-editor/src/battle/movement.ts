@@ -74,3 +74,10 @@ export function moveRange(map: HexMap, unit: UnitData, ap: number): Map<number, 
   }
   return best;
 }
+
+/** 出発地から step までの HEX（出発地・到着地を含む） */
+export function movePath(step: MoveStep): Offset[] {
+  const out: Offset[] = [];
+  for (let s: MoveStep | null = step; s; s = s.prev) out.push({ col: s.col, row: s.row });
+  return out.reverse();
+}

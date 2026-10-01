@@ -145,7 +145,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
           `${unitLabel(u)}: 「${escapeHtml(a.name)}」を選択（行動力 ${a.cost}）— 未実装`,
     );
   // 移動の予約はまだ無いので、選んだ移動先を知らせるだけ
-  app.onMoveTarget = (u, step) => setStatus(`${unitLabel(u)}: (${step.col}, ${step.row}) へ移動（行動力 ${step.cost}）— 予約は未実装`);
+  app.onMoveTarget = (u, step) =>
+    setStatus(`${unitLabel(u)}: (${step.col}, ${step.row}) へ移動（行動力 ${step.cost}）— ほかの HEX で選び直し / 予約は未実装`);
   app.onMoveCancel = () => setStatus(idleStatus);
   renderInfo($('hover-info'), null, null);
   renderInfo($('select-info'), null, null);

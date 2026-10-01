@@ -6,6 +6,7 @@ const MOVE_RANGE_COLOR = 0x4aa8ff;
  * 戦闘の UI・演出はここに積み上げていく。
  *
  * 操作の流れ: ユニットを選択 → 行動メニュー → 移動を選ぶと移動できる HEX を出して移動先を選ぶ状態になる。
+ * 移動先を選ぶと、そこまでの最短ルートを地面に矢印で出す（選び直せる）。
  * 移動先を選ぶ状態では、Esc か範囲外のクリックでメニューに戻る。
  */
 import * as THREE from 'three';
@@ -16,7 +17,7 @@ import { MapView } from '@norden/map-runtime/render/mapView';
 import { SceneContext } from '@norden/map-runtime/render/scene';
 import type { MenuAction } from './actions';
 import { ActionMenu } from './actionMenu';
-import { moveRange, type MoveStep } from './movement';
+import { movePath, moveRange, type MoveStep } from './movement';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
 
@@ -106,7 +107,10 @@ export class BattleApp {
     if (this.moveTargets) {
       const step = this.moveStepAt(o);
       const mover = this.selected && map?.unitAt(this.selected.col, this.selected.row);
-      if (step && mover) this.onMoveTarget(mover, step);
+      if (step && mover) {
+        this.view.setPath(movePath(step));
+        this.onMoveTarget(mover, step);
+      }
       // ほかのユニットは選び直し、それ以外（範囲外・自分）はメニューに戻る
       else if (unit && !(o.col === this.selected?.col && o.row === this.selected.row)) this.setSelected(o);
       else this.cancelMove();
@@ -137,6 +141,7 @@ export class BattleApp {
   private endMove(): void {
     this.moveTargets = null;
     this.view.setRange(null);
+    this.view.setPath(null);
     this.menu.suspended = false;
     this.setHover(this.hovered);
   }

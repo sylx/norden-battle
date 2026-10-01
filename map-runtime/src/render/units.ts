@@ -23,7 +23,7 @@ const SHADOW_SHIFT = 0.06;
 /** 影の中心の濃さ */
 const SHADOW_OPACITY = 0.55;
 /** 橋の上に立つときの足元の高さ（水面から、hexSize 比） */
-const BRIDGE_DECK = 0.14;
+export const BRIDGE_DECK = 0.14;
 /** クリック判定で「描かれている」とみなす不透明度 */
 const PICK_ALPHA = 0.25;
 

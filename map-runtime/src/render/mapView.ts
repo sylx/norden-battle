@@ -10,11 +10,12 @@ import { buildRoadPaths, RoadIndex } from '../core/roads';
 import { DEFAULT_TERRAIN_PARAMS, generateTerrain, Heightmap, placeVegetation, type TerrainData, type TerrainParams } from '../core/terrainGen';
 import { Forest, windUniforms, type ForestMode } from './foliage';
 import { HexOverlay } from './hexOverlay';
+import { PathArrow } from './pathArrow';
 import { buildRoadMesh } from './roads';
 import type { SceneContext } from './scene';
 import { buildStructures } from './structures';
 import { buildTerrainMeshes, disposeObject, type TerrainMeshes } from './terrainMeshes';
-import { UnitLayer } from './units';
+import { BRIDGE_DECK, UnitLayer } from './units';
 
 export interface MapDisplay {
   grid: boolean;
@@ -44,6 +45,8 @@ export class MapView {
     units: true,
   };
   readonly units = new UnitLayer();
+  /** 経路の矢印（移動ルートなど） */
+  readonly pathArrow = new PathArrow();
   map: HexMap | null = null;
 
   /** 地形・木・人工物を作り直したとき */
@@ -60,7 +63,7 @@ export class MapView {
 
   constructor(ctx: SceneContext) {
     this.ctx = ctx;
-    ctx.overlay.add(this.units.group);
+    ctx.overlay.add(this.units.group, this.pathArrow.group);
     ctx.onShadowPass = (active) => this.decor?.forest.setShadowPass(active);
     this.units.art.onChange = () => this.rebuildUnits();
   }
@@ -73,6 +76,7 @@ export class MapView {
   setMap(map: HexMap, resetCamera = true): void {
     this.map = map;
     this.overlay.setLayout(map.layout);
+    this.pathArrow.set(null, map.layout, () => 0);
     this.ctx.parchment.uniforms.uPaperScale.value = map.layout.size;
     this.regenerate(resetCamera);
   }
@@ -213,11 +217,28 @@ export class MapView {
     this.overlay.setRange(cells, color);
   }
 
+  /** 経路（出発地 → 到着地の HEX）に沿って地面に矢印を出す。null で消す */
+  setPath(path: readonly Offset[] | null): void {
+    const map = this.map;
+    const data = this.terrainData;
+    if (!map || !data) return;
+    const hm = new Heightmap(data);
+    const deck = data.waterLevel + BRIDGE_DECK * map.layout.size;
+    // 水の上は水面、橋の HEX は橋の上（ユニットの足元と同じ高さ）
+    const groundAt = (x: number, z: number) => {
+      const o = map.layout.worldToOffset(x, z);
+      const floor = map.get(o.col, o.row)?.feature === 'bridge' ? deck : data.waterLevel;
+      return Math.max(hm.heightAt(x, z), floor);
+    };
+    this.pathArrow.set(path, map.layout, groundAt);
+  }
+
   /** 毎フレーム呼ぶ（風揺れの時間を進めて描画する） */
   render(): void {
     windUniforms.uTime.value = performance.now() / 1000;
     this.overlay.uniforms.uTime.value = windUniforms.uTime.value;
     this.units.time.value = windUniforms.uTime.value;
+    this.pathArrow.time.value = windUniforms.uTime.value;
     // 俯角を変えたら板絵を焼き直す
     this.decor?.forest.setPitch(this.ctx.pitch);
     this.ctx.render();
