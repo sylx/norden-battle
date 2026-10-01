@@ -74,6 +74,8 @@ export interface MenuContext {
   ap: number;
   /** 移動できる HEX があるか */
   canMove: boolean;
+  /** 敵の ZOC の中にいるか（移動できない） */
+  inZoc: boolean;
   /** 予約した行動があるか（「退却」の代わりに「決定」を出す） */
   planned: boolean;
 }
@@ -92,12 +94,13 @@ export interface MenuEntry {
 }
 
 /** ユニットの行動メニューの 1 階層目 */
-export function buildActionMenu({ unit, status, ap, canMove, planned }: MenuContext): MenuEntry[] {
+export function buildActionMenu({ unit, status, ap, canMove, inZoc, planned }: MenuContext): MenuEntry[] {
   const lacksAp = (cost: number | undefined) => ap < (cost ?? 0);
   return MENU.map((def): MenuEntry => {
     if ('id' in def) {
       if (def.id === 'retreat' && planned) return { name: CONFIRM.name, enabled: true, action: CONFIRM };
       const action = { id: def.id, name: def.name, cost: def.cost };
+      if (def.id === 'move' && inZoc) return { name: def.name, enabled: false, reason: '敵の ZOC の中にいる', action };
       if (def.id === 'move' && !canMove) return { name: def.name, enabled: false, reason: '移動できる HEX がない', action };
       if (def.types && !def.types.includes(unit.type)) return { name: def.name, enabled: false, reason: 'この兵種は使えない', action };
       if (lacksAp(def.cost)) return { name: def.name, enabled: false, reason: '行動力が足りない', action };

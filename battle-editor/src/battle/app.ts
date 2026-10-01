@@ -21,7 +21,7 @@ import { SceneContext } from '@norden/map-runtime/render/scene';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import type { MenuAction } from './actions';
 import { ActionMenu } from './actionMenu';
-import { movePath, moveRange, type MoveStep } from './movement';
+import { inEnemyZoc, movePath, moveRange, type MoveStep } from './movement';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
 
@@ -286,11 +286,13 @@ export class BattleApp {
     if (!map || !plan) return this.menu.open(null);
     const spent = BattleApp.planCost(plan);
     const ap = plan.status.ap - spent;
+    const pos = BattleApp.planPos(plan);
     this.menu.open({
       unit: plan.unit,
       status: plan.status,
       ap,
-      canMove: moveRange(map, plan.unit, BattleApp.planPos(plan), plan.status.ap, spent).size > 0,
+      canMove: moveRange(map, plan.unit, pos, plan.status.ap, spent).size > 0,
+      inZoc: inEnemyZoc(map, plan.unit, pos),
       planned: plan.legs.length > 0,
     });
   }

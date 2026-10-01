@@ -133,7 +133,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
   app.onHover = (c, u) => {
     // 移動先を選んでいる間は、そこまでに使う行動力も出す
     const step = app.moveStepAt(c);
-    const move = step && [['移動', `行動力 ${step.cost}（予約の合計）${step.zoc ? '<br>敵の ZOC: ここで止まる' : ''}`]];
+    const move = step && [['移動', `行動力 ${step.cost}（予約の合計）${step.zoc ? '<br>敵の ZOC: 入るとそれ以上動けない' : ''}`]];
     renderInfo($('hover-info'), c, u, move || []);
   };
   app.onSelect = (c, u) => renderInfo($('select-info'), c, u);
@@ -141,7 +141,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
   app.onAction = (u, a) =>
     setStatus(
       a.id === 'move'
-        ? `${unitLabel(u)}: 移動先を選んでください（青い HEX。橙の斜線は敵の ZOC で、入るとそこで止まる）/ Esc・範囲外クリック: メニューに戻る`
+        ? `${unitLabel(u)}: 移動先を選んでください（青い HEX。橙の斜線は敵の ZOC で、入るとそれ以上動けない）/ Esc・範囲外クリック: メニューに戻る`
         : // 移動以外の処理はまだ無いので、選んだものを知らせるだけ
           `${unitLabel(u)}: 「${escapeHtml(a.name)}」を選択${a.cost !== undefined ? `（行動力 ${a.cost}）` : ''}— 未実装`,
     );
