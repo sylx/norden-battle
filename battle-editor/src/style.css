@@ -156,6 +156,49 @@ button:hover {
   margin: 0;
 }
 
+/* ターン表示とターン終了ボタン（画面の右下、ステータス行の上） */
+#turn-bar {
+  position: fixed;
+  right: 12px;
+  bottom: 44px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 14px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+
+#turn-bar .turn {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+#turn-bar .turn output {
+  margin-left: 2px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+#btn-end-turn {
+  flex: none;
+  padding: 6px 16px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #fff4d0;
+  background: linear-gradient(#7a5226, #4e3216);
+  border-color: var(--accent);
+}
+
+#btn-end-turn:hover {
+  background: linear-gradient(#8e6230, #5c3c1c);
+}
+
 #status {
   position: fixed;
   left: 12px;

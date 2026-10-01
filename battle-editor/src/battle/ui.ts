@@ -153,6 +153,11 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     );
   };
   app.onMoveCancel = () => setStatus(idleStatus);
+  // --- ターン ---
+  app.onTurn = (turn) => ($('turn-number').textContent = String(turn));
+  $('btn-end-turn').addEventListener('click', () => {
+    if (app.endTurn()) setStatus(`ターン ${app.turn} — 全ユニットの行動力が回復しました / ${idleStatus}`);
+  });
   app.onExecute = (u, from, cost) => setStatus(`(${from.col}, ${from.row}) → ${unitLabel(u)} へ移動しました（行動力 ${cost} 使用）`);
   renderInfo($('hover-info'), null, null);
   renderInfo($('select-info'), null, null);

@@ -7,6 +7,8 @@
  * 移動は何回かに分けて予約でき、予約したルートは地面に矢印で出す。決定でユニットがルートに沿って歩いて
  * 最後の移動先へ動き、行動力を使う（歩いている間は操作を受け付けない）。
  *
+ * ターン終了で全ユニットの行動力が最大まで戻る。
+ *
  * Esc: 移動先を選ぶのをやめる → 2 階層目を閉じる → 予約を 1 つ戻す → 選択を外す。
  */
 import * as THREE from 'three';
@@ -64,6 +66,8 @@ export class BattleApp {
   hovered: Offset | null = null;
   /** 選択中のユニットの予約（選択していなければ null） */
   plan: Plan | null = null;
+  /** 何ターン目か（1 から） */
+  turn = 1;
 
   onHover: (cell: HexCell | null, unit: UnitData | null) => void = () => {};
   onSelect: (cell: HexCell | null, unit: UnitData | null) => void = () => {};
@@ -73,6 +77,8 @@ export class BattleApp {
   onPlanChange: (plan: Plan) => void = () => {};
   /** 移動先を選ぶ状態をやめたとき */
   onMoveCancel: () => void = () => {};
+  /** ターンが変わったとき */
+  onTurn: (turn: number) => void = () => {};
   /** 決定で予約を実行したとき（cost は使った行動力） */
   onExecute: (unit: UnitData, from: Offset, cost: number) => void = () => {};
 
@@ -131,6 +137,18 @@ export class BattleApp {
     this.tags.setStatuses(this.statuses);
     this.view.setMap(map);
     this.setSelected(null);
+    this.turn = 1;
+    this.onTurn(this.turn);
+  }
+
+  /** ターンを終える。選択と予約を捨て、全ユニットの行動力を最大まで戻す（移動のアニメーション中は何もしない） */
+  endTurn(): boolean {
+    if (this.walk || !this.map) return false;
+    this.setSelected(null);
+    for (const status of this.statuses.values()) status.ap = status.maxAp;
+    this.turn++;
+    this.onTurn(this.turn);
+    return true;
   }
 
   /** 移動先を選ぶ状態のとき、o へ移動するときの最短経路（移動できなければ null） */
