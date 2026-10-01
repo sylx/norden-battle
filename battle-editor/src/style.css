@@ -574,6 +574,49 @@ body.dragging #drop-hint {
   background: rgba(226, 183, 90, 0.25);
 }
 
+/* 指揮官の統率・武力（0..100） */
+.action-menu .menu-commander {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 5px;
+}
+
+.action-menu .menu-commander .stat {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  line-height: 13px;
+}
+
+.action-menu .menu-commander .label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.action-menu .menu-commander .value {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.action-menu .menu-commander .track {
+  grid-column: 1 / -1;
+  height: 3px;
+  margin-top: 2px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.action-menu .menu-commander .fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #8a6a3a, #e2b75a);
+}
+
 .action-menu .menu-items {
   list-style: none;
   margin: 0;

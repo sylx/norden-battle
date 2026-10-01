@@ -56,7 +56,7 @@ export const RANDOM_SPREAD = 0.2;
 /** 反撃の、通常攻撃のダメージに対する割合 */
 const COUNTER_RATE = 0.1;
 /** 迎撃の構えの近接ユニットが受けるダメージと、返す反撃の倍率 */
-const INTERCEPT_GUARD = 0.7;
+const INTERCEPT_GUARD = 0.5;
 const INTERCEPT_COUNTER = 1.5;
 /** 一斉攻撃に加わる味方 1 隊あたりのダメージの増え方 */
 const VOLLEY_BONUS = 0.3;

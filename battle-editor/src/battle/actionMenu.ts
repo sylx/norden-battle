@@ -3,7 +3,7 @@
  *
  * - ユニットの絵（移動を予約したら予約した移動先に置いた絵）の右（入らなければ左）に置き、
  *   カメラを動かしても毎フレーム追いかける。
- * - 上部にユニットの状態（情報札と同じ顔・兵士数・士気と、残り行動力）を出す。
+ * - 上部にユニットの状態（情報札と同じ顔・兵士数・士気と、残り行動力・指揮官の統率・武力）を出す。
  * - 2 階層目は 1 階層目の項目の横に開く。マウスは項目に乗せる、タッチはタップで開く。
  * - パネルの四隅には飾り罫（frame.ts）を置く。画像に差し替えられるよう、パネルの内側に飾りの分の余白を
  *   取ってある（style.css の --frame-*）。
@@ -81,7 +81,10 @@ export class ActionMenu {
       pips.append(el('i', cls));
     }
     ap.append(pips);
-    head.append(title, card, ap);
+    // 指揮官の能力（0..100）
+    const commander = el('div', 'menu-commander');
+    commander.append(stat('統率', status.leadership), stat('武力', status.strength));
+    head.append(title, card, ap, commander);
 
     const list = el('ul', 'menu-items');
     for (const entry of buildActionMenu(ctx)) list.append(this.item(entry));
@@ -190,6 +193,17 @@ function framedPanel(kind: string): HTMLDivElement {
   addFrame(panel);
   panel.append(el('div', 'menu-body'));
   return panel;
+}
+
+/** 指揮官の能力の値とグラフ */
+function stat(label: string, n: number): HTMLElement {
+  const s = el('div', 'stat');
+  const track = el('div', 'track');
+  const fill = el('div', 'fill');
+  fill.style.width = `${Math.max(0, Math.min(100, n))}%`;
+  track.append(fill);
+  s.append(el('span', 'label', label), el('span', 'value', String(n)), track);
+  return s;
 }
 
 /** 消費する行動力 */
