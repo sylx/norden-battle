@@ -46,7 +46,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     currentFile = file;
     mapSel.value = file && files.some((f) => f.file === file) ? file : '';
     $('map-title').textContent = `${label ?? '-'} — ${data.name} — ${data.grid.orientation} ${data.grid.cols}×${data.grid.rows}`;
-    setStatus('左ドラッグ: 移動 / ホイール: ズーム / クリック: 選択');
+    setStatus('左ドラッグ: 移動 / ホイール: ズーム / クリック: ユニットを選択');
   };
 
   const loadStored = async (file: string) => {

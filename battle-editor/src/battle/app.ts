@@ -16,6 +16,7 @@ export class BattleApp {
   readonly view: MapView;
   /** ユニットの頭上の情報札（顔・兵士数・士気） */
   readonly tags: UnitTags;
+  /** 選択中のユニットの HEX */
   selected: Offset | null = null;
   hovered: Offset | null = null;
 
@@ -43,7 +44,9 @@ export class BattleApp {
       this.downPos = null;
       if (moved > 4) return; // ドラッグ（パン）はクリック扱いしない
       this.setPointer(e);
-      this.setSelected(this.pick());
+      // ユニットのいる HEX ならそのユニットを選択し、いない HEX なら選択を外す
+      const o = this.pick();
+      this.setSelected(o && this.map?.unitAt(o.col, o.row) ? o : null);
     });
     this.ctx.renderer.setAnimationLoop(() => this.frame());
   }
@@ -78,7 +81,7 @@ export class BattleApp {
 
   private setSelected(o: Offset | null): void {
     this.selected = o;
-    this.view.setSelected(o);
+    this.view.setFocus(o);
     this.onSelect(...this.cellAndUnit(o));
   }
 

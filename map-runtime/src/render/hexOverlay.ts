@@ -18,6 +18,10 @@ export interface HexOverlayUniforms {
   uLineWidth: THREE.IUniform<number>;
   uHover: THREE.IUniform<THREE.Vector2>;
   uSelected: THREE.IUniform<THREE.Vector2>;
+  /** 選択中のユニットの HEX（脈打つ光で強調する） */
+  uFocus: THREE.IUniform<THREE.Vector2>;
+  /** 強調の明滅に使う時間（秒） */
+  uTime: THREE.IUniform<number>;
   uCellTex: THREE.IUniform<THREE.DataTexture>;
   uCellOpacity: THREE.IUniform<number>;
   uWaterLevel: THREE.IUniform<number>;
@@ -33,6 +37,8 @@ uniform float uGridOpacity;
 uniform float uLineWidth;
 uniform vec2 uHover;
 uniform vec2 uSelected;
+uniform vec2 uFocus;
+uniform float uTime;
 uniform sampler2D uCellTex;
 uniform float uCellOpacity;
 uniform float uWaterLevel;
@@ -100,8 +106,11 @@ bool hexInMap = hexI.x >= 0.0 && hexI.y >= 0.0 && hexI.x < uGridDim.x && hexI.y 
 #endif
 bool hexIsHover = hexInMap && all(equal(hexI.xy, uHover));
 bool hexIsSel = hexInMap && all(equal(hexI.xy, uSelected));
+bool hexIsFocus = hexInMap && all(equal(hexI.xy, uFocus));
 float hexLine = 0.0;
 vec3 hexLineColor = uGridColor;
+float hexFocus = 0.0;
+vec3 hexFocusColor = vec3(1.0, 0.76, 0.22);
 
 #ifdef HEX_GRAIN
   // 頂点色だけだと単調なので細かい粒状感を足す
@@ -128,8 +137,25 @@ if (hexInMap) {
   }
   hexLine = (1.0 - smoothstep(lw - hexFw, lw + hexFw, hexD)) * op;
   diffuseColor.rgb = mix(diffuseColor.rgb, hexLineColor, hexLine);
+
+  if (hexIsFocus) {
+    // 0 = 辺、1 = 中心
+    float t = clamp(hexD / (uHexSize * 0.8660254), 0.0, 1.0);
+    float pulse = 0.5 + 0.5 * sin(uTime * 4.0);
+    // 脈打つ太い縁取り
+    float bw = uLineWidth * (3.0 + 1.5 * pulse);
+    float rim = 1.0 - smoothstep(bw - hexFw, bw + hexFw, hexD);
+    // 縁から内側へにじむ光
+    float glow = exp(-t * 6.0) * (0.35 + 0.35 * pulse);
+    // 中心から縁へ繰り返し広がる波紋
+    float ph = fract(uTime * 0.6);
+    float ring = (1.0 - smoothstep(0.0, 0.07, abs(t - (1.0 - ph)))) * sin(ph * 3.14159265) * 0.5;
+    hexFocus = clamp(max(rim, 0.1 + glow + ring), 0.0, 1.0);
+    hexFocusColor = mix(hexFocusColor, vec3(1.0, 0.97, 0.85), rim * pulse);
+    diffuseColor.rgb = mix(diffuseColor.rgb, hexFocusColor, hexFocus);
+  }
 #ifdef HEX_WATER
-  diffuseColor.a = mix(diffuseColor.a, 1.0, hexLine);
+  diffuseColor.a = mix(diffuseColor.a, 1.0, max(hexLine, hexFocus));
 #endif
 }
 `;
@@ -137,6 +163,7 @@ if (hexInMap) {
 const GLSL_EMISSIVE = /* glsl */ `
 // 影の中でも線が見えるよう少し自己発光させる
 totalEmissiveRadiance += hexLineColor * hexLine * 0.25;
+totalEmissiveRadiance += hexFocusColor * hexFocus * 0.6;
 `;
 
 export class HexOverlay {
@@ -152,6 +179,8 @@ export class HexOverlay {
       uLineWidth: { value: 0.025 },
       uHover: { value: new THREE.Vector2(-1, -1) },
       uSelected: { value: new THREE.Vector2(-1, -1) },
+      uFocus: { value: new THREE.Vector2(-1, -1) },
+      uTime: { value: 0 },
       uCellTex: { value: HexOverlay.makeCellTexture(1, 1) },
       uCellOpacity: { value: 0.55 },
       uWaterLevel: { value: 0 },
@@ -176,6 +205,7 @@ export class HexOverlay {
     u.uCellTex.value = HexOverlay.makeCellTexture(layout.cols, layout.rows);
     u.uHover.value.set(-1, -1);
     u.uSelected.value.set(-1, -1);
+    u.uFocus.value.set(-1, -1);
   }
 
   /** HEX ごとの塗り色を設定する（color = null で塗りなし） */
