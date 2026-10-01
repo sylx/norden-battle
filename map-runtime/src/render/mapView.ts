@@ -208,6 +208,11 @@ export class MapView {
     this.units.setFocus(o);
   }
 
+  /** 範囲（移動範囲など）の HEX を塗り、外周を縁取る。null で消す */
+  setRange(cells: Iterable<Offset> | null, color?: THREE.ColorRepresentation): void {
+    this.overlay.setRange(cells, color);
+  }
+
   /** 毎フレーム呼ぶ（風揺れの時間を進めて描画する） */
   render(): void {
     windUniforms.uTime.value = performance.now() / 1000;

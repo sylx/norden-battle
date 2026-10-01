@@ -19,10 +19,12 @@ export interface FeatureDef {
   name: string;
   /** true = 水域にのみ置ける / false = 陸にのみ置ける */
   onWater: boolean;
+  /** HEX に入るのに使う行動力。地形の moveCost の代わりに使う（省略時は地形のまま） */
+  moveCost?: number;
 }
 
 export const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
-  bridge: { id: 'bridge', name: '橋', onWater: true },
+  bridge: { id: 'bridge', name: '橋', onWater: true, moveCost: 1 },
   village: { id: 'village', name: '村', onWater: false },
   fort: { id: 'fort', name: '砦', onWater: false },
   castle: { id: 'castle', name: '城', onWater: false },

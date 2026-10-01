@@ -3,10 +3,11 @@
  *
  * 地形メッシュのフラグメントシェーダ内でワールド XZ 座標から HEX を逆算して線を描く。
  * ジオメトリを別に持たないので、どんな起伏にも完全に沿い、Z ファイティングも起きない。
- * HEX ごとの塗り（移動範囲表示など）は cols×rows の DataTexture で渡す。
+ * HEX ごとの塗り（地形の確認用など）は cols×rows の DataTexture で渡す。
+ * 移動範囲などの「範囲」は別の cols×rows のテクスチャで渡し、塗りと範囲の外周の縁取りで見せる。
  */
 import * as THREE from 'three';
-import type { HexLayout } from '../core/hex';
+import type { HexLayout, Offset } from '../core/hex';
 
 export interface HexOverlayUniforms {
   [name: string]: THREE.IUniform;
@@ -22,6 +23,11 @@ export interface HexOverlayUniforms {
   uFocus: THREE.IUniform<THREE.Vector2>;
   /** 強調の明滅に使う時間（秒） */
   uTime: THREE.IUniform<number>;
+  /** 範囲（移動範囲など）。r > 0.5 の HEX が範囲内 */
+  uRangeTex: THREE.IUniform<THREE.DataTexture>;
+  uRangeColor: THREE.IUniform<THREE.Color>;
+  /** 範囲を出しているか（0 / 1） */
+  uRangeOn: THREE.IUniform<number>;
   uCellTex: THREE.IUniform<THREE.DataTexture>;
   uCellOpacity: THREE.IUniform<number>;
   uWaterLevel: THREE.IUniform<number>;
@@ -39,14 +45,17 @@ uniform vec2 uHover;
 uniform vec2 uSelected;
 uniform vec2 uFocus;
 uniform float uTime;
+uniform sampler2D uRangeTex;
+uniform vec3 uRangeColor;
+uniform int uRangeOn;
 uniform sampler2D uCellTex;
 uniform float uCellOpacity;
 uniform float uWaterLevel;
 uniform float uGrain;
 varying vec3 vHexWorld;
 
-// xy = オフセット座標 (col,row), z = 最寄りの辺までの距離
-vec3 hexInfo(vec2 p) {
+// xy = オフセット座標 (col,row), z = 最寄りの辺までの距離。lp = HEX の中心からの位置
+vec3 hexInfo(vec2 p, out vec2 lp) {
   float s = uHexSize;
   vec2 a;
   if (uHexFlat == 1) {
@@ -67,15 +76,41 @@ vec3 hexInfo(vec2 p) {
   if (uHexFlat == 1) {
     center = vec2(s * 1.5 * float(q), s * 1.7320508 * (float(r) + float(q) * 0.5));
     off = ivec2(q, r + (q - (q & 1)) / 2);
-    vec2 lp = p - center;
+    lp = p - center;
     m = max(abs(lp.y), max(abs(dot(lp, vec2(0.8660254, 0.5))), abs(dot(lp, vec2(0.8660254, -0.5)))));
   } else {
     center = vec2(s * 1.7320508 * (float(q) + float(r) * 0.5), s * 1.5 * float(r));
     off = ivec2(q + (r - (r & 1)) / 2, r);
-    vec2 lp = p - center;
+    lp = p - center;
     m = max(abs(lp.x), max(abs(dot(lp, vec2(0.5, 0.8660254))), abs(dot(lp, vec2(0.5, -0.8660254)))));
   }
   return vec3(vec2(off), s * 0.8660254 - m);
+}
+
+vec3 hexInfo(vec2 p) {
+  vec2 lp;
+  return hexInfo(p, lp);
+}
+
+// 中心から lp の位置にいちばん近い辺の向こう側の HEX のオフセット座標
+vec2 hexAcross(vec2 p, vec2 lp) {
+  vec2 n0 = uHexFlat == 1 ? vec2(0.0, 1.0) : vec2(1.0, 0.0);
+  vec2 n1 = uHexFlat == 1 ? vec2(0.8660254, 0.5) : vec2(0.5, 0.8660254);
+  vec2 n2 = uHexFlat == 1 ? vec2(0.8660254, -0.5) : vec2(0.5, -0.8660254);
+  float d0 = dot(lp, n0);
+  float d1 = dot(lp, n1);
+  float d2 = dot(lp, n2);
+  vec2 n = n0 * sign(d0);
+  float best = abs(d0);
+  if (abs(d1) > best) { n = n1 * sign(d1); best = abs(d1); }
+  if (abs(d2) > best) n = n2 * sign(d2);
+  // 隣の中心は辺の法線の向きに内接円の直径ぶん先
+  return hexInfo(p - lp + n * (uHexSize * 1.7320508)).xy;
+}
+
+bool hexInRange(vec2 off) {
+  if (off.x < 0.0 || off.y < 0.0 || off.x >= uGridDim.x || off.y >= uGridDim.y) return false;
+  return texelFetch(uRangeTex, ivec2(off), 0).r > 0.5;
 }
 
 float hexHash(vec2 p) {
@@ -96,7 +131,8 @@ float hexValueNoise(vec2 p) {
 `;
 
 const GLSL_COLOR = /* glsl */ `
-vec3 hexI = hexInfo(vHexWorld.xz);
+vec2 hexLp;
+vec3 hexI = hexInfo(vHexWorld.xz, hexLp);
 float hexD = hexI.z;
 float hexFw = fwidth(hexD);
 bool hexInMap = hexI.x >= 0.0 && hexI.y >= 0.0 && hexI.x < uGridDim.x && hexI.y < uGridDim.y;
@@ -111,6 +147,7 @@ float hexLine = 0.0;
 vec3 hexLineColor = uGridColor;
 float hexFocus = 0.0;
 vec3 hexFocusColor = vec3(1.0, 0.76, 0.22);
+float hexRangeEdge = 0.0;
 
 #ifdef HEX_GRAIN
   // 頂点色だけだと単調なので細かい粒状感を足す
@@ -121,6 +158,19 @@ vec3 hexFocusColor = vec3(1.0, 0.76, 0.22);
 if (hexInMap) {
   vec4 hexCell = texelFetch(uCellTex, ivec2(hexI.xy), 0);
   diffuseColor.rgb = mix(diffuseColor.rgb, hexCell.rgb, hexCell.a * uCellOpacity);
+
+  bool hexIsRange = uRangeOn == 1 && hexInRange(hexI.xy);
+  if (hexIsRange) {
+    // 範囲内はゆっくり明滅する塗り
+    diffuseColor.rgb = mix(diffuseColor.rgb, uRangeColor, 0.3 + 0.06 * sin(uTime * 2.5));
+    // 範囲の外周（隣が範囲外の辺）に縁取りと内側へのにじみ
+    float ew = uLineWidth * 2.5;
+    if (hexD < ew * 6.0 && !hexInRange(hexAcross(vHexWorld.xz, hexLp))) {
+      float line = 1.0 - smoothstep(ew - hexFw, ew + hexFw, hexD);
+      float glow = exp(-hexD / (ew * 2.0)) * 0.5;
+      hexRangeEdge = max(line, glow);
+    }
+  }
 
   float lw = uLineWidth;
   float op = uGridOpacity;
@@ -137,6 +187,7 @@ if (hexInMap) {
   }
   hexLine = (1.0 - smoothstep(lw - hexFw, lw + hexFw, hexD)) * op;
   diffuseColor.rgb = mix(diffuseColor.rgb, hexLineColor, hexLine);
+  diffuseColor.rgb = mix(diffuseColor.rgb, mix(uRangeColor, vec3(1.0), 0.45), hexRangeEdge);
 
   if (hexIsFocus) {
     // 0 = 辺、1 = 中心
@@ -155,7 +206,7 @@ if (hexInMap) {
     diffuseColor.rgb = mix(diffuseColor.rgb, hexFocusColor, hexFocus);
   }
 #ifdef HEX_WATER
-  diffuseColor.a = mix(diffuseColor.a, 1.0, max(hexLine, hexFocus));
+  diffuseColor.a = mix(diffuseColor.a, 1.0, max(max(hexLine, hexFocus), hexRangeEdge));
 #endif
 }
 `;
@@ -164,6 +215,7 @@ const GLSL_EMISSIVE = /* glsl */ `
 // 影の中でも線が見えるよう少し自己発光させる
 totalEmissiveRadiance += hexLineColor * hexLine * 0.25;
 totalEmissiveRadiance += hexFocusColor * hexFocus * 0.6;
+totalEmissiveRadiance += uRangeColor * hexRangeEdge * 0.5;
 `;
 
 export class HexOverlay {
@@ -181,6 +233,9 @@ export class HexOverlay {
       uSelected: { value: new THREE.Vector2(-1, -1) },
       uFocus: { value: new THREE.Vector2(-1, -1) },
       uTime: { value: 0 },
+      uRangeTex: { value: HexOverlay.makeRangeTexture(1, 1) },
+      uRangeColor: { value: new THREE.Color(0x4aa8ff) },
+      uRangeOn: { value: 0 },
       uCellTex: { value: HexOverlay.makeCellTexture(1, 1) },
       uCellOpacity: { value: 0.55 },
       uWaterLevel: { value: 0 },
@@ -191,6 +246,14 @@ export class HexOverlay {
   private static makeCellTexture(cols: number, rows: number): THREE.DataTexture {
     const tex = new THREE.DataTexture(new Uint8Array(cols * rows * 4), cols, rows, THREE.RGBAFormat);
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  private static makeRangeTexture(cols: number, rows: number): THREE.DataTexture {
+    const tex = new THREE.DataTexture(new Uint8Array(cols * rows), cols, rows, THREE.RedFormat);
+    // 1 画素 1 バイトなので、行の幅が 4 の倍数でなくてもずれないように
+    tex.unpackAlignment = 1;
     tex.needsUpdate = true;
     return tex;
   }
@@ -206,6 +269,22 @@ export class HexOverlay {
     u.uHover.value.set(-1, -1);
     u.uSelected.value.set(-1, -1);
     u.uFocus.value.set(-1, -1);
+    u.uRangeTex.value.dispose();
+    u.uRangeTex.value = HexOverlay.makeRangeTexture(layout.cols, layout.rows);
+    u.uRangeOn.value = 0;
+  }
+
+  /** 範囲（移動範囲など）を出す。cells = null で消す */
+  setRange(cells: Iterable<Offset> | null, color?: THREE.ColorRepresentation): void {
+    const u = this.uniforms;
+    const tex = u.uRangeTex.value;
+    const { width } = tex.image as { width: number };
+    const data = tex.image.data as Uint8Array;
+    data.fill(0);
+    for (const o of cells ?? []) data[o.row * width + o.col] = 255;
+    tex.needsUpdate = true;
+    u.uRangeOn.value = cells ? 1 : 0;
+    if (color !== undefined) u.uRangeColor.value.set(color);
   }
 
   /** HEX ごとの塗り色を設定する（color = null で塗りなし） */

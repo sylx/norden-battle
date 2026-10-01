@@ -35,6 +35,8 @@ export class ActionMenu {
   private readonly root: HTMLDivElement;
   private readonly main: HTMLDivElement;
   private readonly sub: HTMLDivElement;
+  /** true の間はメニューを隠しておく（移動先を選んでいる間など） */
+  suspended = false;
   private unit: UnitData | null = null;
   /** 2 階層目を開いている 1 階層目の項目 */
   private openItem: HTMLElement | null = null;
@@ -99,8 +101,8 @@ export class ActionMenu {
     const h = container.clientHeight;
     const sprite = p && spriteRect(p, camera, w, h);
     const offscreen = !sprite || sprite.r < 0 || sprite.l > w || sprite.b < 0 || sprite.t > h;
-    this.root.hidden = offscreen;
-    if (offscreen) return;
+    this.root.hidden = offscreen || this.suspended;
+    if (this.root.hidden || !sprite) return;
 
     const mw = this.main.offsetWidth;
     const mh = this.main.offsetHeight;

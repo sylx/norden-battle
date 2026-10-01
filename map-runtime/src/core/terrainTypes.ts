@@ -1,7 +1,6 @@
 /**
  * 地形タイプ定義。
- * 見た目（色・起伏）の生成パラメータと、エディタ表示用の情報を持つ。
- * ゲーム的な値（移動コスト・防御補正など）は将来ここに追加する想定。
+ * 見た目（色・起伏）の生成パラメータと、エディタ表示用の情報、ゲーム的な値（移動コストなど）を持つ。
  */
 
 export const TERRAIN_IDS = [
@@ -33,6 +32,8 @@ export interface TerrainDef {
   /** 低木・茂みの密度（木が置かれなかった候補点での確率） */
   bushDensity: number;
   isWater: boolean;
+  /** HEX に入るのに使う行動力（null は通れない）。街道沿いに入るときは半分 */
+  moveCost: number | null;
   /** エディタのオーバーレイ表示色 */
   overlay: string;
 }
@@ -49,6 +50,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     treeDensity: 0,
     bushDensity: 0,
     isWater: true,
+    moveCost: null,
     overlay: '#1f4fa8',
   },
   water: {
@@ -60,6 +62,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     treeDensity: 0,
     bushDensity: 0,
     isWater: true,
+    moveCost: 4,
     overlay: '#3f8fe0',
   },
   plains: {
@@ -71,6 +74,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     treeDensity: 0,
     bushDensity: 0,
     isWater: false,
+    moveCost: 1,
     overlay: '#a6d65a',
   },
   forest: {
@@ -82,6 +86,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     treeDensity: 0.85,
     bushDensity: 0.45,
     isWater: false,
+    moveCost: 2,
     overlay: '#2f7a2f',
   },
   hills: {
@@ -93,6 +98,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     treeDensity: 0,
     bushDensity: 0,
     isWater: false,
+    moveCost: 2,
     overlay: '#c9a94a',
   },
   mountain: {
@@ -104,6 +110,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     treeDensity: 0,
     bushDensity: 0,
     isWater: false,
+    moveCost: 3,
     overlay: '#8a6a4a',
   },
   swamp: {
@@ -115,6 +122,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     treeDensity: 0,
     bushDensity: 0,
     isWater: false,
+    moveCost: 3,
     overlay: '#5a7a6a',
   },
   wasteland: {
@@ -126,6 +134,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     treeDensity: 0,
     bushDensity: 0,
     isWater: false,
+    moveCost: 2,
     overlay: '#d8b878',
   },
 };

@@ -1,6 +1,12 @@
+/** 移動できる HEX の色 */
+const MOVE_RANGE_COLOR = 0x4aa8ff;
+
 /**
  * 戦闘画面。マップの描画は map-editor と同じ MapView を使い、パラメータは map-editor の初期値のまま。
  * 戦闘の UI・演出はここに積み上げていく。
+ *
+ * 操作の流れ: ユニットを選択 → 行動メニュー → 移動を選ぶと移動できる HEX を出して移動先を選ぶ状態になる。
+ * 移動先を選ぶ状態では、Esc か範囲外のクリックでメニューに戻る。
  */
 import * as THREE from 'three';
 import type { Offset } from '@norden/map-runtime/core/hex';
@@ -10,6 +16,7 @@ import { MapView } from '@norden/map-runtime/render/mapView';
 import { SceneContext } from '@norden/map-runtime/render/scene';
 import type { MenuAction } from './actions';
 import { ActionMenu } from './actionMenu';
+import { moveRange, type MoveStep } from './movement';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
 
@@ -30,6 +37,13 @@ export class BattleApp {
   onSelect: (cell: HexCell | null, unit: UnitData | null) => void = () => {};
   /** 行動メニューで行動を選んだとき */
   onAction: (unit: UnitData, action: MenuAction) => void = () => {};
+  /** 移動先を選んだとき */
+  onMoveTarget: (unit: UnitData, step: MoveStep) => void = () => {};
+  /** 移動先を選ぶ状態をやめたとき */
+  onMoveCancel: () => void = () => {};
+
+  /** 移動先を選ぶ状態のとき、移動できる HEX（キーは row × cols + col） */
+  private moveTargets: Map<number, MoveStep> | null = null;
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
@@ -41,7 +55,10 @@ export class BattleApp {
     this.view = new MapView(this.ctx);
     this.tags = new UnitTags(container);
     this.menu = new ActionMenu(container);
-    this.menu.onAction = (unit, action) => this.onAction(unit, action);
+    this.menu.onAction = (unit, action) => {
+      if (action.id === 'move') this.startMove(unit);
+      this.onAction(unit, action);
+    };
     const el = this.ctx.renderer.domElement;
     el.addEventListener('pointermove', (e) => this.setPointer(e));
     el.addEventListener('pointerleave', () => this.setHover(null));
@@ -54,14 +71,13 @@ export class BattleApp {
       this.downPos = null;
       if (moved > 4) return; // ドラッグ（パン）はクリック扱いしない
       this.setPointer(e);
-      // ユニットのいる HEX ならそのユニットを選択し、いない HEX なら選択を外す
-      const o = this.pick();
-      this.setSelected(o && this.map?.unitAt(o.col, o.row) ? o : null);
+      this.click(this.pick());
     });
-    // Esc: 2 階層目を閉じる → 選択を外す
+    // Esc: 移動先を選ぶのをやめる → 2 階層目を閉じる → 選択を外す
     window.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
-      if (!this.menu.closeSub()) this.setSelected(null);
+      if (this.moveTargets) this.cancelMove();
+      else if (!this.menu.closeSub()) this.setSelected(null);
     });
     this.ctx.renderer.setAnimationLoop(() => this.frame());
   }
@@ -76,6 +92,53 @@ export class BattleApp {
     this.tags.setStatuses(this.statuses);
     this.view.setMap(map);
     this.setSelected(null);
+  }
+
+  /** 移動先を選ぶ状態のとき、o へ移動するときの最短経路（移動できなければ null） */
+  moveStepAt(o: Offset | null): MoveStep | null {
+    if (!o || !this.moveTargets || !this.map) return null;
+    return this.moveTargets.get(o.row * this.map.layout.cols + o.col) ?? null;
+  }
+
+  private click(o: Offset | null): void {
+    const map = this.map;
+    const unit = o && map?.unitAt(o.col, o.row);
+    if (this.moveTargets) {
+      const step = this.moveStepAt(o);
+      const mover = this.selected && map?.unitAt(this.selected.col, this.selected.row);
+      if (step && mover) this.onMoveTarget(mover, step);
+      // ほかのユニットは選び直し、それ以外（範囲外・自分）はメニューに戻る
+      else if (unit && !(o.col === this.selected?.col && o.row === this.selected.row)) this.setSelected(o);
+      else this.cancelMove();
+      return;
+    }
+    // ユニットのいる HEX ならそのユニットを選択し、いない HEX なら選択を外す
+    this.setSelected(unit ? o : null);
+  }
+
+  /** 移動できる HEX を出して、移動先を選ぶ状態にする */
+  private startMove(unit: UnitData): void {
+    const map = this.map;
+    const status = this.statuses.get(unit);
+    if (!map || !status) return;
+    this.moveTargets = moveRange(map, unit, status.ap);
+    this.view.setRange(this.moveTargets.values(), MOVE_RANGE_COLOR);
+    this.menu.suspended = true;
+    this.setHover(this.hovered);
+  }
+
+  /** 移動先を選ぶ状態をやめてメニューに戻る */
+  private cancelMove(): void {
+    if (!this.moveTargets) return;
+    this.endMove();
+    this.onMoveCancel();
+  }
+
+  private endMove(): void {
+    this.moveTargets = null;
+    this.view.setRange(null);
+    this.menu.suspended = false;
+    this.setHover(this.hovered);
   }
 
   private setPointer(e: PointerEvent): void {
@@ -96,6 +159,7 @@ export class BattleApp {
   }
 
   private setSelected(o: Offset | null): void {
+    if (this.moveTargets) this.endMove();
     this.selected = o;
     this.view.setFocus(o);
     const [cell, unit] = this.cellAndUnit(o);

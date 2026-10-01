@@ -12,6 +12,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
   const status = $('status');
   const setStatus = (html: string) => (status.innerHTML = html);
+  const idleStatus = 'クリック: ユニットを選択 / Esc: 選択を外す';
   const showError = (e: unknown) => {
     const msg = e instanceof MapParseError ? `マップの読み込みに失敗: ${e.message}` : String(e);
     setStatus(`<span class="err">${escapeHtml(msg)}</span>`);
@@ -46,7 +47,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     currentFile = file;
     mapSel.value = file && files.some((f) => f.file === file) ? file : '';
     $('map-title').textContent = `${label ?? '-'} — ${data.name} — ${data.grid.orientation} ${data.grid.cols}×${data.grid.rows}`;
-    setStatus('左ドラッグ: 移動 / ホイール: ズーム / クリック: ユニットを選択 / Esc: 選択を外す');
+    setStatus(`左ドラッグ: 移動 / ホイール: ズーム / ${idleStatus}`);
   };
 
   const loadStored = async (file: string) => {
@@ -112,7 +113,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
   setInterval(() => (fps.textContent = app.ctx.fps.toFixed(1)), 500);
 
   // --- HEX 情報 ---
-  const renderInfo = (el: HTMLElement, cell: HexCell | null, unit: UnitData | null) => {
+  const renderInfo = (el: HTMLElement, cell: HexCell | null, unit: UnitData | null, extra: string[][] = []) => {
     if (!cell) {
       el.innerHTML = '<dt>-</dt><dd></dd>';
       return;
@@ -124,15 +125,28 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
       ['人工物', cell.feature ? FEATURE_DEFS[cell.feature].name : '-'],
       ['街道', cell.roads ? `${cell.roads.length} 方向` : '-'],
       ['ユニット', unit ? `${TEAM_DEFS[unit.team].name} ${UNIT_DEFS[unit.type].name}` : '-'],
+      ...extra,
     ]
       .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
       .join('');
   };
-  app.onHover = (c, u) => renderInfo($('hover-info'), c, u);
+  app.onHover = (c, u) => {
+    // 移動先を選んでいる間は、そこまでに使う行動力も出す
+    const step = app.moveStepAt(c);
+    renderInfo($('hover-info'), c, u, step ? [['移動', `行動力 ${step.cost}`]] : []);
+  };
   app.onSelect = (c, u) => renderInfo($('select-info'), c, u);
-  // 行動の処理はまだ無いので、選んだものを知らせるだけ
+  const unitLabel = (u: UnitData) => `${TEAM_DEFS[u.team].name} ${UNIT_DEFS[u.type].name} (${u.col}, ${u.row})`;
   app.onAction = (u, a) =>
-    setStatus(`${TEAM_DEFS[u.team].name} ${UNIT_DEFS[u.type].name} (${u.col}, ${u.row}): 「${escapeHtml(a.name)}」を選択（行動力 ${a.cost}）— 未実装`);
+    setStatus(
+      a.id === 'move'
+        ? `${unitLabel(u)}: 移動先を選んでください（青い HEX）/ Esc・範囲外クリック: メニューに戻る`
+        : // 移動以外の処理はまだ無いので、選んだものを知らせるだけ
+          `${unitLabel(u)}: 「${escapeHtml(a.name)}」を選択（行動力 ${a.cost}）— 未実装`,
+    );
+  // 移動の予約はまだ無いので、選んだ移動先を知らせるだけ
+  app.onMoveTarget = (u, step) => setStatus(`${unitLabel(u)}: (${step.col}, ${step.row}) へ移動（行動力 ${step.cost}）— 予約は未実装`);
+  app.onMoveCancel = () => setStatus(idleStatus);
   renderInfo($('hover-info'), null, null);
   renderInfo($('select-info'), null, null);
 
