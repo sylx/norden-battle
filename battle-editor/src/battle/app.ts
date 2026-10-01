@@ -7,7 +7,7 @@
  * - 移動は何回かに分けて予約でき、予約したルートは地面に矢印で出す。
  * - 攻撃は 1 ターンに 1 回で、予約した移動先から射程内の敵を選ぶ。相手へ赤い矢印を出す（遠隔攻撃は放物線）。
  *   一斉攻撃は、ほかの味方とも隣接している敵（金の斜線）しか選べない。ほかの敵を選ぶと「包囲していません」でやり直し。
- *   実行すると、相手に隣接している味方も一緒に踏み込んで攻撃する。
+ *   相手に隣接している味方からも細い赤い矢印を出し、実行するとその味方も一緒に踏み込んで攻撃する。
  *   攻撃を予約した後は移動できない。騎兵だけは攻撃の後にも移動を予約できる（一撃離脱。攻撃の直後は敵の ZOC の中からでも
  *   動き出せるが、ZOC から ZOC へは移れない）。
  * - 突撃（騎兵）は相手を突き抜けて向こうの HEX へ飛び出る。飛び出る先は予約のときに決め、矢印もそこまで伸ばす。
@@ -467,10 +467,15 @@ export class BattleApp {
     this.onPlanChange(plan);
   }
 
+  /** 攻撃の矢印。一斉攻撃は、加わる味方からも細い矢印を出す */
   private showAttackArrow(plan: Plan | null): void {
-    if (!plan?.attack) return this.view.setAttack(null, null);
-    const { target, landing } = plan.attack;
+    if (!plan?.attack) {
+      this.view.setSupportAttacks([], null);
+      return this.view.setAttack(null, null);
+    }
+    const { action, target, landing } = plan.attack;
     this.view.setAttack(BattleApp.attackPos(plan), target, COMBAT_DEFS[plan.unit.type].ranged, landing);
+    this.view.setSupportAttacks(action.id === 'volley' ? volleySupporters(this.map!, plan.unit, target) : [], target);
   }
 
   /**

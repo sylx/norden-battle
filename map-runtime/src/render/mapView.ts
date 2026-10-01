@@ -57,6 +57,8 @@ export class MapView {
   readonly afterPathArrow = new PathArrow();
   /** 攻撃の対象を指す赤い矢印（遠隔攻撃は放物線。ユニットより手前に描く） */
   readonly attackArrow = new PathArrow({ fill: 0xe0402e, stripe: 0xffc8b0, outline: 0x2a0c08, order: 13 });
+  /** 攻撃に加わる味方から対象へ伸ばす、細い赤い矢印（一斉攻撃など。何本でも） */
+  readonly supportArrow = new PathArrow({ fill: 0xe0402e, stripe: 0xffc8b0, outline: 0x2a0c08, order: 13, width: 0.55 });
   map: HexMap | null = null;
 
   /** 地形・木・人工物を作り直したとき */
@@ -74,7 +76,7 @@ export class MapView {
 
   constructor(ctx: SceneContext) {
     this.ctx = ctx;
-    ctx.overlay.add(this.units.group, this.pathArrow.group, this.afterPathArrow.group, this.attackArrow.group);
+    ctx.overlay.add(this.units.group, this.pathArrow.group, this.afterPathArrow.group, this.attackArrow.group, this.supportArrow.group);
     ctx.onShadowPass = (active) => this.decor?.forest.setShadowPass(active);
     this.units.art.onChange = () => this.rebuildUnits();
   }
@@ -90,6 +92,7 @@ export class MapView {
     this.pathArrow.clear();
     this.afterPathArrow.clear();
     this.attackArrow.clear();
+    this.supportArrow.clear();
     this.ctx.parchment.uniforms.uPaperScale.value = map.layout.size;
     this.regenerate(resetCamera);
   }
@@ -267,6 +270,14 @@ export class MapView {
     this.attackArrow.set([from, to], map.layout, heightAt, ATTACK_END_GAP);
   }
 
+  /** from の各 HEX から to のユニットへ、地面に沿う細い攻撃の矢印を出す（攻撃に加わる味方。空か to が null で消す） */
+  setSupportAttacks(from: readonly Offset[], to: Offset | null): void {
+    const map = this.map;
+    this.supportArrow.clear();
+    if (!map || !to) return;
+    for (const f of from) this.supportArrow.add([f, to], map.layout, (x, z) => this.groundAt(x, z), ATTACK_END_GAP);
+  }
+
   /** ユニットが立つ地面の高さ。水の上は水面、橋の HEX は橋の上（ユニットの足元と同じ高さ） */
   groundAt(x: number, z: number): number {
     const map = this.map;
@@ -285,6 +296,7 @@ export class MapView {
     this.pathArrow.time.value = windUniforms.uTime.value;
     this.afterPathArrow.time.value = windUniforms.uTime.value;
     this.attackArrow.time.value = windUniforms.uTime.value;
+    this.supportArrow.time.value = windUniforms.uTime.value;
     // 俯角を変えたら板絵を焼き直す
     this.decor?.forest.setPitch(this.ctx.pitch);
     this.ctx.render();

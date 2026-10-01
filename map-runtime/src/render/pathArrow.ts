@@ -28,10 +28,12 @@ export interface ArrowStyle {
   outline: THREE.ColorRepresentation;
   /** 縁取りの描画順（本体は +1）。ユニットの影 9・絵 10 より小さければ奥、大きければ手前 */
   order: number;
+  /** 帯と矢じりの太さの倍率（縁取りの太さは変えない） */
+  width: number;
 }
 
 /** 移動ルートの矢印（金色、ユニットより奥） */
-const DEFAULT_STYLE: ArrowStyle = { fill: 0xffd451, stripe: 0xfff6d8, outline: 0x2a1a0c, order: 7 };
+const DEFAULT_STYLE: ArrowStyle = { fill: 0xffd451, stripe: 0xfff6d8, outline: 0x2a1a0c, order: 7, width: 1 };
 
 /**
  * 矢印の各点の高さ。(x, z) は位置、d は経路に沿った距離、total は経路の長さ（d は両端で少しはみ出すことがある）
@@ -45,6 +47,7 @@ export class PathArrow {
   private readonly fill: THREE.ShaderMaterial;
   private readonly outline: THREE.ShaderMaterial;
   private readonly order: number;
+  private readonly width: number;
 
   constructor(style: Partial<ArrowStyle> = {}) {
     const st = { ...DEFAULT_STYLE, ...style };
@@ -52,6 +55,7 @@ export class PathArrow {
     this.fill = arrowMaterial(st.fill, st.stripe, this.time, true);
     this.outline = arrowMaterial(st.outline, st.stripe, this.time, false);
     this.order = st.order;
+    this.width = st.width;
   }
 
   /**
@@ -60,18 +64,26 @@ export class PathArrow {
    */
   set(path: readonly Offset[] | null, layout: HexLayout, heightAt: ArrowHeight, endGap = 0): void {
     this.clear();
+    this.add(path, layout, heightAt, endGap);
+  }
+
+  /** set と同じだが、それまでの矢印を消さずにもう 1 本足す（何本も並べるとき） */
+  add(path: readonly Offset[] | null, layout: HexLayout, heightAt: ArrowHeight, endGap = 0): void {
     if (!path || path.length < 2) return;
     const s = layout.size;
     this.fill.uniforms.uHexSize.value = s;
     const line = smoothPath(path.map((o) => layout.offsetToWorld(o.col, o.row)));
     const outline = OUTLINE * s;
     const gap = endGap * s;
+    const shaft = SHAFT_HALF * this.width * s;
+    const head = HEAD_HALF * this.width * s;
+    const headLen = HEAD_LEN * this.width * s;
     const back = new THREE.Mesh(
-      arrowGeometry(line, s, heightAt, { shaft: SHAFT_HALF * s + outline, head: HEAD_HALF * s + outline * 1.8, extend: outline * 1.6, gap }),
+      arrowGeometry(line, s, heightAt, { shaft: shaft + outline, head: head + outline * 1.8, headLen, extend: outline * 1.6, gap }),
       this.outline,
     );
     back.renderOrder = this.order;
-    const front = new THREE.Mesh(arrowGeometry(line, s, heightAt, { shaft: SHAFT_HALF * s, head: HEAD_HALF * s, extend: 0, gap }), this.fill);
+    const front = new THREE.Mesh(arrowGeometry(line, s, heightAt, { shaft, head, headLen, extend: 0, gap }), this.fill);
     front.renderOrder = this.order + 1;
     this.group.add(back, front);
   }
@@ -99,14 +111,14 @@ function arrowGeometry(
   pts: Vec2[],
   s: number,
   heightAt: ArrowHeight,
-  w: { shaft: number; head: number; extend: number; gap: number },
+  w: { shaft: number; head: number; headLen: number; extend: number; gap: number },
 ): THREE.BufferGeometry {
   const line = new Polyline(pts);
   const total = line.length;
   const end = total - w.gap;
   const start = Math.min(START_GAP * s, end * 0.3) - w.extend;
   // 経路が短いときは矢じりを縮める
-  const headLen = Math.min(HEAD_LEN * s, (end - START_GAP * s) * 0.6) + w.extend * 1.5;
+  const headLen = Math.min(w.headLen, (end - START_GAP * s) * 0.6) + w.extend * 1.5;
   const tip = end + w.extend;
   const headBase = tip - headLen;
 
