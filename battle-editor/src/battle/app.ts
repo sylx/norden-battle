@@ -44,6 +44,7 @@ import {
   type AttackResult,
 } from './combat';
 import { randomRoll } from './damage';
+import { InterceptEffects } from './interceptFx';
 import { applyMorale } from './morale';
 import { inEnemyZoc, movePath, moveRange, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
@@ -168,6 +169,8 @@ export class BattleApp {
   readonly menu: ActionMenu;
   /** 兵数の減少などを頭上に出す */
   readonly popups: Popups;
+  /** 迎撃の構えのユニットの足元の光の輪 */
+  readonly interceptFx = new InterceptEffects();
   /** 戦闘中のユニットの状態 */
   statuses = new Map<UnitData, UnitStatus>();
   /** 選択中のユニットの HEX */
@@ -205,6 +208,7 @@ export class BattleApp {
     this.tags = new UnitTags(container);
     this.menu = new ActionMenu(container);
     this.popups = new Popups(container);
+    this.ctx.overlay.add(this.interceptFx.group);
     this.menu.onAction = (unit, action) => {
       if (action.id === 'confirm') return this.execute(false);
       if (action.id === 'intercept') return this.execute(true);
@@ -759,6 +763,8 @@ export class BattleApp {
     if (exec?.phase.kind === 'walk') this.stepWalk(exec, exec.phase, performance.now());
     else if (exec?.phase.kind === 'strike') this.stepStrike(exec, performance.now());
     else if (exec?.phase.kind === 'intercept') this.stepIntercept(exec, exec.phase, performance.now());
+    // 輪は描画の前に足元へ合わせる（移動のアニメーションで動かした絵に同じフレームで付いていく）
+    this.interceptFx.update(this.view.units.placements(), this.statuses, this.map?.layout.size ?? 1, this.view.display.units);
     this.view.render();
     const placements = this.view.units.placements();
     this.tags.update(placements, this.ctx.camera, this.view.display.units, this.hovered, this.selected);

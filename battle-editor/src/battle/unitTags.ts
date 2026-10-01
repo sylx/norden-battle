@@ -216,7 +216,7 @@ export class UnitTags {
   }
 
   private render(tag: Tag, s: UnitStatus, active: boolean): void {
-    const key = `${s.soldiers}/${s.maxSoldiers}/${s.morale}/${s.face}/${s.intercepting}/${active}`;
+    const key = `${s.soldiers}/${s.maxSoldiers}/${s.morale}/${s.face}/${active}`;
     if (key === tag.shown) return;
     tag.shown = key;
     tag.el.classList.toggle('active', active);
@@ -253,8 +253,6 @@ export function renderStatus(el: HTMLElement, s: UnitStatus): void {
   q('.morale .value').textContent = String(s.morale);
   q('.morale .fill').style.width = `${(100 * clamp01(s.morale / MAX_MORALE)).toFixed(1)}%`;
   el.classList.toggle('low-morale', s.morale < LOW_MORALE);
-  // 迎撃の構えは顔の右下に印を付ける
-  el.classList.toggle('intercepting', s.intercepting);
 
   // 顔: 並べた画像のうち 1 枚を、少し拡大して円の中に収める
   const face = q('.face');

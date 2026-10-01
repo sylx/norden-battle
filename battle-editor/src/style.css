@@ -373,26 +373,6 @@ body.dragging #drop-hint {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
   /* 枠の内側（32px）に顔を合わせる */
   background-origin: padding-box;
-  position: relative;
-}
-
-/* 迎撃の構えの印 */
-.unit-tag.intercepting .face::after {
-  content: '迎';
-  position: absolute;
-  right: -5px;
-  bottom: -4px;
-  width: 15px;
-  height: 15px;
-  border: 1px solid #2a1e12;
-  border-radius: 3px;
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 13px;
-  text-align: center;
-  color: #2a1e12;
-  background: linear-gradient(#f0cd6e, #b8862e);
-  box-shadow: 0 0 0 1px rgba(226, 183, 90, 0.6);
 }
 
 .unit-tag .bars {
