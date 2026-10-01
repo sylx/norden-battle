@@ -5,13 +5,14 @@
  *   カメラを動かしても毎フレーム追いかける。
  * - 上部にユニットの状態（情報札と同じ顔・兵士数・士気と、残り行動力）を出す。
  * - 2 階層目は 1 階層目の項目の横に開く。マウスは項目に乗せる、タッチはタップで開く。
- * - パネルの四隅には飾り罫（.corner）を置く。いまは CSS の仮の線で、画像に差し替えられるよう
- *   パネルの内側に飾りの分の余白を取ってある（style.css の --frame-*）。
+ * - パネルの四隅には飾り罫（frame.ts）を置く。画像に差し替えられるよう、パネルの内側に飾りの分の余白を
+ *   取ってある（style.css の --frame-*）。
  */
 import * as THREE from 'three';
 import { TEAM_DEFS, UNIT_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { buildActionMenu, type MenuAction, type MenuContext, type MenuEntry } from './actions';
+import { addFrame } from './frame';
 import { renderStatus, STATUS_HTML } from './unitTags';
 
 /** ユニットの絵とメニューの間隔（CSS ピクセル） */
@@ -186,7 +187,7 @@ export class ActionMenu {
 /** 四隅に飾り罫を置いたパネル */
 function framedPanel(kind: string): HTMLDivElement {
   const panel = el('div', `menu-panel ${kind}`);
-  for (const c of ['tl', 'tr', 'bl', 'br']) panel.append(el('span', `corner ${c}`));
+  addFrame(panel);
   panel.append(el('div', 'menu-body'));
   return panel;
 }

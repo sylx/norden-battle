@@ -6,6 +6,7 @@ import { listMapFiles, loadMapFile, type MapFileInfo } from '@norden/map-runtime
 import type { ForestMode } from '@norden/map-runtime/render/foliage';
 import { DEFAULT_PIXEL_RATIO } from '@norden/map-runtime/render/scene';
 import { BattleApp } from './app';
+import { BattleLog } from './battleLog';
 import { isAttack } from './combat';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -19,6 +20,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     setStatus(`<span class="err">${escapeHtml(msg)}</span>`);
     console.error(e);
   };
+
+  const log = new BattleLog(document.body);
 
   // --- マップ（map-editor が assets/maps/ に保存したもの） ---
   const mapSel = $<HTMLSelectElement>('map-select');
@@ -45,6 +48,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
 
   const load = (data: MapData, file: string | null, label = file) => {
     app.loadMap(data);
+    log.clear();
     currentFile = file;
     mapSel.value = file && files.some((f) => f.file === file) ? file : '';
     $('map-title').textContent = `${label ?? '-'} — ${data.name} — ${data.grid.orientation} ${data.grid.cols}×${data.grid.rows}`;
@@ -183,6 +187,19 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     if (moveCost > 0) parts.push(`(${from.col}, ${from.row}) から移動（行動力 ${moveCost}）`);
     if (attack) {
       const { result } = attack;
+      log.addAttack({
+        turn: app.turn,
+        attacker: unit,
+        target: attack.target,
+        actionName: attack.action.name,
+        damage: result.damage,
+        counter: result.counter,
+        direct: result.direct,
+        // 壊滅したユニットは状態ごと消えている
+        attackerLeft: app.statuses.get(unit)?.soldiers ?? 0,
+        targetLeft: app.statuses.get(attack.target)?.soldiers ?? 0,
+        landing: attack.landing,
+      });
       parts.push(
         `${TEAM_DEFS[attack.target.team].name} ${UNIT_DEFS[attack.target.type].name}に${escapeHtml(attack.action.name)}: ` +
           `敵 -${result.damage}${attack.targetDestroyed ? '（壊滅）' : ''}` +

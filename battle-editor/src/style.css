@@ -5,6 +5,16 @@
   --text-dim: #bfae8a;
   --accent: #e2b75a;
   --input-bg: #1e1610;
+  /* 飾り罫の枠（frame.ts の .framed）。画像にするときは --frame-corner-image に左上向きの 1 枚を入れる（ほかの隅は反転して使う） */
+  --frame-corner: 18px;
+  /* 飾りをパネルの外へはみ出させる量 */
+  --frame-outset: 3px;
+  /* 飾りにかからないよう中身を内側に寄せる余白 */
+  --frame-pad-x: 12px;
+  --frame-pad-y: 10px;
+  --frame-corner-image: none;
+  /* 区切りの飾り罫（戦闘ログのターンの区切り）。右向きの 1 枚を入れる（左側は反転して使う） */
+  --frame-rule-image: none;
   font-family: 'Hiragino Sans', 'Noto Sans JP', 'Yu Gothic UI', system-ui, sans-serif;
   font-size: 13px;
   color: var(--text);
@@ -243,6 +253,60 @@ body.dragging #drop-hint {
 }
 
 
+/* --- 飾り罫の枠（frame.ts。大きさ・画像は :root の --frame-*） --- */
+.framed > .corner {
+  position: absolute;
+  width: var(--frame-corner);
+  height: var(--frame-corner);
+  pointer-events: none;
+  background: var(--frame-corner-image) no-repeat center / contain;
+}
+
+/* 仮の飾り: 金の L 字と小さな菱形（--frame-corner-image を入れたら消す） */
+.framed > .corner::before,
+.framed > .corner::after {
+  content: '';
+  position: absolute;
+}
+
+.framed > .corner::before {
+  inset: 0;
+  border-top: 2px solid var(--accent);
+  border-left: 2px solid var(--accent);
+}
+
+.framed > .corner::after {
+  left: 4px;
+  top: 4px;
+  width: 4px;
+  height: 4px;
+  background: var(--accent);
+  transform: rotate(45deg);
+}
+
+.framed > .corner.tl {
+  left: calc(-1 * var(--frame-outset));
+  top: calc(-1 * var(--frame-outset));
+}
+
+.framed > .corner.tr {
+  right: calc(-1 * var(--frame-outset));
+  top: calc(-1 * var(--frame-outset));
+  transform: scaleX(-1);
+}
+
+.framed > .corner.bl {
+  left: calc(-1 * var(--frame-outset));
+  bottom: calc(-1 * var(--frame-outset));
+  transform: scaleY(-1);
+}
+
+.framed > .corner.br {
+  right: calc(-1 * var(--frame-outset));
+  bottom: calc(-1 * var(--frame-outset));
+  transform: scale(-1, -1);
+}
+
 /* --- ユニットの情報札（unitTags.ts。大きさは TAG_W・TAG_H・FACE_SIZE と合わせる） --- */
 .unit-tags {
   position: absolute;
@@ -375,14 +439,6 @@ body.dragging #drop-hint {
 
 /* --- 行動メニュー（actionMenu.ts） --- */
 .action-menu {
-  /* 四隅の飾り罫。画像にするときは --frame-corner-image に左上向きの 1 枚を入れる（ほかの隅は反転して使う） */
-  --frame-corner: 18px;
-  /* 飾りをパネルの外へはみ出させる量 */
-  --frame-outset: 3px;
-  /* 飾りにかからないよう中身を内側に寄せる余白 */
-  --frame-pad-x: 12px;
-  --frame-pad-y: 10px;
-  --frame-corner-image: none;
   position: absolute;
   left: 0;
   top: 0;
@@ -418,59 +474,6 @@ body.dragging #drop-hint {
 
 .action-menu .menu-panel.sub {
   min-width: 120px;
-}
-
-.action-menu .corner {
-  position: absolute;
-  width: var(--frame-corner);
-  height: var(--frame-corner);
-  pointer-events: none;
-  background: var(--frame-corner-image) no-repeat center / contain;
-}
-
-/* 仮の飾り: 金の L 字と小さな菱形（--frame-corner-image を入れたら消す） */
-.action-menu .corner::before,
-.action-menu .corner::after {
-  content: '';
-  position: absolute;
-}
-
-.action-menu .corner::before {
-  inset: 0;
-  border-top: 2px solid var(--accent);
-  border-left: 2px solid var(--accent);
-}
-
-.action-menu .corner::after {
-  left: 4px;
-  top: 4px;
-  width: 4px;
-  height: 4px;
-  background: var(--accent);
-  transform: rotate(45deg);
-}
-
-.action-menu .corner.tl {
-  left: calc(-1 * var(--frame-outset));
-  top: calc(-1 * var(--frame-outset));
-}
-
-.action-menu .corner.tr {
-  right: calc(-1 * var(--frame-outset));
-  top: calc(-1 * var(--frame-outset));
-  transform: scaleX(-1);
-}
-
-.action-menu .corner.bl {
-  left: calc(-1 * var(--frame-outset));
-  bottom: calc(-1 * var(--frame-outset));
-  transform: scaleY(-1);
-}
-
-.action-menu .corner.br {
-  right: calc(-1 * var(--frame-outset));
-  bottom: calc(-1 * var(--frame-outset));
-  transform: scale(-1, -1);
 }
 
 .action-menu .menu-head {
@@ -642,4 +645,312 @@ body.dragging #drop-hint {
 .popup.counter {
   color: #ffb070;
   font-size: 16px;
+}
+
+/* --- 戦闘ログ（battleLog.ts。画面の右下、ターン表示の上） --- */
+.battle-log {
+  position: fixed;
+  right: 12px;
+  /* ステータス行（bottom 10px・高さ 26px）とターン表示の上 */
+  bottom: 104px;
+  z-index: 20;
+  width: min(320px, calc(100vw - 24px));
+  padding: 20px var(--frame-pad-x) var(--frame-pad-y);
+  background: linear-gradient(rgba(48, 36, 24, 0.95), rgba(28, 20, 14, 0.95));
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 4px 14px rgba(0, 0, 0, 0.6);
+}
+
+/* 内側の細い罫（外の罫と合わせて二重罫） */
+.battle-log::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(226, 183, 90, 0.35);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* 上辺に載せる題名の札 */
+.battle-log .log-title {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  z-index: 1;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 3px 22px;
+  border: 1px solid var(--accent);
+  border-left: none;
+  border-right: none;
+  background: linear-gradient(#5a3e26, #2e2014);
+  box-shadow:
+    0 0 0 2px rgba(28, 20, 14, 0.95),
+    0 2px 6px rgba(0, 0, 0, 0.6);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  white-space: nowrap;
+  color: #fff4d0;
+}
+
+/* 札の両端の菱形 */
+.battle-log .log-title::before,
+.battle-log .log-title::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -5px;
+  background: var(--accent);
+  border: 1px solid #2e2014;
+  transform: rotate(45deg);
+}
+
+.battle-log .log-title::before {
+  left: -5px;
+}
+
+.battle-log .log-title::after {
+  right: -5px;
+}
+
+.battle-log .log-toggle {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 1;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgba(226, 183, 90, 0.5);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.battle-log .log-toggle::before {
+  content: '';
+  display: block;
+  width: 0;
+  height: 0;
+  margin: 0 auto;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--accent);
+}
+
+.battle-log.collapsed .log-toggle::before {
+  border-top: none;
+  border-bottom: 5px solid var(--accent);
+}
+
+.battle-log .log-toggle:hover {
+  background: rgba(226, 183, 90, 0.2);
+}
+
+.battle-log .log-count {
+  position: absolute;
+  top: 9px;
+  left: 14px;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-log.collapsed {
+  padding-bottom: 6px;
+}
+
+.battle-log.collapsed .log-list {
+  display: none;
+}
+
+.battle-log .log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px 0 2px;
+  max-height: min(220px, 34vh);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(226, 183, 90, 0.45) transparent;
+}
+
+.battle-log .log-empty {
+  padding: 10px 0 6px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* ターンの区切り: 両側に飾り罫、真ん中に「第 n ターン」 */
+.battle-log .log-turn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 2px;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  white-space: nowrap;
+  color: var(--accent);
+}
+
+.battle-log .log-turn::before,
+.battle-log .log-turn::after {
+  content: '';
+  flex: 1;
+  height: 9px;
+  /* 仮の飾り: 外へ向かって消えていく細い線（--frame-rule-image を入れたら消す） */
+  background:
+    var(--frame-rule-image) no-repeat right center / auto 100%,
+    linear-gradient(90deg, transparent, rgba(226, 183, 90, 0.8)) center / 100% 1px no-repeat;
+}
+
+/* 文字の両側の菱形 */
+.battle-log .log-turn span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.battle-log .log-turn span::before,
+.battle-log .log-turn span::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  background: var(--accent);
+  transform: rotate(45deg);
+}
+
+.battle-log .log-turn::after {
+  transform: scaleX(-1);
+}
+
+.battle-log .log-turn:first-child {
+  margin-top: 0;
+}
+
+.battle-log .log-entry {
+  padding: 5px 2px 6px;
+  border-bottom: 1px dotted rgba(138, 106, 58, 0.5);
+  border-radius: 2px;
+}
+
+.battle-log .log-entry:last-child {
+  border-bottom: none;
+}
+
+.battle-log .log-entry.fresh {
+  animation: log-fresh 1.2s ease-out;
+}
+
+@keyframes log-fresh {
+  from {
+    background: rgba(226, 183, 90, 0.3);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.battle-log .log-who {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 5px;
+}
+
+.battle-log .log-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 軍の色の菱形 */
+.battle-log .log-unit::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  background: var(--team);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  transform: rotate(45deg);
+}
+
+.battle-log .log-verb {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.battle-log .log-action {
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid rgba(226, 183, 90, 0.6);
+  border-radius: 2px;
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.battle-log .log-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 3px;
+  padding-left: 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-log .log-loss {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.battle-log .log-loss b {
+  font-size: 13px;
+}
+
+.battle-log .log-loss.damage b {
+  color: #ff6a50;
+}
+
+.battle-log .log-loss.counter b {
+  color: #ffb070;
+}
+
+.battle-log .log-destroyed {
+  padding: 0 4px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #fff4d0;
+  background: #8a2a1a;
+}
+
+.battle-log .log-none {
+  color: rgba(191, 174, 138, 0.6);
+}
+
+.battle-log .log-note {
+  margin-top: 2px;
+  padding-left: 12px;
+  font-size: 11px;
+  color: #b8e08a;
+}
+
+.battle-log .log-note::before {
+  content: '▸ ';
 }
