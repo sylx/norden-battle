@@ -9,7 +9,7 @@
  * ZOC（支配領域）: 敵ユニットに隣接する HEX は、その敵の ZOC。
  * - 敵の ZOC に入ったらそこで止まり、それ以上は移動できない（あとは攻撃などをするしかない）。
  * - 敵の ZOC の中にいるユニットは移動できない。ただし、そのターンにまだ移動していなければ（ターンの初めは）
- *   ZOC の中から動き出せる（escapeZoc。動いた先が ZOC ならそこで止まる）。
+ *   ZOC の中から動き出せる（escapeZoc）。ただし ZOC から ZOC へは移れない（周りを ZOC で囲まれると動けない＝包囲）。
  * - ZOC_IGNORE の兵種は ZOC を気にせず動ける（いまは無し。騎兵などの例外はここに足す）。
  */
 import { FEATURE_DEFS } from '@norden/map-runtime/core/features';
@@ -59,7 +59,7 @@ export function moveRange(map: HexMap, unit: UnitData, from: Offset, ap: number,
   const zoc = ZOC_IGNORE.includes(unit.type) ? new Set<number>() : enemyZoc(map, unit);
   // 敵の ZOC の中からは動けない（ターンの初めは除く）
   if (zoc.has(key(from)) && !escapeZoc) return new Map();
-  const start: MoveStep = { col: from.col, row: from.row, cost: spent, prev: null, zoc: false };
+  const start: MoveStep = { col: from.col, row: from.row, cost: spent, prev: null, zoc: zoc.has(key(from)) };
   const best = new Map<number, MoveStep>([[key(start), start]]);
   const done = new Set<number>();
   // 範囲は狭い（行動力 ÷ 最小コスト程度の半径）ので、未確定の中から最小を毎回探す素朴なダイクストラで足りる
@@ -71,8 +71,8 @@ export function moveRange(map: HexMap, unit: UnitData, from: Offset, ap: number,
     const k = key(cur);
     if (done.has(k)) continue;
     done.add(k);
-    // 敵の ZOC に入ったところで止まる
-    if (cur.zoc) continue;
+    // 敵の ZOC に入ったところで止まる（ZOC の中から動き出すときの出発地は除く）
+    if (cur.zoc && cur !== start) continue;
     const from = map.get(cur.col, cur.row)!;
     for (let dir = 0; dir < 6; dir++) {
       const n = map.layout.neighborInDir(cur.col, cur.row, dir);
@@ -86,6 +86,8 @@ export function moveRange(map: HexMap, unit: UnitData, from: Offset, ap: number,
       if (cost > ap) continue;
       const nk = key(n);
       const inZoc = zoc.has(nk);
+      // ZOC から ZOC へは移れない
+      if (cur.zoc && inZoc) continue;
       const prev = best.get(nk);
       if (prev && prev.cost <= cost) continue;
       const step = { col: n.col, row: n.row, cost, prev: cur, zoc: inZoc };
