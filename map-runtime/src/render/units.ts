@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import type { Offset } from '../core/hex';
 import type { HexMap } from '../core/mapData';
 import { Heightmap, type TerrainData } from '../core/terrainGen';
-import { unitFacings, type UnitData } from '../core/units';
+import { unitFacings, type Facing, type UnitData } from '../core/units';
 import { UnitArt, type UnitImage } from './unitArt';
 
 /** スプライトの高さ（hexSize 比） */
@@ -44,6 +44,7 @@ const FOCUS_ORDER = 12;
 
 interface UnitSprite {
   sprite: THREE.Sprite;
+  shadow: THREE.Mesh;
   image: UnitImage;
   unit: UnitData;
 }
@@ -76,6 +77,8 @@ export class UnitLayer {
   /** 選択中のユニットの光の明滅に使う時間（秒）。描画のたびに進める */
   readonly time: THREE.IUniform<number> = { value: 0 };
   private focus: Offset | null = null;
+  /** 最後に build したときの地形（moveTo で影を作り直すのに使う） */
+  private terrain: { hm: Heightmap; waterLevel: number; size: number } | null = null;
   private readonly glow = createGlowSprite(this.time);
 
   constructor() {
@@ -115,6 +118,7 @@ export class UnitLayer {
     this.clear();
     const hm = new Heightmap(data);
     const s = map.layout.size;
+    this.terrain = { hm, waterLevel: data.waterLevel, size: s };
     const facings = unitFacings(map);
     for (const unit of map.allUnits()) {
       const cell = map.get(unit.col, unit.row);
@@ -124,11 +128,7 @@ export class UnitLayer {
       const floor = onBridge ? data.waterLevel + BRIDGE_DECK * s : data.waterLevel;
       const y = Math.max(hm.heightAt(c.x, c.z), floor);
 
-      const rx = SHADOW_RX * this.scale * s;
-      const shadow = new THREE.Mesh(
-        shadowGeometry(hm, c.x, c.z - SHADOW_SHIFT * this.scale * s, rx, rx * SHADOW_ASPECT, onBridge ? floor : data.waterLevel),
-        this.shadowMaterial,
-      );
+      const shadow = new THREE.Mesh(this.shadowGeometry(c.x, c.z, onBridge ? floor : data.waterLevel), this.shadowMaterial);
       shadow.renderOrder = SHADOW_ORDER;
       this.group.add(shadow);
 
@@ -149,9 +149,40 @@ export class UnitLayer {
       sprite.scale.set(h * image.aspect, h, 1);
       sprite.renderOrder = SPRITE_ORDER;
       this.group.add(sprite);
-      this.sprites.push({ sprite, image, unit });
+      this.sprites.push({ sprite, shadow, image, unit });
     }
     this.setFocus(this.focus);
+  }
+
+  /**
+   * ユニットの絵と影を foot（足元のワールド座標）へ動かす（移動のアニメーション用）。
+   * facing を渡すと絵の向きも変える。配置どおりに戻すときは build し直す。
+   */
+  moveTo(unit: UnitData, foot: THREE.Vector3, facing?: Facing): void {
+    const u = this.sprites.find((x) => x.unit === unit);
+    const t = this.terrain;
+    if (!u || !t) return;
+    u.sprite.position.copy(foot);
+    if (facing) {
+      const image = this.art.get(unit.type, unit.team, facing);
+      if (image !== u.image) {
+        u.image = image;
+        u.sprite.material.map = image.texture;
+        u.sprite.scale.x = u.sprite.scale.y * image.aspect;
+      }
+    }
+    // 足元が地面より上なら橋の上なので、影もその高さに敷く
+    const floor = foot.y > t.hm.heightAt(foot.x, foot.z) + 1e-3 ? foot.y : t.waterLevel;
+    u.shadow.geometry.dispose();
+    u.shadow.geometry = this.shadowGeometry(foot.x, foot.z, floor);
+    this.setFocus(this.focus);
+  }
+
+  /** 足元 (x, z) の影の楕円盤 */
+  private shadowGeometry(x: number, z: number, floor: number): THREE.BufferGeometry {
+    const { hm, size } = this.terrain!;
+    const rx = SHADOW_RX * this.scale * size;
+    return shadowGeometry(hm, x, z - SHADOW_SHIFT * this.scale * size, rx, rx * SHADOW_ASPECT, floor);
   }
 
   /** 置いたユニットの画像の位置と大きさ（足元のワールド座標・ワールド単位の幅と高さ）。画面上に情報を重ねる用 */

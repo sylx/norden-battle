@@ -7,6 +7,7 @@
  */
 import * as THREE from 'three';
 import type { HexLayout, Offset, Vec2 } from '../core/hex';
+import { Polyline, smoothPath } from '../core/polyline';
 
 /** 帯の半幅・矢じりの半幅・矢じりの長さ・出発点の HEX 中心からの離し（hexSize 比） */
 const SHAFT_HALF = 0.11;
@@ -51,7 +52,7 @@ export class PathArrow {
     if (!path || path.length < 2) return;
     const s = layout.size;
     this.fill.uniforms.uHexSize.value = s;
-    const line = smooth(path.map((o) => layout.offsetToWorld(o.col, o.row)));
+    const line = smoothPath(path.map((o) => layout.offsetToWorld(o.col, o.row)));
     const outline = OUTLINE * s;
     const back = new THREE.Mesh(
       arrowGeometry(line, s, groundAt, { shaft: SHAFT_HALF * s + outline, head: HEAD_HALF * s + outline * 1.8, extend: outline * 1.6 }),
@@ -74,47 +75,6 @@ export class PathArrow {
       this.group.remove(child);
       (child as THREE.Mesh).geometry.dispose();
     }
-  }
-}
-
-/** HEX の中心を結んだ折れ線の角を丸める（Chaikin。両端は動かさない） */
-function smooth(points: Vec2[]): Vec2[] {
-  let pts = points;
-  for (let it = 0; it < 3; it++) {
-    const out: Vec2[] = [pts[0]];
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = pts[i];
-      const b = pts[i + 1];
-      if (i > 0) out.push({ x: a.x * 0.75 + b.x * 0.25, z: a.z * 0.75 + b.z * 0.25 });
-      if (i < pts.length - 2) out.push({ x: a.x * 0.25 + b.x * 0.75, z: a.z * 0.25 + b.z * 0.75 });
-    }
-    out.push(pts[pts.length - 1]);
-    pts = out;
-  }
-  return pts;
-}
-
-/** 折れ線上の距離 d の位置と進む向き */
-class Polyline {
-  private readonly acc: number[] = [0];
-
-  constructor(private readonly pts: Vec2[]) {
-    for (let i = 1; i < pts.length; i++) this.acc.push(this.acc[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
-  }
-
-  get length(): number {
-    return this.acc[this.acc.length - 1];
-  }
-
-  at(d: number): { x: number; z: number; tx: number; tz: number } {
-    const { pts, acc } = this;
-    let i = 1;
-    while (i < pts.length - 1 && acc[i] < d) i++;
-    const a = pts[i - 1];
-    const b = pts[i];
-    const len = acc[i] - acc[i - 1] || 1;
-    const t = (d - acc[i - 1]) / len;
-    return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, tx: (b.x - a.x) / len, tz: (b.z - a.z) / len };
   }
 }
 
