@@ -6,11 +6,12 @@
  * ユニットを選択 → 行動メニュー → 移動 → 移動先を選ぶ → 移動先でメニュー → … → 攻撃 → 相手を選ぶ → 決定。
  * - 移動は何回かに分けて予約でき、予約したルートは地面に矢印で出す。
  * - 攻撃は 1 ターンに 1 回で、予約した移動先から射程内の敵を選ぶ。相手へ赤い矢印を出す（遠隔攻撃は放物線）。
- *   攻撃を予約した後は移動できない。騎兵だけは攻撃の後にも移動を予約できる（敵の ZOC の中からでも動き出せる）。
+ *   攻撃を予約した後は移動できない。騎兵だけは攻撃の後にも移動を予約できる（ZOC の中からは動けないので、
+ *   実際に動けるのは相手を壊滅させて ZOC が消えたときなど）。
  * - 決定でユニットがルートに沿って歩き、攻撃し、（騎兵なら）続きを歩く（その間は操作を受け付けない）。
  *   兵数が 0 になったユニットは消える。
  *
- * ターン終了で全ユニットの行動力が最大まで戻る。敵の ZOC の中のユニットは、そのターンにまだ移動していなければ動き出せる。
+ * ターン終了で全ユニットの行動力が最大まで戻る。敵の ZOC の中のユニットは、そのターンにまだ移動も攻撃もしていなければ動き出せる。
  *
  * メニューの「取消」で予約をすべて取り消す。
  * Esc: 移動先・攻撃の相手を選ぶのをやめる → 2 階層目を閉じる → 予約を 1 つ戻す → 選択を外す。
@@ -203,7 +204,6 @@ export class BattleApp {
       status.ap = status.maxAp;
       status.moved = false;
       status.attacked = false;
-      status.justAttacked = false;
     }
     this.turn++;
     this.onTurn(this.turn);
@@ -247,14 +247,11 @@ export class BattleApp {
     return BattleApp.planCost(plan) - (plan.attack?.action.cost ?? 0);
   }
 
-  /**
-   * 続きの移動を探すときの条件。そのターンにまだ移動していなければ（予約も無ければ）敵の ZOC から動き出せる。
-   * 攻撃の直後（騎兵。予約した攻撃の後、または実行した攻撃の後にまだ移動していない）も ZOC から動き出せる。
-   */
+  /** 続きの移動を探すときの条件。ターンの初め（まだ移動も攻撃もしておらず、予約も無い）だけ敵の ZOC から動き出せる */
   static moveOptions(plan: Plan): MoveOptions {
-    const turnStart = !plan.status.moved && plan.legs.length === 0;
-    const afterAttack = BattleApp.attackIsLast(plan) || (plan.status.justAttacked && plan.legs.length === 0);
-    return { spent: BattleApp.planCost(plan), escapeZoc: turnStart || afterAttack };
+    const { status } = plan;
+    const turnStart = !status.moved && !status.attacked && !BattleApp.planned(plan);
+    return { spent: BattleApp.planCost(plan), escapeZoc: turnStart };
   }
 
   /** 攻撃する HEX（攻撃の前の移動の先） */
@@ -435,10 +432,7 @@ export class BattleApp {
     // 移動を確定する（ユニットをこの段階の最後の移動先へ動かす）
     const { plan } = exec;
     const to = legs[legs.length - 1];
-    if (map.moveUnit(plan.unit, to.col, to.row)) {
-      plan.status.moved = true;
-      plan.status.justAttacked = false;
-    }
+    if (map.moveUnit(plan.unit, to.col, to.row)) plan.status.moved = true;
     this.view.rebuildUnits();
     this.nextPhase();
   }
@@ -488,7 +482,6 @@ export class BattleApp {
     ts.soldiers -= result.damage;
     plan.status.soldiers -= result.counter;
     plan.status.attacked = true;
-    plan.status.justAttacked = true;
     report.attack = { ...attack, result, targetDestroyed: ts.soldiers <= 0, unitDestroyed: plan.status.soldiers <= 0 };
 
     const placements = this.view.units.placements();
