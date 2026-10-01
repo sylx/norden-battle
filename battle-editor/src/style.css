@@ -327,3 +327,210 @@ body.dragging #drop-hint {
 .unit-tag[hidden] {
   display: none;
 }
+
+/* --- 行動メニュー（actionMenu.ts） --- */
+.action-menu {
+  /* 四隅の飾り罫。画像にするときは --frame-corner-image に左上向きの 1 枚を入れる（ほかの隅は反転して使う） */
+  --frame-corner: 18px;
+  /* 飾りをパネルの外へはみ出させる量 */
+  --frame-outset: 3px;
+  /* 飾りにかからないよう中身を内側に寄せる余白 */
+  --frame-pad-x: 12px;
+  --frame-pad-y: 10px;
+  --frame-corner-image: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 10;
+  user-select: none;
+  will-change: transform;
+}
+
+.action-menu[hidden],
+.action-menu .menu-panel[hidden] {
+  display: none;
+}
+
+.action-menu .menu-panel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  min-width: 132px;
+  padding: var(--frame-pad-y) var(--frame-pad-x);
+  background: linear-gradient(rgba(48, 36, 24, 0.95), rgba(28, 20, 14, 0.95));
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 4px 14px rgba(0, 0, 0, 0.6);
+}
+
+.action-menu .menu-panel.main {
+  position: relative;
+  border-top: 3px solid var(--team);
+}
+
+.action-menu .menu-panel.sub {
+  min-width: 120px;
+}
+
+.action-menu .corner {
+  position: absolute;
+  width: var(--frame-corner);
+  height: var(--frame-corner);
+  pointer-events: none;
+  background: var(--frame-corner-image) no-repeat center / contain;
+}
+
+/* 仮の飾り: 金の L 字と小さな菱形（--frame-corner-image を入れたら消す） */
+.action-menu .corner::before,
+.action-menu .corner::after {
+  content: '';
+  position: absolute;
+}
+
+.action-menu .corner::before {
+  inset: 0;
+  border-top: 2px solid var(--accent);
+  border-left: 2px solid var(--accent);
+}
+
+.action-menu .corner::after {
+  left: 4px;
+  top: 4px;
+  width: 4px;
+  height: 4px;
+  background: var(--accent);
+  transform: rotate(45deg);
+}
+
+.action-menu .corner.tl {
+  left: calc(-1 * var(--frame-outset));
+  top: calc(-1 * var(--frame-outset));
+}
+
+.action-menu .corner.tr {
+  right: calc(-1 * var(--frame-outset));
+  top: calc(-1 * var(--frame-outset));
+  transform: scaleX(-1);
+}
+
+.action-menu .corner.bl {
+  left: calc(-1 * var(--frame-outset));
+  bottom: calc(-1 * var(--frame-outset));
+  transform: scaleY(-1);
+}
+
+.action-menu .corner.br {
+  right: calc(-1 * var(--frame-outset));
+  bottom: calc(-1 * var(--frame-outset));
+  transform: scale(-1, -1);
+}
+
+.action-menu .menu-head {
+  padding: 0 4px 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(138, 106, 58, 0.6);
+}
+
+.action-menu .menu-title {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.action-menu .menu-ap {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.action-menu .menu-ap .value {
+  margin-left: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.action-menu .menu-ap .pips {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  padding-left: 8px;
+  align-self: center;
+}
+
+.action-menu .menu-ap .pips i {
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+  border: 1px solid var(--accent);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.action-menu .menu-ap .pips i.on {
+  background: var(--accent);
+}
+
+.action-menu .menu-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.action-menu .menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 6px 0 10px;
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.action-menu .menu-item .name {
+  flex: 1;
+  letter-spacing: 0.1em;
+}
+
+.action-menu .menu-item:hover,
+.action-menu .menu-item.open {
+  background: linear-gradient(90deg, rgba(226, 183, 90, 0.35), rgba(226, 183, 90, 0.08));
+  color: #fff4d0;
+}
+
+.action-menu .menu-item.disabled {
+  cursor: default;
+  color: rgba(191, 174, 138, 0.45);
+  background: none;
+}
+
+.action-menu .menu-item .cost {
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  color: #2a1e12;
+  background: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.action-menu .menu-item.disabled .cost {
+  background: rgba(191, 174, 138, 0.3);
+}
+
+.action-menu .menu-item .arrow {
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}

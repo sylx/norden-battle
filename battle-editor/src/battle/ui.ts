@@ -46,7 +46,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     currentFile = file;
     mapSel.value = file && files.some((f) => f.file === file) ? file : '';
     $('map-title').textContent = `${label ?? '-'} — ${data.name} — ${data.grid.orientation} ${data.grid.cols}×${data.grid.rows}`;
-    setStatus('左ドラッグ: 移動 / ホイール: ズーム / クリック: ユニットを選択');
+    setStatus('左ドラッグ: 移動 / ホイール: ズーム / クリック: ユニットを選択 / Esc: 選択を外す');
   };
 
   const loadStored = async (file: string) => {
@@ -130,6 +130,9 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
   };
   app.onHover = (c, u) => renderInfo($('hover-info'), c, u);
   app.onSelect = (c, u) => renderInfo($('select-info'), c, u);
+  // 行動の処理はまだ無いので、選んだものを知らせるだけ
+  app.onAction = (u, a) =>
+    setStatus(`${TEAM_DEFS[u.team].name} ${UNIT_DEFS[u.type].name} (${u.col}, ${u.row}): 「${escapeHtml(a.name)}」を選択（行動力 ${a.cost}）— 未実装`);
   renderInfo($('hover-info'), null, null);
   renderInfo($('select-info'), null, null);
 
