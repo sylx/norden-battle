@@ -458,7 +458,10 @@ export class BattleApp {
 
   private planChanged(): void {
     const plan = this.plan!;
-    this.view.setPath(plan.legs.length > 0 ? movePath(plan.legs) : null);
+    // 攻撃の前と後の移動は別の矢印にする（突撃の後は飛び出た先から歩き出すので、1 本につなぐと相手を横切ってしまう）
+    const split = plan.attack?.afterLeg ?? plan.legs.length;
+    const path = (legs: MoveStep[]) => (legs.length > 0 ? movePath(legs) : null);
+    this.view.setPath(path(plan.legs.slice(0, split)), path(plan.legs.slice(split)));
     this.showAttackArrow(plan);
     this.openMenu();
     this.onPlanChange(plan);

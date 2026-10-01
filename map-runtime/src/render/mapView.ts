@@ -53,6 +53,8 @@ export class MapView {
   readonly units = new UnitLayer();
   /** 経路の矢印（移動ルートなど） */
   readonly pathArrow = new PathArrow();
+  /** 2 本目の経路の矢印（攻撃の後の移動など、1 本目とつながらない経路） */
+  readonly afterPathArrow = new PathArrow();
   /** 攻撃の対象を指す赤い矢印（遠隔攻撃は放物線。ユニットより手前に描く） */
   readonly attackArrow = new PathArrow({ fill: 0xe0402e, stripe: 0xffc8b0, outline: 0x2a0c08, order: 13 });
   map: HexMap | null = null;
@@ -72,7 +74,7 @@ export class MapView {
 
   constructor(ctx: SceneContext) {
     this.ctx = ctx;
-    ctx.overlay.add(this.units.group, this.pathArrow.group, this.attackArrow.group);
+    ctx.overlay.add(this.units.group, this.pathArrow.group, this.afterPathArrow.group, this.attackArrow.group);
     ctx.onShadowPass = (active) => this.decor?.forest.setShadowPass(active);
     this.units.art.onChange = () => this.rebuildUnits();
   }
@@ -86,6 +88,7 @@ export class MapView {
     this.map = map;
     this.overlay.setLayout(map.layout);
     this.pathArrow.clear();
+    this.afterPathArrow.clear();
     this.attackArrow.clear();
     this.ctx.parchment.uniforms.uPaperScale.value = map.layout.size;
     this.regenerate(resetCamera);
@@ -228,9 +231,15 @@ export class MapView {
     this.overlay.setRange(cells, color, markColor);
   }
 
-  /** 経路（出発地 → 到着地の HEX）に沿って地面に矢印を出す。null で消す */
-  setPath(path: readonly Offset[] | null): void {
-    if (this.map) this.pathArrow.set(path, this.map.layout, (x, z) => this.groundAt(x, z));
+  /**
+   * 経路（出発地 → 到着地の HEX）に沿って地面に矢印を出す。null で消す。
+   * after は 1 本目とつながらない 2 本目の経路（突撃で飛び出た先からの移動など）。
+   */
+  setPath(path: readonly Offset[] | null, after: readonly Offset[] | null = null): void {
+    if (!this.map) return;
+    const groundAt = (x: number, z: number) => this.groundAt(x, z);
+    this.pathArrow.set(path, this.map.layout, groundAt);
+    this.afterPathArrow.set(after, this.map.layout, groundAt);
   }
 
   /**
@@ -274,6 +283,7 @@ export class MapView {
     this.overlay.uniforms.uTime.value = windUniforms.uTime.value;
     this.units.time.value = windUniforms.uTime.value;
     this.pathArrow.time.value = windUniforms.uTime.value;
+    this.afterPathArrow.time.value = windUniforms.uTime.value;
     this.attackArrow.time.value = windUniforms.uTime.value;
     // 俯角を変えたら板絵を焼き直す
     this.decor?.forest.setPitch(this.ctx.pitch);
