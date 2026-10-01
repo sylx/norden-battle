@@ -181,7 +181,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     if (app.endTurn()) setStatus(`ターン ${app.turn} — 全ユニットの行動力が回復しました / ${idleStatus}`);
   });
   const teamUnit = (u: UnitData) => `${TEAM_DEFS[u.team].name} ${UNIT_DEFS[u.type].name}`;
-  app.onExecute = ({ unit, from, moveCost, attack, intercepts, lost, intercept }) => {
+  app.onExecute = ({ unit, from, moveCost, attack, intercepts, lost, halted, intercept }) => {
     const parts: string[] = [];
     if (moveCost > 0) parts.push(`(${from.col}, ${from.row}) から移動（行動力 ${moveCost}）`);
     // 移動の途中で受けた迎撃（攻撃の前の移動・後の移動）
@@ -233,7 +233,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
       );
     }
     logIntercepts(true);
-    if (intercept && !lost) parts.push('迎撃の構えで待機（行動終了）');
+    if (halted && !lost) parts.push(`(${unit.col}, ${unit.row}) で足止めされた（行動終了）`);
+    else if (intercept && !lost) parts.push('迎撃の構えで待機（行動終了）');
     setStatus(`${unitLabel(unit)}: ${parts.join(' → ')}`);
   };
 

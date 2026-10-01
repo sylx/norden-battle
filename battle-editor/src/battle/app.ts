@@ -17,7 +17,8 @@
  *   構えは次にそのユニットが行動するまで続く（ターンをまたいでも続く）。
  *   近接ユニットの構えは、受けるダメージを減らして反撃を増やす（damage.ts）。
  *   間接ユニットの構えは、敵が歩いて射程に入った HEX でその敵を止めて 1 回だけ自動で攻撃し、構えを解く。
- *   撃たれた敵は壊滅しなければ続きを歩く。
+ *   撃たれた敵は壊滅しなければ続きを歩く。ただし弓兵に撃たれた敵（騎兵を除く）はそこで足止めされ、残りの予約を捨てて
+ *   行動を終える（行動力は 0 になる）。味方のいる HEX で止められたときは、通ってきた道を空いている HEX まで戻る。
  *
  * ターン終了で全ユニットの行動力が最大まで戻る。敵の ZOC の中のユニットは、そのターンにまだ移動も攻撃もしていなければ動き出せる。
  *
@@ -120,6 +121,8 @@ export interface ExecuteReport {
   intercepts: InterceptReport[];
   /** 迎撃の自動攻撃で壊滅したか（そこで実行を打ち切る） */
   lost: boolean;
+  /** 弓兵の迎撃で足止めされたか（そこで移動をやめ、残りの予約を捨てて行動を終える） */
+  halted: boolean;
   /** 迎撃の構えをとったか（迎撃コマンド） */
   intercept: boolean;
 }
@@ -144,12 +147,13 @@ type Targeting =
  * 実行の 1 段階。
  * - walk: path に沿って歩く。commit なら着いた HEX へ移動を確定する（迎撃で止まった途中の HEX では確定しない）
  * - strike: 予約した攻撃をする
- * - intercept: shooter（迎撃の構えの間接ユニット）が、at まで歩いてきたユニットを攻撃する
+ * - intercept: shooter（迎撃の構えの間接ユニット）が、at まで歩いてきたユニットを攻撃する。
+ *   route はこの移動で at まで通ってきた HEX（足止めされて味方のいる HEX から戻るときに使う）
  */
 type Phase =
   | { kind: 'walk'; path: Offset[]; commit: boolean }
   | { kind: 'strike' }
-  | { kind: 'intercept'; shooter: UnitData; at: Offset };
+  | { kind: 'intercept'; shooter: UnitData; at: Offset; route: Offset[] };
 
 /** 決定した予約の実行（アニメーション）。phases を順に進める */
 interface Execution {
@@ -497,6 +501,7 @@ export class BattleApp {
       cost: BattleApp.planCost(plan),
       intercepts: [],
       lost: false,
+      halted: false,
       intercept,
     };
     // 行動したら迎撃の構えは解ける
@@ -539,7 +544,7 @@ export class BattleApp {
       const shooters = interceptorsAt(map, this.statuses, exec.plan.unit, path[i]);
       if (shooters.length === 0) continue;
       exec.phases.unshift(
-        ...shooters.map((shooter): Phase => ({ kind: 'intercept', shooter, at: path[i] })),
+        ...shooters.map((shooter): Phase => ({ kind: 'intercept', shooter, at: path[i], route: path.slice(0, i + 1) })),
         { kind: 'walk', path: path.slice(i), commit: phase.commit },
       );
       phase = { kind: 'walk', path: path.slice(0, i + 1), commit: false };
@@ -603,9 +608,35 @@ export class BattleApp {
       this.view.units.moveTo(exec.plan.unit, new THREE.Vector3(b.x + shake, this.view.groundAt(b.x, b.z), b.z));
     }
     if (t < 1) return;
-    // 壊滅したらそこで打ち切る
+    // 壊滅したらそこで打ち切る。弓兵に撃たれたら（騎兵を除く）そこで足止め
     if (exec.report.lost) exec.phases = [];
+    else if (COMBAT_DEFS[phase.shooter.type].interceptHalts && !COMBAT_DEFS[exec.plan.unit.type].unhaltable) this.halt(exec, phase);
     this.nextPhase();
+  }
+
+  /**
+   * 迎撃で足止めする。同じ HEX で続けて撃つ迎撃だけを残して、残りの移動・攻撃を捨て、止まった HEX へ移動を確定する。
+   * 止まった HEX に味方がいるときは、通ってきた道を空いている HEX まで戻る。
+   */
+  private halt(exec: Execution, phase: Extract<Phase, { kind: 'intercept' }>): void {
+    const map = this.map!;
+    const unit = exec.plan.unit;
+    exec.report.halted = true;
+    const rest: Phase[] = [];
+    for (const p of exec.phases) {
+      if (p.kind !== 'intercept' || p.at.col !== phase.at.col || p.at.row !== phase.at.row) break;
+      rest.push(p);
+    }
+    const { route } = phase;
+    let j = route.length - 1;
+    while (j >= 0) {
+      const other = map.unitAt(route[j].col, route[j].row);
+      if (!other || other === unit) break;
+      j--;
+    }
+    // 通ってきた道がすべて味方で埋まっていたら（前の迎撃で止まった HEX から歩き出したときなど）、確定している HEX まで戻る
+    const back = j >= 0 ? route.slice(j).reverse() : [...route].reverse().concat({ col: unit.col, row: unit.row });
+    exec.phases = [...rest, { kind: 'walk', path: back, commit: true }];
   }
 
   /** 迎撃の自動攻撃（ランダム係数を振る）を兵数・士気に反映し、迎撃の構えを解く */
@@ -731,10 +762,12 @@ export class BattleApp {
     const lost = report.lost || !!report.attack?.unitDestroyed;
     plan.status.ap -= report.cost;
     // 迎撃の構えをとったら、残りの行動力に関わらず行動を終える
-    if (report.intercept && !lost) {
+    if (report.intercept && !lost && !report.halted) {
       plan.status.intercepting = true;
       plan.status.ap = 0;
     }
+    // 弓兵の迎撃で足止めされたら行動を終える
+    if (report.halted) plan.status.ap = 0;
     const removed = [report.attack?.targetDestroyed && report.attack.target, lost && report.unit];
     for (const u of removed) {
       if (!u) continue;

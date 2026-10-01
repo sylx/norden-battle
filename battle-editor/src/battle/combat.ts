@@ -13,6 +13,7 @@
  * - 隣接（距離 1）の相手への攻撃は直接攻撃で、相手も反撃して両軍の兵数が減る。距離 2 以上は一方的に減らす。
  * - 迎撃（app.ts）: 近接ユニットは構えている間、受けるダメージが減って反撃が増える（damage.ts）。
  *   間接（ranged）ユニットは構えている間、射程に入った敵へ 1 回だけ自動で攻撃する（interceptFire。反撃は受けない）。
+ *   弓兵（interceptHalts）に撃たれた敵は、そこで移動を止められ、残りの予約も行動力も失う（騎兵（unhaltable）は除く）。
  * - 包囲（movement.ts の encircled）されている相手へのダメージは増える。
  * - 一斉攻撃は直接攻撃の兵種だけで、相手が攻撃する自分のほかの味方（直接攻撃の兵種）とも隣接している（取り囲んでいる）ときにできる。
  *   隣接している味方（volleySupporters）も一緒に攻撃する演出が入り、その数だけダメージが増える（damage.ts）。
@@ -37,12 +38,16 @@ export interface CombatDef {
   moveAfterAttack?: boolean;
   /** 指揮官の武力の代わりに知力を使う */
   magic?: boolean;
+  /** 迎撃の自動攻撃で、撃った相手の移動をそこで止めて行動を終わらせる（弓兵） */
+  interceptHalts?: boolean;
+  /** interceptHalts の迎撃を受けても止まらない（騎兵） */
+  unhaltable?: boolean;
 }
 
 export const COMBAT_DEFS: Record<UnitType, CombatDef> = {
   infantry: { minRange: 1, maxRange: 1, ranged: false },
-  archer: { minRange: 1, maxRange: 2, ranged: true },
-  cavalry: { minRange: 1, maxRange: 1, ranged: false, moveAfterAttack: true },
+  archer: { minRange: 1, maxRange: 2, ranged: true, interceptHalts: true },
+  cavalry: { minRange: 1, maxRange: 1, ranged: false, moveAfterAttack: true, unhaltable: true },
   mage: { minRange: 2, maxRange: 3, ranged: true, magic: true },
 };
 
