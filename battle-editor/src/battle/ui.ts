@@ -122,6 +122,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
       ['地形', TERRAIN_DEFS[cell.terrain].name],
       ['標高', `Lv ${cell.elevation}`],
       ['人工物', cell.feature ? FEATURE_DEFS[cell.feature].name : '-'],
+      ['街道', cell.roads ? `${cell.roads.length} 方向` : '-'],
       ['ユニット', unit ? `${TEAM_DEFS[unit.team].name} ${UNIT_DEFS[unit.type].name}` : '-'],
     ]
       .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
