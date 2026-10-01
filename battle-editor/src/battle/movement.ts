@@ -9,7 +9,7 @@
  * ZOC（支配領域）: 敵ユニットに隣接する HEX は、その敵の ZOC。
  * - 敵の ZOC に入ったらそこで止まり、それ以上は移動できない（あとは攻撃などをするしかない）。
  * - 敵の ZOC の中にいるユニットは移動できない。ただし、そのターンにまだ移動も攻撃もしていなければ（ターンの初めは）
- *   ZOC の中から動き出せる（escapeZoc）。ただし ZOC から ZOC へは移れない（周りを ZOC で囲まれると動けない＝包囲）。
+ *   ZOC の中から動き出せる（escapeZoc）。騎兵は攻撃の直後も動き出せる（app.ts の moveOptions）。ただし ZOC から ZOC へは移れない（周りを ZOC で囲まれると動けない＝包囲）。
  * - ZOC_IGNORE の兵種は ZOC を気にせず動ける（いまは無し。騎兵などの例外はここに足す）。
  *
  * 包囲: 隣の HEX がどれも入れない（マップの外・通れない地形）か、敵がいるか、敵の ZOC の中で、
@@ -54,7 +54,7 @@ export function enterCost(from: HexCell, dir: number, to: HexCell): number | nul
 export interface MoveOptions {
   /** それまでに予約した移動で使った行動力。合わせて ap 以内のところまで行ける */
   spent?: number;
-  /** 敵の ZOC の中からでも動き出せる（ターンの初め） */
+  /** 敵の ZOC の中からでも動き出せる（ターンの初め・騎兵の攻撃の直後） */
   escapeZoc?: boolean;
 }
 
@@ -66,7 +66,7 @@ export function moveRange(map: HexMap, unit: UnitData, from: Offset, ap: number,
   const { cols } = map.layout;
   const key = (o: Offset) => o.row * cols + o.col;
   const zoc = ZOC_IGNORE.includes(unit.type) ? new Set<number>() : enemyZoc(map, unit);
-  // 敵の ZOC の中からは動けない（ターンの初めは除く）
+  // 敵の ZOC の中からは動けない（ターンの初め・騎兵の攻撃の直後は除く）
   if (zoc.has(key(from)) && !escapeZoc) return new Map();
   const start: MoveStep = { col: from.col, row: from.row, cost: spent, prev: null, zoc: zoc.has(key(from)) };
   const best = new Map<number, MoveStep>([[key(start), start]]);

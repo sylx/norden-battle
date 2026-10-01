@@ -8,8 +8,8 @@
  * - 攻撃は 1 ターンに 1 回で、予約した移動先から射程内の敵を選ぶ。相手へ赤い矢印を出す（遠隔攻撃は放物線）。
  *   一斉攻撃は、ほかの味方とも隣接している敵（金の斜線）しか選べない。ほかの敵を選ぶと「包囲していません」でやり直し。
  *   実行すると、相手に隣接している味方も一緒に踏み込んで攻撃する。
- *   攻撃を予約した後は移動できない。騎兵だけは攻撃の後にも移動を予約できる（ZOC の中からは動けないので、
- *   実際に動けるのは相手を壊滅させて ZOC が消えたときなど）。
+ *   攻撃を予約した後は移動できない。騎兵だけは攻撃の後にも移動を予約できる（一撃離脱。攻撃の直後は敵の ZOC の中からでも
+ *   動き出せるが、ZOC から ZOC へは移れない）。
  * - 突撃（騎兵）は相手を突き抜けて向こうの HEX へ飛び出る。飛び出る先は予約のときに決め、矢印もそこまで伸ばす。
  * - 決定でユニットがルートに沿って歩き、攻撃し、（騎兵なら）続きを歩く（その間は操作を受け付けない）。
  *   兵数が 0 になったユニットは消える。
@@ -275,6 +275,7 @@ export class BattleApp {
       status.ap = status.maxAp;
       status.moved = false;
       status.attacked = false;
+      status.justAttacked = false;
     }
     this.turn++;
     this.onTurn(this.turn);
@@ -334,9 +335,14 @@ export class BattleApp {
     return !plan.status.moved && !plan.status.attacked && !BattleApp.planned(plan);
   }
 
-  /** 続きの移動を探すときの条件。ターンの初めだけ敵の ZOC から動き出せる */
+  /**
+   * 続きの移動を探すときの条件。ターンの初めは敵の ZOC から動き出せる。
+   * 騎兵（moveAfterAttack）は攻撃の直後（予約した攻撃の後、または実行した攻撃の後にまだ移動していない）も動き出せる（一撃離脱）。
+   */
   static moveOptions(plan: Plan): MoveOptions {
-    return { spent: BattleApp.planCost(plan), escapeZoc: BattleApp.turnStart(plan) };
+    const afterAttack =
+      !!COMBAT_DEFS[plan.unit.type].moveAfterAttack && (BattleApp.attackIsLast(plan) || (plan.status.justAttacked && !BattleApp.planned(plan)));
+    return { spent: BattleApp.planCost(plan), escapeZoc: BattleApp.turnStart(plan) || afterAttack };
   }
 
   /** 攻撃する HEX（攻撃の前の移動の先） */
@@ -559,7 +565,10 @@ export class BattleApp {
   /** 移動を確定する（ユニットを to へ動かす） */
   private commitWalk(exec: Execution, to: Offset): void {
     const { plan } = exec;
-    if (this.map!.moveUnit(plan.unit, to.col, to.row)) plan.status.moved = true;
+    if (this.map!.moveUnit(plan.unit, to.col, to.row)) {
+      plan.status.moved = true;
+      plan.status.justAttacked = false;
+    }
     this.view.rebuildUnits();
   }
 
@@ -684,6 +693,7 @@ export class BattleApp {
     applyMorale(ts, result.morale.defender);
     applyMorale(plan.status, result.morale.attacker);
     plan.status.attacked = true;
+    plan.status.justAttacked = true;
     report.attack = {
       ...attack,
       result,

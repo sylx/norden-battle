@@ -25,6 +25,8 @@ export interface UnitStatus {
   moved: boolean;
   /** このターンに攻撃したか（攻撃は 1 ターンに 1 回） */
   attacked: boolean;
+  /** 攻撃した後にまだ移動していないか（突撃で飛び出たのは攻撃のうち）。騎兵はこの間だけ敵の ZOC から動き出せる */
+  justAttacked: boolean;
   /** 迎撃の構えで待機しているか（次に行動するか、間接ユニットが自動で攻撃するまで） */
   intercepting: boolean;
 }
@@ -99,6 +101,7 @@ export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStat
       strength: FACE_ABILITIES[face]?.[1] ?? 50,
       moved: false,
       attacked: false,
+      justAttacked: false,
       intercepting: false,
     });
   }
