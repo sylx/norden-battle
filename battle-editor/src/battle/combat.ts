@@ -6,6 +6,7 @@
  * - ranged の兵種（弓兵・魔術師）の攻撃は放物線の矢印で出す。
  * - magic の兵種（魔術師）は、指揮官の武力の代わりに知力を使う（ダメージ・士気の増減）。
  *   攻撃（サンダーフォール）は隣接した相手にも間接攻撃で、反撃を受けない（INDIRECT_KINDS）。
+ *   魔術師の攻撃は魔法で、相手の武力による軽減と迎撃の構えの影響を受けない（damage.ts）。
  * - moveAfterAttack の兵種（騎兵）だけ、攻撃の後に移動できる（一撃離脱）。攻撃の直後は敵の ZOC の中からでも動き出せる。
  * - 突撃（騎兵）は隣の相手を攻撃した後、相手を突き抜けて同じ向きの向こうの HEX へ飛び出る（chargeLanding）。
  *   その HEX にユニットがいる・通れない地形・マップの外なら飛び出さない。行動力は突撃の分だけで、ZOC は関係ない。
@@ -42,7 +43,7 @@ export const COMBAT_DEFS: Record<UnitType, CombatDef> = {
   infantry: { minRange: 1, maxRange: 1, ranged: false },
   archer: { minRange: 1, maxRange: 2, ranged: true },
   cavalry: { minRange: 1, maxRange: 1, ranged: false, moveAfterAttack: true },
-  mage: { minRange: 1, maxRange: 3, ranged: true, magic: true },
+  mage: { minRange: 2, maxRange: 3, ranged: true, magic: true },
 };
 
 /** 隣接した相手へでも間接攻撃になる（反撃を受けない）攻撃の種類 */
@@ -144,7 +145,8 @@ export function attackForecast(map: HexMap, attacker: Combatant, defender: Comba
 function fighter({ unit, status }: Combatant, encircled: boolean): Fighter {
   const { soldiers, morale, leadership } = status;
   const guarding = status.intercepting && !COMBAT_DEFS[unit.type].ranged;
-  return { type: unit.type, soldiers, morale, leadership, strength: mightOf(unit, status), encircled, guarding, supporters: 0 };
+  const magic = !!COMBAT_DEFS[unit.type].magic;
+  return { type: unit.type, soldiers, morale, leadership, strength: mightOf(unit, status), encircled, guarding, supporters: 0, magic };
 }
 
 /** target を一斉攻撃するときに加わる味方（target に隣接している、attacker 以外の attacker の味方） */
