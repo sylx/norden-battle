@@ -11,6 +11,11 @@
  * - 突撃（騎兵）は相手を突き抜けて向こうの HEX へ飛び出る。飛び出る先は予約のときに決め、矢印もそこまで伸ばす。
  * - 決定でユニットがルートに沿って歩き、攻撃し、（騎兵なら）続きを歩く（その間は操作を受け付けない）。
  *   兵数が 0 になったユニットは消える。
+ * - 迎撃は選んだらすぐに実行する。予約した移動があればそこまで歩き、迎撃の構えで待機して行動を終える（行動力は 0 になる）。
+ *   構えは次にそのユニットが行動するまで続く（ターンをまたいでも続く）。
+ *   近接ユニットの構えは、受けるダメージを減らして反撃を増やす（damage.ts）。
+ *   間接ユニットの構えは、敵が歩いて射程に入った HEX でその敵を止めて 1 回だけ自動で攻撃し、構えを解く。
+ *   撃たれた敵は壊滅しなければ続きを歩く。
  *
  * ターン終了で全ユニットの行動力が最大まで戻る。敵の ZOC の中のユニットは、そのターンにまだ移動も攻撃もしていなければ動き出せる。
  *
@@ -33,6 +38,7 @@ import {
   attackTargets,
   chargeLanding,
   COMBAT_DEFS,
+  interceptorsAt,
   isAttack,
   type AttackForecast,
   type AttackResult,
@@ -63,6 +69,8 @@ const STRIKE_LUNGE = 0.3;
 const CHARGE_SEC = 0.8;
 /** 当たったユニットの揺れ（hexSize 比） */
 const HIT_SHAKE = 0.05;
+/** 遠隔攻撃でその場で跳ねる高さ（hexSize 比） */
+const RANGED_HOP = 0.05;
 
 /** 予約した攻撃 */
 export interface PlannedAttack {
@@ -92,7 +100,31 @@ export interface ExecuteReport {
   moveCost: number;
   /** 使った行動力の合計 */
   cost: number;
-  attack?: PlannedAttack & { result: AttackResult; targetDestroyed: boolean; unitDestroyed: boolean };
+  attack?: PlannedAttack & {
+    result: AttackResult;
+    targetDestroyed: boolean;
+    unitDestroyed: boolean;
+    /** 攻撃の後の兵数（自分・相手） */
+    unitLeft: number;
+    targetLeft: number;
+  };
+  /** 移動の途中で受けた、迎撃の構えの間接ユニットからの自動攻撃（受けた順） */
+  intercepts: InterceptReport[];
+  /** 迎撃の自動攻撃で壊滅したか（そこで実行を打ち切る） */
+  lost: boolean;
+  /** 迎撃の構えをとったか（迎撃コマンド） */
+  intercept: boolean;
+}
+
+/** 迎撃の自動攻撃 1 回分 */
+export interface InterceptReport {
+  /** 攻撃した（迎撃の構えの）ユニット */
+  unit: UnitData;
+  result: AttackResult;
+  /** 攻撃を受けた後の、移動していたユニットの兵数 */
+  targetLeft: number;
+  /** 予約した攻撃の後の移動で受けたか */
+  afterAttack: boolean;
 }
 
 /** 移動先・攻撃の相手を選んでいる状態 */
@@ -100,8 +132,16 @@ type Targeting =
   | { kind: 'move'; cells: Map<number, MoveStep> }
   | { kind: 'attack'; action: MenuAction; cells: Map<number, UnitData> };
 
-/** 実行の 1 段階。walk: ルートに沿って歩く、strike: 攻撃する */
-type Phase = { kind: 'walk'; legs: MoveStep[] } | { kind: 'strike' };
+/**
+ * 実行の 1 段階。
+ * - walk: path に沿って歩く。commit なら着いた HEX へ移動を確定する（迎撃で止まった途中の HEX では確定しない）
+ * - strike: 予約した攻撃をする
+ * - intercept: shooter（迎撃の構えの間接ユニット）が、at まで歩いてきたユニットを攻撃する
+ */
+type Phase =
+  | { kind: 'walk'; path: Offset[]; commit: boolean }
+  | { kind: 'strike' }
+  | { kind: 'intercept'; shooter: UnitData; at: Offset };
 
 /** 決定した予約の実行（アニメーション）。phases を順に進める */
 interface Execution {
@@ -166,7 +206,8 @@ export class BattleApp {
     this.menu = new ActionMenu(container);
     this.popups = new Popups(container);
     this.menu.onAction = (unit, action) => {
-      if (action.id === 'confirm') return this.execute();
+      if (action.id === 'confirm') return this.execute(false);
+      if (action.id === 'intercept') return this.execute(true);
       if (action.id === 'cancel') return this.clearPlan();
       if (action.id === 'move') this.startMove();
       else if (isAttack(action.id)) this.startAttack(action);
@@ -240,7 +281,8 @@ export class BattleApp {
     const target = this.targeting.cells.get(o.row * map.layout.cols + o.col);
     const ts = target && this.statuses.get(target);
     if (!target || !ts) return null;
-    return attackForecast(map, plan, BattleApp.planPos(plan), { unit: target, status: ts }, this.targeting.action.id);
+    const attacker = { unit: plan.unit, status: plan.status, pos: BattleApp.planPos(plan) };
+    return attackForecast(map, attacker, { unit: target, status: ts, pos: target }, this.targeting.action.id);
   }
 
   static planned(plan: Plan): boolean {
@@ -390,51 +432,75 @@ export class BattleApp {
     this.view.setAttack(BattleApp.attackPos(plan), target, COMBAT_DEFS[plan.unit.type].ranged, landing);
   }
 
-  /** 予約を実行する。攻撃の前の移動 → 攻撃 → 攻撃の後の移動（騎兵）の順に進める */
-  private execute(): void {
+  /**
+   * 予約を実行する。攻撃の前の移動 → 攻撃 → 攻撃の後の移動（騎兵）の順に進める。
+   * intercept なら予約した移動の後に迎撃の構えをとる（攻撃は予約していない）。
+   */
+  private execute(intercept: boolean): void {
     const plan = this.plan;
-    if (!this.map || !plan || !BattleApp.planned(plan)) return;
+    if (!this.map || !plan || (!intercept && !BattleApp.planned(plan))) return;
     const report: ExecuteReport = {
       unit: plan.unit,
       from: { col: plan.unit.col, row: plan.unit.row },
       moveCost: BattleApp.moveCost(plan),
       cost: BattleApp.planCost(plan),
+      intercepts: [],
+      lost: false,
+      intercept,
     };
+    // 行動したら迎撃の構えは解ける
+    plan.status.intercepting = false;
     const split = plan.attack?.afterLeg ?? plan.legs.length;
-    const phases: Phase[] = [
-      { kind: 'walk', legs: plan.legs.slice(0, split) },
-      ...(plan.attack ? [{ kind: 'strike' as const }, { kind: 'walk' as const, legs: plan.legs.slice(split) }] : []),
-    ];
+    const walk = (legs: MoveStep[]): Phase => ({ kind: 'walk', path: legs.length > 0 ? movePath(legs) : [], commit: true });
+    const phases: Phase[] = [walk(plan.legs.slice(0, split)), ...(plan.attack ? [{ kind: 'strike' as const }, walk(plan.legs.slice(split))] : [])];
     this.menu.open(null);
     this.exec = { plan, report, phases, phase: phases[0], start: 0, duration: 0, line: null, facing: undefined, hit: false };
     this.nextPhase();
   }
 
-  /** 実行の次の段階へ進む（空の移動は飛ばす）。段階が無くなったら終える */
+  /**
+   * 実行の次の段階へ進む（歩かない移動は確定だけして飛ばす）。段階が無くなったら終える。
+   * 移動は、迎撃の構えの間接ユニットの射程に入る HEX があれば、そこで区切って迎撃の段階を挟む。
+   */
   private nextPhase(): void {
     const exec = this.exec!;
     const map = this.map!;
     let phase = exec.phases.shift();
-    while (phase?.kind === 'walk' && phase.legs.length === 0) phase = exec.phases.shift();
+    while (phase?.kind === 'walk' && phase.path.length < 2) {
+      if (phase.commit && phase.path.length > 0) this.commitWalk(exec, phase.path[0]);
+      phase = exec.phases.shift();
+    }
     if (!phase) {
       this.exec = null;
       return this.finish(exec.plan, exec.report);
     }
-    exec.phase = phase;
     exec.start = performance.now();
     exec.hit = false;
-    if (phase.kind === 'strike') {
-      exec.duration = exec.plan.attack!.landing ? CHARGE_SEC : STRIKE_SEC;
+    if (phase.kind !== 'walk') {
+      exec.phase = phase;
+      exec.duration = phase.kind === 'strike' && exec.plan.attack!.landing ? CHARGE_SEC : STRIKE_SEC;
       return;
     }
-    exec.line = new Polyline(smoothPath(movePath(phase.legs).map((o) => map.layout.offsetToWorld(o.col, o.row))));
+    const { path } = phase;
+    for (let i = 1; i < path.length; i++) {
+      const shooters = interceptorsAt(map, this.statuses, exec.plan.unit, path[i]);
+      if (shooters.length === 0) continue;
+      exec.phases.unshift(
+        ...shooters.map((shooter): Phase => ({ kind: 'intercept', shooter, at: path[i] })),
+        { kind: 'walk', path: path.slice(i), commit: phase.commit },
+      );
+      phase = { kind: 'walk', path: path.slice(0, i + 1), commit: false };
+      break;
+    }
+    exec.phase = phase;
+    exec.line = new Polyline(smoothPath(phase.path.map((o) => map.layout.offsetToWorld(o.col, o.row))));
     const hexStep = map.layout.size * Math.sqrt(3);
     exec.duration = Math.max(exec.line.length / hexStep / WALK_HEX_PER_SEC, WALK_MIN_SEC);
     exec.facing = undefined;
   }
 
   /** 移動のアニメーションを進める。着いたら移動を確定して次の段階へ */
-  private stepWalk(exec: Execution, legs: MoveStep[], now: number): void {
+  private stepWalk(exec: Execution, phase: Extract<Phase, { kind: 'walk' }>, now: number): void {
     const map = this.map!;
     const s = map.layout.size;
     const line = exec.line!;
@@ -452,12 +518,59 @@ export class BattleApp {
     this.view.units.moveTo(exec.plan.unit, foot, exec.facing);
     if (t < 1) return;
 
-    // 移動を確定する（ユニットをこの段階の最後の移動先へ動かす）
-    const { plan } = exec;
-    const to = legs[legs.length - 1];
-    if (map.moveUnit(plan.unit, to.col, to.row)) plan.status.moved = true;
-    this.view.rebuildUnits();
+    if (phase.commit) this.commitWalk(exec, phase.path[phase.path.length - 1]);
     this.nextPhase();
+  }
+
+  /** 移動を確定する（ユニットを to へ動かす） */
+  private commitWalk(exec: Execution, to: Offset): void {
+    const { plan } = exec;
+    if (this.map!.moveUnit(plan.unit, to.col, to.row)) plan.status.moved = true;
+    this.view.rebuildUnits();
+  }
+
+  /** 迎撃のアニメーションを進める。迎撃したユニットはその場で跳ね、半分の時点で当てて兵数を減らす */
+  private stepIntercept(exec: Execution, phase: Extract<Phase, { kind: 'intercept' }>, now: number): void {
+    const map = this.map!;
+    const s = map.layout.size;
+    const t = Math.min((now - exec.start) / 1000 / exec.duration, 1);
+    const a = map.layout.offsetToWorld(phase.shooter.col, phase.shooter.row);
+    const b = map.layout.offsetToWorld(phase.at.col, phase.at.row);
+    const hop = Math.sin(Math.min(t * 2, 1) * Math.PI) * RANGED_HOP * s;
+    this.view.units.moveTo(phase.shooter, new THREE.Vector3(a.x, this.view.groundAt(a.x, a.z) + hop, a.z), b.x >= a.x ? 'right' : 'left');
+    if (t >= 0.5 && !exec.hit) {
+      exec.hit = true;
+      this.applyIntercept(exec, phase);
+    }
+    if (exec.hit) {
+      const shake = Math.sin(t * 60) * HIT_SHAKE * s * (1 - t) * 2;
+      this.view.units.moveTo(exec.plan.unit, new THREE.Vector3(b.x + shake, this.view.groundAt(b.x, b.z), b.z));
+    }
+    if (t < 1) return;
+    // 壊滅したらそこで打ち切る
+    if (exec.report.lost) exec.phases = [];
+    this.nextPhase();
+  }
+
+  /** 迎撃の自動攻撃（ランダム係数を振る）を兵数・士気に反映し、迎撃の構えを解く */
+  private applyIntercept(exec: Execution, phase: Extract<Phase, { kind: 'intercept' }>): void {
+    const { plan, report } = exec;
+    const ss = this.statuses.get(phase.shooter)!;
+    const result = attackResult(
+      this.map!,
+      { unit: phase.shooter, status: ss, pos: phase.shooter },
+      { unit: plan.unit, status: plan.status, pos: phase.at },
+      'interceptFire',
+      { damage: randomRoll(), counter: 0 },
+    );
+    plan.status.soldiers -= result.damage;
+    applyMorale(plan.status, result.morale.defender);
+    applyMorale(ss, result.morale.attacker);
+    ss.intercepting = false;
+    report.lost = plan.status.soldiers <= 0;
+    report.intercepts.push({ unit: phase.shooter, result, targetLeft: Math.max(0, plan.status.soldiers), afterAttack: !!report.attack });
+    const p = this.view.units.placements().find((x) => x.unit === plan.unit);
+    if (p) this.popups.show(p, report.lost ? `迎撃 -${result.damage} 壊滅` : `迎撃 -${result.damage}`, 'damage');
   }
 
   /**
@@ -488,7 +601,7 @@ export class BattleApp {
       const lunge = ranged ? 0 : k * STRIKE_LUNGE;
       const ax = a.x + (b.x - a.x) * lunge;
       const az = a.z + (b.z - a.z) * lunge;
-      const hop = ranged ? k * 0.05 * s : 0;
+      const hop = ranged ? k * RANGED_HOP * s : 0;
       this.view.units.moveTo(plan.unit, new THREE.Vector3(ax, this.view.groundAt(ax, az) + hop, az), facing);
     }
 
@@ -516,13 +629,26 @@ export class BattleApp {
     const attack = plan.attack!;
     const ts = this.statuses.get(attack.target)!;
     const rolls = { damage: randomRoll(), counter: randomRoll() };
-    const result = attackResult(map, plan, plan.unit, { unit: attack.target, status: ts }, attack.action.id, rolls);
+    const result = attackResult(
+      map,
+      { unit: plan.unit, status: plan.status, pos: plan.unit },
+      { unit: attack.target, status: ts, pos: attack.target },
+      attack.action.id,
+      rolls,
+    );
     ts.soldiers -= result.damage;
     plan.status.soldiers -= result.counter;
     applyMorale(ts, result.morale.defender);
     applyMorale(plan.status, result.morale.attacker);
     plan.status.attacked = true;
-    report.attack = { ...attack, result, targetDestroyed: ts.soldiers <= 0, unitDestroyed: plan.status.soldiers <= 0 };
+    report.attack = {
+      ...attack,
+      result,
+      targetDestroyed: ts.soldiers <= 0,
+      unitDestroyed: plan.status.soldiers <= 0,
+      unitLeft: Math.max(0, plan.status.soldiers),
+      targetLeft: Math.max(0, ts.soldiers),
+    };
 
     const placements = this.view.units.placements();
     const at = (u: UnitData) => placements.find((p) => p.unit === u);
@@ -535,8 +661,14 @@ export class BattleApp {
   /** 実行を終える。行動力を使い、兵数が 0 になったユニットを消し、生き残っていれば選び直す */
   private finish(plan: Plan, report: ExecuteReport): void {
     const map = this.map!;
+    const lost = report.lost || !!report.attack?.unitDestroyed;
     plan.status.ap -= report.cost;
-    const removed = [report.attack?.targetDestroyed && report.attack.target, report.attack?.unitDestroyed && report.unit];
+    // 迎撃の構えをとったら、残りの行動力に関わらず行動を終える
+    if (report.intercept && !lost) {
+      plan.status.intercepting = true;
+      plan.status.ap = 0;
+    }
+    const removed = [report.attack?.targetDestroyed && report.attack.target, lost && report.unit];
     for (const u of removed) {
       if (!u) continue;
       map.removeUnit(u.col, u.row);
@@ -545,7 +677,7 @@ export class BattleApp {
     if (removed.some(Boolean)) this.tags.setStatuses(this.statuses);
     this.view.rebuildUnits();
     // 動いた先で選び直す（残りの行動力でメニューを開く）
-    this.setSelected(report.attack?.unitDestroyed ? null : { col: report.unit.col, row: report.unit.row });
+    this.setSelected(lost ? null : { col: report.unit.col, row: report.unit.row });
     this.onExecute(report);
   }
 
@@ -624,8 +756,9 @@ export class BattleApp {
       this.setHover(this.pick());
     }
     const exec = this.exec;
-    if (exec?.phase.kind === 'walk') this.stepWalk(exec, exec.phase.legs, performance.now());
+    if (exec?.phase.kind === 'walk') this.stepWalk(exec, exec.phase, performance.now());
     else if (exec?.phase.kind === 'strike') this.stepStrike(exec, performance.now());
+    else if (exec?.phase.kind === 'intercept') this.stepIntercept(exec, exec.phase, performance.now());
     this.view.render();
     const placements = this.view.units.placements();
     this.tags.update(placements, this.ctx.camera, this.view.display.units, this.hovered, this.selected);

@@ -7,7 +7,7 @@ import type { ForestMode } from '@norden/map-runtime/render/foliage';
 import { DEFAULT_PIXEL_RATIO } from '@norden/map-runtime/render/scene';
 import { BattleApp } from './app';
 import { BattleLog } from './battleLog';
-import { isAttack } from './combat';
+import { COMBAT_DEFS, isAttack } from './combat';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -144,6 +144,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
       ['兵数', `${s.soldiers} / ${s.maxSoldiers}`],
       ['士気', String(s.morale)],
       ['指揮官', `統率 ${s.leadership} / 武力 ${s.strength}`],
+      ...(s.intercepting ? [['状態', COMBAT_DEFS[unit.type].ranged ? '迎撃の構え（射程に入った敵を 1 回撃つ）' : '迎撃の構え（被ダメージ減・反撃増）']] : []),
     ];
   };
   app.onHover = (c, u) => {
@@ -201,9 +202,34 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
   $('btn-end-turn').addEventListener('click', () => {
     if (app.endTurn()) setStatus(`ターン ${app.turn} — 全ユニットの行動力が回復しました / ${idleStatus}`);
   });
-  app.onExecute = ({ unit, from, moveCost, attack }) => {
+  const teamUnit = (u: UnitData) => `${TEAM_DEFS[u.team].name} ${UNIT_DEFS[u.type].name}`;
+  app.onExecute = ({ unit, from, moveCost, attack, intercepts, lost, intercept }) => {
     const parts: string[] = [];
     if (moveCost > 0) parts.push(`(${from.col}, ${from.row}) から移動（行動力 ${moveCost}）`);
+    // 移動の途中で受けた迎撃（攻撃の前の移動・後の移動）
+    const logIntercepts = (afterAttack: boolean) => {
+      for (const i of intercepts) {
+        if (i.afterAttack !== afterAttack) continue;
+        const { result } = i;
+        log.addAttack({
+          kind: 'intercept',
+          turn: app.turn,
+          attacker: i.unit,
+          target: unit,
+          actionName: '迎撃',
+          damage: result.damage,
+          counter: 0,
+          direct: false,
+          encircled: result.encircled,
+          morale: result.morale,
+          attackerLeft: app.statuses.get(i.unit)?.soldiers ?? 0,
+          targetLeft: i.targetLeft,
+          landing: null,
+        });
+        parts.push(`${teamUnit(i.unit)}の迎撃: -${result.damage}${i.targetLeft <= 0 ? '（壊滅）' : ''}`);
+      }
+    };
+    logIntercepts(false);
     if (attack) {
       const { result } = attack;
       log.addAttack({
@@ -216,9 +242,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
         direct: result.direct,
         encircled: result.encircled,
         morale: result.morale,
-        // 壊滅したユニットは状態ごと消えている
-        attackerLeft: app.statuses.get(unit)?.soldiers ?? 0,
-        targetLeft: app.statuses.get(attack.target)?.soldiers ?? 0,
+        attackerLeft: attack.unitLeft,
+        targetLeft: attack.targetLeft,
         landing: attack.landing,
       });
       parts.push(
@@ -228,6 +253,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
           (attack.landing && !attack.unitDestroyed ? ` → (${attack.landing.col}, ${attack.landing.row}) へ突破` : ''),
       );
     }
+    logIntercepts(true);
+    if (intercept && !lost) parts.push('迎撃の構えで待機（行動終了）');
     setStatus(`${unitLabel(unit)}: ${parts.join(' → ')}`);
   };
   renderInfo($('hover-info'), null, null);

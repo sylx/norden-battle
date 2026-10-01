@@ -8,9 +8,12 @@
  *   包囲     = 相手が包囲されていれば ENCIRCLED_RATE
  *   ランダム = 1 + roll × RANDOM_SPREAD（roll は −1〜1）
  *
- *   ダメージ = (兵の力 × 統率 + 武力) × 士気 × 包囲 × ランダム（0〜相手の兵数）
+ *   迎撃     = 相手が迎撃の構えの近接ユニットなら INTERCEPT_GUARD
  *
- * 反撃は、攻撃された側が攻撃した側へ通常攻撃をしたときのダメージ × COUNTER_RATE。
+ *   ダメージ = (兵の力 × 統率 + 武力) × 士気 × 包囲 × 迎撃 × ランダム（0〜相手の兵数）
+ *
+ * 反撃は、攻撃された側が攻撃した側へ通常攻撃をしたときのダメージ × COUNTER_RATE
+ * （攻撃された側が迎撃の構えの近接ユニットなら、さらに × INTERCEPT_COUNTER）。
  */
 import type { UnitType } from '@norden/map-runtime/core/units';
 import type { ActionId } from './actions';
@@ -24,11 +27,15 @@ export const UNIT_POWER: Record<UnitType, { attack: number; defense: number }> =
   mage: { attack: 1.3, defense: 0.6 },
 };
 
+/** 攻撃の種類。行動メニューの攻撃と、迎撃の構えの間接ユニットが通りかかった敵へ自動でする攻撃（interceptFire） */
+export type AttackKind = ActionId | 'interceptFire';
+
 /** 攻撃の種類ごとの、兵種の攻撃力に掛ける倍率。ここにある行動が攻撃 */
-export const ATTACK_POWER: Partial<Record<ActionId, number>> = {
+export const ATTACK_POWER: Partial<Record<AttackKind, number>> = {
   attack: 0.8,
   volley: 1.0,
   charge: 0.8,
+  interceptFire: 0.5,
 };
 
 /** 兵数に対する、与えるダメージの割合 */
@@ -47,12 +54,17 @@ const ENCIRCLED_RATE = 1.2;
 export const RANDOM_SPREAD = 0.2;
 /** 反撃の、通常攻撃のダメージに対する割合 */
 const COUNTER_RATE = 0.1;
+/** 迎撃の構えの近接ユニットが受けるダメージと、返す反撃の倍率 */
+const INTERCEPT_GUARD = 0.7;
+const INTERCEPT_COUNTER = 1.5;
 
 /** ダメージの計算に使う、ユニットの状態 */
 export interface Fighter extends Pick<UnitStatus, 'soldiers' | 'morale' | 'leadership' | 'strength'> {
   type: UnitType;
   /** 包囲されているか */
   encircled: boolean;
+  /** 迎撃の構えの近接ユニットか（受けるダメージが減り、反撃が増える） */
+  guarding: boolean;
 }
 
 /** −1〜1 の乱数（ランダム係数の roll） */
@@ -61,7 +73,7 @@ export function randomRoll(): number {
 }
 
 /** att が def を action で攻撃したときのダメージ */
-export function calcDamage(att: Fighter, def: Fighter, action: ActionId, roll: number): number {
+export function calcDamage(att: Fighter, def: Fighter, action: AttackKind, roll: number): number {
   if (att.soldiers <= 0 || def.soldiers <= 0) return 0;
   const kind = ATTACK_POWER[action] ?? 1;
   const troops = (att.soldiers * DAMAGE_RATE * UNIT_POWER[att.type].attack * kind) / UNIT_POWER[def.type].defense;
@@ -70,13 +82,15 @@ export function calcDamage(att: Fighter, def: Fighter, action: ActionId, roll: n
   const strength = att.strength * STRENGTH_ATTACK - def.strength * STRENGTH_GUARD;
   const morale = 1 + (att.morale - 50) * MORALE_RATE;
   const encircled = def.encircled ? ENCIRCLED_RATE : 1;
+  const guard = def.guarding ? INTERCEPT_GUARD : 1;
   const random = 1 + roll * RANDOM_SPREAD;
-  const raw = Math.max(0, troops * leadership + strength) * morale * encircled * random;
+  const raw = Math.max(0, troops * leadership + strength) * morale * encircled * guard * random;
   return Math.min(def.soldiers, Math.round(raw));
 }
 
 /** att に攻撃された def（兵数は攻撃を受けた後）の反撃で、att が受けるダメージ */
 export function calcCounter(att: Fighter, def: Fighter, roll: number): number {
   if (att.soldiers <= 0 || def.soldiers <= 0) return 0;
-  return Math.min(att.soldiers, Math.round(calcDamage(def, att, 'attack', roll) * COUNTER_RATE));
+  const rate = COUNTER_RATE * (def.guarding ? INTERCEPT_COUNTER : 1);
+  return Math.min(att.soldiers, Math.round(calcDamage(def, att, 'attack', roll) * rate));
 }

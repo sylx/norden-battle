@@ -8,6 +8,8 @@
  * - 突撃（騎兵）は隣の相手を攻撃した後、相手を突き抜けて同じ向きの向こうの HEX へ飛び出る（chargeLanding）。
  *   その HEX にユニットがいる・通れない地形・マップの外なら飛び出さない。行動力は突撃の分だけで、ZOC は関係ない。
  * - 隣接（距離 1）の相手への攻撃は直接攻撃で、相手も反撃して両軍の兵数が減る。距離 2 以上は一方的に減らす。
+ * - 迎撃（app.ts）: 近接ユニットは構えている間、受けるダメージが減って反撃が増える（damage.ts）。
+ *   間接（ranged）ユニットは構えている間、射程に入った敵へ 1 回だけ自動で攻撃する（interceptFire。反撃は受けない）。
  * - 包囲（movement.ts の encircled）されている相手へのダメージは増える。
  * - 攻撃の後、与えたダメージと反撃で受けたダメージの比で両軍の士気が増減する。
  */
@@ -16,7 +18,7 @@ import type { HexMap } from '@norden/map-runtime/core/mapData';
 import { dirBetween } from '@norden/map-runtime/core/roads';
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { ActionId } from './actions';
-import { ATTACK_POWER, calcCounter, calcDamage, type Fighter } from './damage';
+import { ATTACK_POWER, calcCounter, calcDamage, type AttackKind, type Fighter } from './damage';
 import { moraleChange, type MoraleChange } from './morale';
 import { encircled, enterCost } from './movement';
 import type { UnitStatus } from './unitStatus';
@@ -71,6 +73,8 @@ export function chargeLanding(map: HexMap, pos: Offset, target: Offset): Offset 
 export interface Combatant {
   unit: UnitData;
   status: UnitStatus;
+  /** 攻撃のときにいる HEX（予約した移動先・移動の途中など。マップ上の位置と違うことがある） */
+  pos: Offset;
 }
 
 export interface AttackResult {
@@ -78,7 +82,7 @@ export interface AttackResult {
   damage: number;
   /** 反撃による自分の兵数の減少（直接攻撃でなければ 0） */
   counter: number;
-  /** 隣接した相手への直接攻撃か */
+  /** 隣接した相手への直接攻撃か（反撃を受ける。迎撃の自動攻撃は除く） */
   direct: boolean;
   /** 相手が包囲されているか（ダメージが増える） */
   encircled: boolean;
@@ -93,14 +97,14 @@ export interface AttackRolls {
 }
 
 /**
- * attacker が pos から defender を action で攻撃したときの結果。
- * 包囲は attacker を pos に置いて判定する（予約中はまだ pos にいないため）。
+ * attacker が defender を kind で攻撃したときの結果。
+ * 包囲は両者をそれぞれの pos に置いて判定する（予約中・移動の途中はまだそこにいないため）。
  */
-export function attackResult(map: HexMap, attacker: Combatant, pos: Offset, defender: Combatant, action: ActionId, rolls: AttackRolls): AttackResult {
-  const att = fighter(attacker, encircledAt(map, attacker.unit, pos, attacker.unit, pos));
-  const def = fighter(defender, encircledAt(map, defender.unit, defender.unit, attacker.unit, pos));
-  const direct = hexDistance(map, pos, defender.unit) <= 1;
-  const damage = calcDamage(att, def, action, rolls.damage);
+export function attackResult(map: HexMap, attacker: Combatant, defender: Combatant, kind: AttackKind, rolls: AttackRolls): AttackResult {
+  const att = fighter(attacker, encircledAt(map, attacker, defender));
+  const def = fighter(defender, encircledAt(map, defender, attacker));
+  const direct = kind !== 'interceptFire' && hexDistance(map, attacker.pos, defender.pos) <= 1;
+  const damage = calcDamage(att, def, kind, rolls.damage);
   const counter = direct ? calcCounter(att, { ...def, soldiers: def.soldiers - damage }, rolls.counter) : 0;
   return { damage, counter, direct, encircled: def.encircled, morale: moraleChange(damage, counter, att.strength, def.strength) };
 }
@@ -112,8 +116,8 @@ export interface AttackForecast {
   counter: [min: number, max: number];
 }
 
-export function attackForecast(map: HexMap, attacker: Combatant, pos: Offset, defender: Combatant, action: ActionId): AttackForecast {
-  const at = (damage: number, counter: number) => attackResult(map, attacker, pos, defender, action, { damage, counter });
+export function attackForecast(map: HexMap, attacker: Combatant, defender: Combatant, kind: AttackKind): AttackForecast {
+  const at = (damage: number, counter: number) => attackResult(map, attacker, defender, kind, { damage, counter });
   // 与えるダメージが少ないほど相手の兵が残って反撃が増える
   const low = at(-1, 1);
   const high = at(1, -1);
@@ -122,14 +126,25 @@ export function attackForecast(map: HexMap, attacker: Combatant, pos: Offset, de
 
 function fighter({ unit, status }: Combatant, encircled: boolean): Fighter {
   const { soldiers, morale, leadership, strength } = status;
-  return { type: unit.type, soldiers, morale, leadership, strength, encircled };
+  const guarding = status.intercepting && !COMBAT_DEFS[unit.type].ranged;
+  return { type: unit.type, soldiers, morale, leadership, strength, encircled, guarding };
 }
 
-/** who が whoPos で包囲されているか（mover を moverPos に動かしたとして判定する） */
-function encircledAt(map: HexMap, who: UnitData, whoPos: Offset, mover: UnitData, moverPos: Offset): boolean {
+/** who が who.pos で包囲されているか（other は other.pos にいるとして判定する） */
+function encircledAt(map: HexMap, who: Combatant, other: Combatant): boolean {
   const enemies = map
     .allUnits()
-    .filter((u) => u.team !== who.team)
-    .map((u) => (u === mover ? moverPos : u));
-  return encircled(map, whoPos, enemies);
+    .filter((u) => u.team !== who.unit.team)
+    .map((u) => (u === other.unit ? other.pos : u));
+  return encircled(map, who.pos, enemies);
+}
+
+/** 迎撃の構えの間接ユニットのうち、mover が pos に入ったときに射程に入るもの */
+export function interceptorsAt(map: HexMap, statuses: ReadonlyMap<UnitData, UnitStatus>, mover: UnitData, pos: Offset): UnitData[] {
+  return map.allUnits().filter((u) => {
+    const def = COMBAT_DEFS[u.type];
+    if (u.team === mover.team || !def.ranged || !statuses.get(u)?.intercepting) return false;
+    const d = hexDistance(map, u, pos);
+    return d >= def.minRange && d <= def.maxRange;
+  });
 }

@@ -14,6 +14,8 @@ import type { MoraleChange } from './morale';
 
 /** 攻撃 1 回分の記録 */
 export interface AttackLogEntry {
+  /** intercept: 迎撃の構えの間接ユニットの自動攻撃 */
+  kind?: 'intercept';
   turn: number;
   attacker: UnitData;
   target: UnitData;
@@ -90,7 +92,7 @@ export class BattleLog {
       this.list.append(rule);
     }
 
-    const li = el('li', 'log-entry fresh');
+    const li = el('li', `log-entry fresh${e.kind ? ` ${e.kind}` : ''}`);
     const who = el('div', 'log-who');
     who.append(unit(e.attacker), el('span', 'log-verb', 'が'), unit(e.target), el('span', 'log-verb', 'に'));
     if (e.encircled) who.append(el('span', 'log-encircled', '包囲'));

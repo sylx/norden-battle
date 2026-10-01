@@ -25,6 +25,8 @@ export interface UnitStatus {
   moved: boolean;
   /** このターンに攻撃したか（攻撃は 1 ターンに 1 回） */
   attacked: boolean;
+  /** 迎撃の構えで待機しているか（次に行動するか、間接ユニットが自動で攻撃するまで） */
+  intercepting: boolean;
 }
 
 export const MAX_MORALE = 100;
@@ -97,6 +99,7 @@ export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStat
       strength: FACE_ABILITIES[face]?.[1] ?? 50,
       moved: false,
       attacked: false,
+      intercepting: false,
     });
   }
   return out;
