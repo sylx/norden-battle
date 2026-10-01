@@ -2,6 +2,7 @@
  * 選択中のユニットの近くに出す行動メニュー（HTML で画面に重ねる）。
  *
  * - ユニットの絵の右（入らなければ左）に置き、カメラを動かしても毎フレーム追いかける。
+ * - 上部にユニットの状態（情報札と同じ顔・兵士数・士気と、残り行動力）を出す。
  * - 2 階層目は 1 階層目の項目の横に開く。マウスは項目に乗せる、タッチはタップで開く。
  * - パネルの四隅には飾り罫（.corner）を置く。いまは CSS の仮の線で、画像に差し替えられるよう
  *   パネルの内側に飾りの分の余白を取ってある（style.css の --frame-*）。
@@ -11,6 +12,7 @@ import { TEAM_DEFS, UNIT_DEFS, type UnitData } from '@norden/map-runtime/core/un
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { buildActionMenu, type MenuAction, type MenuEntry } from './actions';
 import type { UnitStatus } from './unitStatus';
+import { renderStatus, STATUS_HTML } from './unitTags';
 
 /** ユニットの絵とメニューの間隔（CSS ピクセル） */
 const GAP = 14;
@@ -63,12 +65,15 @@ export class ActionMenu {
     this.root.style.setProperty('--team', team.color);
     const head = el('div', 'menu-head');
     const title = el('div', 'menu-title', `${team.name} ${UNIT_DEFS[unit.type].name}`);
+    const card = el('div', 'unit-tag in-menu');
+    card.innerHTML = STATUS_HTML;
+    renderStatus(card, status);
     const ap = el('div', 'menu-ap');
     ap.append(el('span', 'label', '行動力'), el('span', 'value', `${status.ap}`), el('span', 'max', `/${status.maxAp}`));
     const pips = el('span', 'pips');
     for (let i = 0; i < status.maxAp; i++) pips.append(el('i', i < status.ap ? 'on' : ''));
     ap.append(pips);
-    head.append(title, ap);
+    head.append(title, card, ap);
 
     const list = el('ul', 'menu-items');
     for (const entry of buildActionMenu(unit, status)) list.append(this.item(entry));

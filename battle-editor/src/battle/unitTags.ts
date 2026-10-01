@@ -7,6 +7,7 @@
  *   なるべく小さなずれで済む位置・ユニットの絵にかぶらない位置・前のフレームと同じ位置を優先して、
  *   カメラを動かしてもちらつかないようにする。
  * - どの札も、ユニットの中心から札へ軍の色の引き出し線を引く（ずれても持ち主が分かるように）。
+ * - 選択中のユニットの札は出さない（行動メニューの上に同じ中身を出す。renderStatus を共用する）。
  */
 import * as THREE from 'three';
 import type { Offset } from '@norden/map-runtime/core/hex';
@@ -56,10 +57,6 @@ interface Rect {
 interface Tag {
   unit: UnitData;
   el: HTMLDivElement;
-  soldiersFill: HTMLDivElement;
-  soldiersValue: HTMLSpanElement;
-  moraleFill: HTMLDivElement;
-  moraleValue: HTMLSpanElement;
   line: SVGLineElement;
   dot: SVGCircleElement;
   /** 前のフレームで選んだ候補（-1 は未表示） */
@@ -105,7 +102,7 @@ export class UnitTags {
 
   /**
    * 毎フレーム、描画の後に呼ぶ。placements はユニットの画像の位置、
-   * hover・selected の HEX のユニットの札は強調して一番手前に出す。
+   * hover の HEX のユニットの札は強調して一番手前に出す。selected の HEX のユニットの札は出さない。
    */
   update(
     placements: readonly UnitPlacement[],
@@ -146,13 +143,14 @@ export class UnitTags {
         head.x > w + OFFSCREEN_MARGIN ||
         head.y < -OFFSCREEN_MARGIN ||
         foot.y > h + OFFSCREEN_MARGIN;
-      if (off) {
+      // 選択中のユニットは行動メニューに中身を出すので札は消す（絵の範囲はほかの札が避けるよう残す）
+      if (off || isAt(p.unit, selected)) {
         this.hideTag(tag);
         continue;
       }
-      this.render(tag, status, isAt(p.unit, hover) || isAt(p.unit, selected));
+      this.render(tag, status, isAt(p.unit, hover));
       // 強調するもの → 手前（画面の下）のユニットの順に、良い位置を先に取る
-      const priority = (isAt(p.unit, selected) ? 2e6 : 0) + (isAt(p.unit, hover) ? 1e6 : 0) + foot.y;
+      const priority = (isAt(p.unit, hover) ? 1e6 : 0) + foot.y;
       items.push({ tag, foot, sprite, priority });
     }
     items.sort((a, b) => b.priority - a.priority);
@@ -197,12 +195,7 @@ export class UnitTags {
     const el = document.createElement('div');
     el.className = 'unit-tag';
     el.style.setProperty('--team', color);
-    el.innerHTML = `
-      <div class="face"></div>
-      <div class="bars">
-        <div class="bar soldiers"><span class="label">兵数</span><span class="value"></span><div class="track"><div class="fill"></div></div></div>
-        <div class="bar morale"><span class="label">士気</span><span class="value"></span><div class="track"><div class="fill"></div></div></div>
-      </div>`;
+    el.innerHTML = STATUS_HTML;
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     line.setAttribute('stroke', color);
@@ -210,14 +203,9 @@ export class UnitTags {
     dot.setAttribute('r', '2.5');
     this.svg.append(line, dot);
     this.root.appendChild(el);
-    const q = <T extends Element>(sel: string) => el.querySelector(sel) as T;
     tag = {
       unit,
       el,
-      soldiersFill: q('.soldiers .fill'),
-      soldiersValue: q('.soldiers .value'),
-      moraleFill: q('.morale .fill'),
-      moraleValue: q('.morale .value'),
       line,
       dot,
       slot: -1,
@@ -233,21 +221,7 @@ export class UnitTags {
     tag.shown = key;
     tag.el.classList.toggle('active', active);
     tag.line.classList.toggle('active', active);
-    tag.soldiersValue.textContent = String(s.soldiers);
-    tag.soldiersFill.style.width = `${(100 * clamp01(s.soldiers / s.maxSoldiers)).toFixed(1)}%`;
-    tag.moraleValue.textContent = String(s.morale);
-    tag.moraleFill.style.width = `${(100 * clamp01(s.morale / MAX_MORALE)).toFixed(1)}%`;
-    tag.el.classList.toggle('low-morale', s.morale < LOW_MORALE);
-
-    // 顔: 並べた画像のうち 1 枚を、少し拡大して円の中に収める
-    const face = tag.el.querySelector('.face') as HTMLDivElement;
-    const cell = FACE_SIZE * FACE_ZOOM;
-    const margin = (cell - FACE_SIZE) / 2;
-    const col = s.face % FACE_GRID;
-    const row = Math.floor(s.face / FACE_GRID);
-    face.style.backgroundImage = `url("${FACE_SHEET_URL}")`;
-    face.style.backgroundSize = `${cell * FACE_GRID}px ${cell * FACE_GRID}px`;
-    face.style.backgroundPosition = `${-(col * cell + margin)}px ${-(row * cell + margin)}px`;
+    renderStatus(tag.el, s);
   }
 
   private hideTag(tag: Tag): void {
@@ -261,6 +235,34 @@ export class UnitTags {
     tag.line.remove();
     tag.dot.remove();
   }
+}
+
+/** 札の中身（顔・兵士数と士気のグラフ）。renderStatus で値を入れる。外側の要素に .unit-tag と --team（軍の色）を付けて使う */
+export const STATUS_HTML = `
+  <div class="face"></div>
+  <div class="bars">
+    <div class="bar soldiers"><span class="label">兵数</span><span class="value"></span><div class="track"><div class="fill"></div></div></div>
+    <div class="bar morale"><span class="label">士気</span><span class="value"></span><div class="track"><div class="fill"></div></div></div>
+  </div>`;
+
+/** STATUS_HTML を入れた要素に値を入れる */
+export function renderStatus(el: HTMLElement, s: UnitStatus): void {
+  const q = (sel: string) => el.querySelector(sel) as HTMLElement;
+  q('.soldiers .value').textContent = String(s.soldiers);
+  q('.soldiers .fill').style.width = `${(100 * clamp01(s.soldiers / s.maxSoldiers)).toFixed(1)}%`;
+  q('.morale .value').textContent = String(s.morale);
+  q('.morale .fill').style.width = `${(100 * clamp01(s.morale / MAX_MORALE)).toFixed(1)}%`;
+  el.classList.toggle('low-morale', s.morale < LOW_MORALE);
+
+  // 顔: 並べた画像のうち 1 枚を、少し拡大して円の中に収める
+  const face = q('.face');
+  const cell = FACE_SIZE * FACE_ZOOM;
+  const margin = (cell - FACE_SIZE) / 2;
+  const col = s.face % FACE_GRID;
+  const row = Math.floor(s.face / FACE_GRID);
+  face.style.backgroundImage = `url("${FACE_SHEET_URL}")`;
+  face.style.backgroundSize = `${cell * FACE_GRID}px ${cell * FACE_GRID}px`;
+  face.style.backgroundPosition = `${-(col * cell + margin)}px ${-(row * cell + margin)}px`;
 }
 
 /** 候補の位置に置いたときの札の範囲 */
