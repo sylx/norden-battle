@@ -252,11 +252,14 @@ export class BattleApp {
     return BattleApp.planCost(plan) - (plan.attack?.action.cost ?? 0);
   }
 
-  /** 続きの移動を探すときの条件。ターンの初め（まだ移動も攻撃もしておらず、予約も無い）だけ敵の ZOC から動き出せる */
+  /** ターンの初めか（まだ移動も攻撃もしておらず、予約も無い） */
+  static turnStart(plan: Plan): boolean {
+    return !plan.status.moved && !plan.status.attacked && !BattleApp.planned(plan);
+  }
+
+  /** 続きの移動を探すときの条件。ターンの初めだけ敵の ZOC から動き出せる */
   static moveOptions(plan: Plan): MoveOptions {
-    const { status } = plan;
-    const turnStart = !status.moved && !status.attacked && !BattleApp.planned(plan);
-    return { spent: BattleApp.planCost(plan), escapeZoc: turnStart };
+    return { spent: BattleApp.planCost(plan), escapeZoc: BattleApp.turnStart(plan) };
   }
 
   /** 攻撃する HEX（攻撃の前の移動の先） */
@@ -545,6 +548,7 @@ export class BattleApp {
       ap: plan.status.ap - BattleApp.planCost(plan),
       canMove: moveRange(map, plan.unit, pos, plan.status.ap, options).size > 0,
       zocLocked: inEnemyZoc(map, plan.unit, pos) && !options.escapeZoc,
+      turnStart: BattleApp.turnStart(plan),
       planned: BattleApp.planned(plan),
       attackPlanned: !!plan.attack,
       canMoveAfterAttack: !!COMBAT_DEFS[plan.unit.type].moveAfterAttack,

@@ -7,7 +7,7 @@
  *
  * 行動は予約してから最後にまとめて実行する。移動・攻撃を予約すると、残り行動力は予約した分を引いたものになり、
  * 「退却」の代わりに予約を実行する「決定」と、予約をすべて取り消す「取消」が並ぶ。
- * 攻撃は 1 ターンに 1 回で、攻撃を予約した後は移動できない（騎兵は除く）。
+ * 攻撃は 1 ターンに 1 回で、攻撃を予約した後は移動できない（騎兵は除く）。退却はターンの初めだけ。
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { UnitStatus } from './unitStatus';
@@ -80,6 +80,8 @@ export interface MenuContext {
   canMove: boolean;
   /** 敵の ZOC の中にいて移動できないか（ターンの初めは ZOC の中でも動ける） */
   zocLocked: boolean;
+  /** ターンの初めか（まだ移動も攻撃もしておらず、予約も無い）。退却はこのときだけ */
+  turnStart: boolean;
   /** 予約した行動があるか（「退却」の代わりに「決定」「取消」を出す） */
   planned: boolean;
   /** 攻撃を予約したか（それ以上は攻撃できない。移動は canMoveAfterAttack のときだけ） */
@@ -116,6 +118,7 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
       const action = { id: def.id, name: def.name, cost: def.cost };
       // 攻撃した（予約した・このターンに実行した）後は移動できない（騎兵は除く）
       if (def.id === 'move' && (ctx.attackPlanned || status.attacked) && !ctx.canMoveAfterAttack) return { name: def.name, enabled: false, reason: '攻撃の後は移動できない', action };
+      if (def.id === 'retreat' && !ctx.turnStart) return { name: def.name, enabled: false, reason: 'ターンの初めしか退却できない', action };
       if (def.id === 'move' && zocLocked) return { name: def.name, enabled: false, reason: '敵の ZOC の中にいる', action };
       if (def.id === 'move' && !canMove) return { name: def.name, enabled: false, reason: '移動できる HEX がない', action };
       if (def.types && !def.types.includes(unit.type)) return { name: def.name, enabled: false, reason: 'この兵種は使えない', action };

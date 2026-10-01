@@ -53,7 +53,7 @@ const FACE_SKILLS: SkillId[][] = [
   ['inspire', 'ambush', 'betray'],
 ];
 
-/** 表示確認用の仮の状態。兵士数・士気・行動力は HEX の位置から決まるばらつき、顔は軍ごとに順に割り当てる */
+/** 表示確認用の仮の状態。兵士数・士気は HEX の位置から決まるばらつき、行動力は満タン、顔は軍ごとに順に割り当てる */
 export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStatus> {
   const out = new Map<UnitData, UnitStatus>();
   const perTeam = new Map<string, number>();
@@ -73,8 +73,7 @@ export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStat
       maxSoldiers: max,
       soldiers: Math.round((max * (0.3 + 0.7 * hash(u.col, u.row, 1))) / 10) * 10,
       morale: Math.round(20 + 80 * hash(u.col, u.row, 2)),
-      // 行動力は満タン寄りにする（0〜MAX_AP、半分は満タン）
-      ap: Math.min(MAX_AP, Math.floor(hash(u.col, u.row, 3) * MAX_AP * 2)),
+      ap: MAX_AP,
       maxAp: MAX_AP,
       face,
       skills: FACE_SKILLS[face] ?? [],
