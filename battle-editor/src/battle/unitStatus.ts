@@ -18,6 +18,9 @@ export interface UnitStatus {
   face: number;
   /** 指揮官のスキル */
   skills: SkillId[];
+  /** 指揮官の統率・武力（0..100。ダメージ・士気の増減に効く。damage.ts・morale.ts） */
+  leadership: number;
+  strength: number;
   /** このターンに移動したか（移動も攻撃もしていなければ敵の ZOC の中からでも動き出せる） */
   moved: boolean;
   /** このターンに攻撃したか（攻撃は 1 ターンに 1 回） */
@@ -53,6 +56,19 @@ const FACE_SKILLS: SkillId[][] = [
   ['inspire', 'ambush', 'betray'],
 ];
 
+/** 顔ごとの指揮官の統率・武力（仮） */
+const FACE_ABILITIES: [leadership: number, strength: number][] = [
+  [82, 64],
+  [58, 77],
+  [45, 40],
+  [70, 88],
+  [90, 52],
+  [36, 72],
+  [64, 58],
+  [52, 94],
+  [76, 70],
+];
+
 /** 表示確認用の仮の状態。兵士数・士気は HEX の位置から決まるばらつき、行動力は満タン、顔は軍ごとに順に割り当てる */
 export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStatus> {
   const out = new Map<UnitData, UnitStatus>();
@@ -77,6 +93,8 @@ export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStat
       maxAp: MAX_AP,
       face,
       skills: FACE_SKILLS[face] ?? [],
+      leadership: FACE_ABILITIES[face]?.[0] ?? 50,
+      strength: FACE_ABILITIES[face]?.[1] ?? 50,
       moved: false,
       attacked: false,
     });

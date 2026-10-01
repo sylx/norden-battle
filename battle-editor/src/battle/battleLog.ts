@@ -10,6 +10,7 @@
 import { TEAM_DEFS, UNIT_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import type { Offset } from '@norden/map-runtime/core/hex';
 import { addFrame } from './frame';
+import type { MoraleChange } from './morale';
 
 /** 攻撃 1 回分の記録 */
 export interface AttackLogEntry {
@@ -22,6 +23,9 @@ export interface AttackLogEntry {
   /** 反撃による減少（直接攻撃でなければ使わない） */
   counter: number;
   direct: boolean;
+  /** 相手が包囲されていたか */
+  encircled: boolean;
+  morale: MoraleChange;
   /** 攻撃の後の兵数 */
   attackerLeft: number;
   targetLeft: number;
@@ -88,12 +92,14 @@ export class BattleLog {
 
     const li = el('li', 'log-entry fresh');
     const who = el('div', 'log-who');
-    who.append(unit(e.attacker), el('span', 'log-verb', 'が'), unit(e.target), el('span', 'log-verb', 'に'), el('span', 'log-action', e.actionName));
+    who.append(unit(e.attacker), el('span', 'log-verb', 'が'), unit(e.target), el('span', 'log-verb', 'に'));
+    if (e.encircled) who.append(el('span', 'log-encircled', '包囲'));
+    who.append(el('span', 'log-action', e.actionName));
 
     const result = el('div', 'log-result');
-    result.append(loss('損害', 'damage', e.damage, e.targetLeft));
-    if (e.direct) result.append(loss('反撃', 'counter', e.counter, e.attackerLeft));
-    else result.append(el('span', 'log-none', '反撃なし'));
+    result.append(loss('損害', 'damage', e.damage, e.targetLeft, e.morale.defender));
+    if (e.direct) result.append(loss('反撃', 'counter', e.counter, e.attackerLeft, e.morale.attacker));
+    else result.append(withMorale(el('span', 'log-none', '反撃なし'), e.morale.attacker));
     li.append(who, result);
     if (e.landing && e.attackerLeft > 0) li.append(el('div', 'log-note', `(${e.landing.col}, ${e.landing.row}) へ突破`));
     li.addEventListener('animationend', () => li.classList.remove('fresh'), { once: true });
@@ -161,11 +167,21 @@ function unit(u: UnitData): HTMLElement {
   return s;
 }
 
-/** 兵数の減少（減った数と残り。0 なら壊滅） */
-function loss(label: string, kind: string, n: number, left: number): HTMLElement {
+/** 兵数の減少（減った数と残り。0 なら壊滅）と士気の増減 */
+function loss(label: string, kind: string, n: number, left: number, morale: number): HTMLElement {
   const s = el('span', `log-loss ${kind}`);
   s.append(el('span', 'label', label), el('b', '', `−${n}`));
-  s.append(left > 0 ? el('span', 'left', `残 ${left}`) : el('span', 'log-destroyed', '壊滅'));
+  if (left <= 0) {
+    s.append(el('span', 'log-destroyed', '壊滅'));
+    return s;
+  }
+  s.append(el('span', 'left', `残 ${left}`));
+  return withMorale(s, morale);
+}
+
+/** s の後ろに士気の増減を足す（変わらなければ何もしない） */
+function withMorale(s: HTMLElement, morale: number): HTMLElement {
+  if (morale !== 0) s.append(el('span', `log-morale ${morale > 0 ? 'up' : 'down'}`, `士気 ${morale > 0 ? '+' : '−'}${Math.abs(morale)}`));
   return s;
 }
 

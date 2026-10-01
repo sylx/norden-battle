@@ -130,18 +130,37 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
       ['人工物', cell.feature ? FEATURE_DEFS[cell.feature].name : '-'],
       ['街道', cell.roads ? `${cell.roads.length} 方向` : '-'],
       ['ユニット', unit ? `${TEAM_DEFS[unit.team].name} ${UNIT_DEFS[unit.type].name}` : '-'],
+      ...commander(unit),
       ...extra,
     ]
       .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
       .join('');
+  };
+  /** 兵数・士気と指揮官の能力 */
+  const commander = (unit: UnitData | null): string[][] => {
+    const s = unit && app.statuses.get(unit);
+    if (!s) return [];
+    return [
+      ['兵数', `${s.soldiers} / ${s.maxSoldiers}`],
+      ['士気', String(s.morale)],
+      ['指揮官', `統率 ${s.leadership} / 武力 ${s.strength}`],
+    ];
   };
   app.onHover = (c, u) => {
     // 移動先を選んでいる間はそこまでに使う行動力、攻撃の相手を選んでいる間は結果の予測も出す
     const extra: string[][] = [];
     const step = app.moveStepAt(c);
     if (step) extra.push(['移動', `行動力 ${step.cost}（予約の合計）${step.zoc ? '<br>敵の ZOC: 入るとそれ以上動けない' : ''}`]);
-    const attack = app.attackPreviewAt(c);
-    if (attack) extra.push(['攻撃', `敵 -${attack.damage}${attack.direct ? ` / 反撃 -${attack.counter}` : '（反撃なし）'}`]);
+    const f = app.attackPreviewAt(c);
+    if (f) {
+      const { direct, encircled, morale } = f.expected;
+      extra.push([
+        '攻撃',
+        `敵 ${range(f.damage)}${encircled ? '（包囲 ×1.2）' : ''}<br>` +
+          (direct ? `反撃 ${range(f.counter)}` : '反撃なし') +
+          `<br>士気 ${signed(morale.attacker)} / 敵の士気 ${signed(morale.defender)}（目安）`,
+      ]);
+    }
     renderInfo($('hover-info'), c, u, extra);
   };
   app.onSelect = (c, u) => renderInfo($('select-info'), c, u);
@@ -195,6 +214,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
         damage: result.damage,
         counter: result.counter,
         direct: result.direct,
+        encircled: result.encircled,
+        morale: result.morale,
         // 壊滅したユニットは状態ごと消えている
         attackerLeft: app.statuses.get(unit)?.soldiers ?? 0,
         targetLeft: app.statuses.get(attack.target)?.soldiers ?? 0,
@@ -202,7 +223,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
       });
       parts.push(
         `${TEAM_DEFS[attack.target.team].name} ${UNIT_DEFS[attack.target.type].name}に${escapeHtml(attack.action.name)}: ` +
-          `敵 -${result.damage}${attack.targetDestroyed ? '（壊滅）' : ''}` +
+          `敵 -${result.damage}${attack.targetDestroyed ? '（壊滅）' : ''}${result.encircled ? '（包囲）' : ''}` +
           (result.direct ? ` / 反撃 -${result.counter}${attack.unitDestroyed ? '（壊滅）' : ''}` : '') +
           (attack.landing && !attack.unitDestroyed ? ` → (${attack.landing.col}, ${attack.landing.row}) へ突破` : ''),
       );
@@ -220,6 +241,16 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
       else setStatus('<span class="err">assets/maps/ にマップがありません。map-editor で保存してください</span>');
     },
   };
+}
+
+/** 兵数の減少の幅（-96〜-144） */
+function range([min, max]: readonly [number, number]): string {
+  return min === max ? `-${min}` : `-${min}〜-${max}`;
+}
+
+/** 符号付きの数（+7・-3・±0） */
+function signed(n: number): string {
+  return n > 0 ? `+${n}` : n < 0 ? String(n) : '±0';
 }
 
 function escapeHtml(s: string): string {

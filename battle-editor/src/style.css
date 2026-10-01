@@ -945,6 +945,29 @@ body.dragging #drop-hint {
   color: #ffb070;
 }
 
+.battle-log .log-morale {
+  margin-left: 2px;
+  font-size: 10px;
+}
+
+.battle-log .log-morale.up {
+  color: #b8e08a;
+}
+
+.battle-log .log-morale.down {
+  color: #ff9a7a;
+}
+
+.battle-log .log-encircled {
+  padding: 0 4px;
+  border: 1px solid rgba(255, 106, 80, 0.7);
+  border-radius: 2px;
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.1em;
+  color: #ff9a7a;
+}
+
 .battle-log .log-destroyed {
   padding: 0 4px;
   border-radius: 2px;

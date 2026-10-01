@@ -11,6 +11,10 @@
  * - 敵の ZOC の中にいるユニットは移動できない。ただし、そのターンにまだ移動も攻撃もしていなければ（ターンの初めは）
  *   ZOC の中から動き出せる（escapeZoc）。ただし ZOC から ZOC へは移れない（周りを ZOC で囲まれると動けない＝包囲）。
  * - ZOC_IGNORE の兵種は ZOC を気にせず動ける（いまは無し。騎兵などの例外はここに足す）。
+ *
+ * 包囲: 隣の HEX がどれも入れない（マップの外・通れない地形）か、敵がいるか、敵の ZOC の中で、
+ * 隣に敵が 1 体以上いれば包囲されている（ZOC から ZOC へは移れないので逃げ場が無い）。
+ * 例えば、敵 2 体に反対側から挟まれると周りがすべて ZOC になって包囲になる。包囲されると受けるダメージが増える（damage.ts）。
  */
 import { FEATURE_DEFS } from '@norden/map-runtime/core/features';
 import type { Offset } from '@norden/map-runtime/core/hex';
@@ -118,6 +122,32 @@ export function enemyZoc(map: HexMap, unit: UnitData): Set<number> {
     for (const n of map.layout.neighbors(enemy.col, enemy.row)) out.add(n.row * cols + n.col);
   }
   return out;
+}
+
+/**
+ * pos にいるユニットが包囲されているか。enemies はそのユニットの敵の位置
+ * （予約した攻撃の予測では、攻撃する側を攻撃する HEX に置いたもの）。
+ */
+export function encircled(map: HexMap, pos: Offset, enemies: readonly Offset[]): boolean {
+  const { cols } = map.layout;
+  const key = (o: Offset) => o.row * cols + o.col;
+  const occupied = new Set(enemies.map(key));
+  const zoc = new Set<number>();
+  for (const e of enemies) for (const n of map.layout.neighbors(e.col, e.row)) zoc.add(key(n));
+  const from = map.get(pos.col, pos.row);
+  if (!from) return false;
+  let adjacent = 0;
+  for (let dir = 0; dir < 6; dir++) {
+    const n = map.layout.neighborInDir(pos.col, pos.row, dir);
+    const k = key(n);
+    if (occupied.has(k)) {
+      adjacent++;
+      continue;
+    }
+    const to = map.get(n.col, n.row);
+    if (to && enterCost(from, dir, to) !== null && !zoc.has(k)) return false;
+  }
+  return adjacent > 0;
 }
 
 /** 予約した移動（各回の到着地の MoveStep）をつないだ経路。最初の出発地からすべての到着地までの HEX */

@@ -27,7 +27,18 @@ import { SceneContext } from '@norden/map-runtime/render/scene';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import type { MenuAction } from './actions';
 import { ActionMenu } from './actionMenu';
-import { attackResult, attackTargets, chargeLanding, COMBAT_DEFS, hexDistance, isAttack, type AttackResult } from './combat';
+import {
+  attackForecast,
+  attackResult,
+  attackTargets,
+  chargeLanding,
+  COMBAT_DEFS,
+  isAttack,
+  type AttackForecast,
+  type AttackResult,
+} from './combat';
+import { randomRoll } from './damage';
+import { applyMorale } from './morale';
 import { inEnemyZoc, movePath, moveRange, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
 import { UnitTags } from './unitTags';
@@ -222,15 +233,14 @@ export class BattleApp {
   }
 
   /** 攻撃の相手を選ぶ状態のとき、o のユニットを攻撃したときの結果の予測（攻撃できなければ null） */
-  attackPreviewAt(o: Offset | null): AttackResult | null {
+  attackPreviewAt(o: Offset | null): AttackForecast | null {
     const map = this.map;
     const plan = this.plan;
     if (!o || this.targeting?.kind !== 'attack' || !map || !plan) return null;
     const target = this.targeting.cells.get(o.row * map.layout.cols + o.col);
     const ts = target && this.statuses.get(target);
     if (!target || !ts) return null;
-    const distance = hexDistance(map, BattleApp.planPos(plan), target);
-    return attackResult(plan.unit, plan.status, target, ts, this.targeting.action.id, distance);
+    return attackForecast(map, plan, BattleApp.planPos(plan), { unit: target, status: ts }, this.targeting.action.id);
   }
 
   static planned(plan: Plan): boolean {
@@ -499,15 +509,18 @@ export class BattleApp {
     this.nextPhase();
   }
 
-  /** 攻撃の結果を兵数に反映し、頭上に減った数を出す */
+  /** 攻撃の結果（ランダム係数を振る）を兵数・士気に反映し、頭上に減った数を出す */
   private applyAttack(exec: Execution): void {
     const map = this.map!;
     const { plan, report } = exec;
     const attack = plan.attack!;
     const ts = this.statuses.get(attack.target)!;
-    const result = attackResult(plan.unit, plan.status, attack.target, ts, attack.action.id, hexDistance(map, plan.unit, attack.target));
+    const rolls = { damage: randomRoll(), counter: randomRoll() };
+    const result = attackResult(map, plan, plan.unit, { unit: attack.target, status: ts }, attack.action.id, rolls);
     ts.soldiers -= result.damage;
     plan.status.soldiers -= result.counter;
+    applyMorale(ts, result.morale.defender);
+    applyMorale(plan.status, result.morale.attacker);
     plan.status.attacked = true;
     report.attack = { ...attack, result, targetDestroyed: ts.soldiers <= 0, unitDestroyed: plan.status.soldiers <= 0 };
 
