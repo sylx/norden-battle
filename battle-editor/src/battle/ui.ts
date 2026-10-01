@@ -161,7 +161,9 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     };
     const parts = [
       moves(plan.legs.slice(0, split)),
-      plan.attack && `${unitLabel(plan.attack.target)} に${escapeHtml(plan.attack.action.name)}`,
+      plan.attack &&
+        `${unitLabel(plan.attack.target)} に${escapeHtml(plan.attack.action.name)}` +
+          (plan.attack.landing ? `（(${plan.attack.landing.col}, ${plan.attack.landing.row}) へ突破）` : plan.attack.action.id === 'charge' ? '（突破できない）' : ''),
       moves(plan.legs.slice(split)),
     ].filter(Boolean);
     setStatus(
@@ -184,7 +186,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
       parts.push(
         `${TEAM_DEFS[attack.target.team].name} ${UNIT_DEFS[attack.target.type].name}に${escapeHtml(attack.action.name)}: ` +
           `敵 -${result.damage}${attack.targetDestroyed ? '（壊滅）' : ''}` +
-          (result.direct ? ` / 反撃 -${result.counter}${attack.unitDestroyed ? '（壊滅）' : ''}` : ''),
+          (result.direct ? ` / 反撃 -${result.counter}${attack.unitDestroyed ? '（壊滅）' : ''}` : '') +
+          (attack.landing && !attack.unitDestroyed ? ` → (${attack.landing.col}, ${attack.landing.row}) へ突破` : ''),
       );
     }
     setStatus(`${unitLabel(unit)}: ${parts.join(' → ')}`);

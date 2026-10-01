@@ -236,10 +236,12 @@ export class MapView {
   /**
    * from から to のユニットへ攻撃の矢印を出す（null で消す）。
    * arc = false は地面に沿うまっすぐな矢印、true は放物線を描いて飛ぶ矢印（遠隔攻撃）。
+   * beyond を渡すと、to を突き抜けて beyond の HEX まで地面に沿って伸ばす（突撃で飛び出る先）。
    */
-  setAttack(from: Offset | null, to: Offset | null, arc = false): void {
+  setAttack(from: Offset | null, to: Offset | null, arc = false, beyond: Offset | null = null): void {
     const map = this.map;
     if (!map || !from || !to) return this.attackArrow.clear();
+    if (beyond) return this.attackArrow.set([from, to, beyond], map.layout, (x, z) => this.groundAt(x, z));
     const a = map.layout.offsetToWorld(from.col, from.row);
     const b = map.layout.offsetToWorld(to.col, to.row);
     const ya = this.groundAt(a.x, a.z);

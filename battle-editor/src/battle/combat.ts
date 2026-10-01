@@ -5,13 +5,17 @@
  *   隣接したユニットを攻撃できない兵種（砲兵など）は minRange = 2 にする。
  * - ranged の兵種（弓兵）の攻撃は放物線の矢印で出す。
  * - moveAfterAttack の兵種（騎兵）だけ、攻撃の後に移動できる。ただし敵の ZOC の中からは動けない。
+ * - 突撃（騎兵）は隣の相手を攻撃した後、相手を突き抜けて同じ向きの向こうの HEX へ飛び出る（chargeLanding）。
+ *   その HEX にユニットがいる・通れない地形・マップの外なら飛び出さない。行動力は突撃の分だけで、ZOC は関係ない。
  * - 隣接（距離 1）の相手への攻撃は直接攻撃で、相手も反撃して両軍の兵数が減る。距離 2 以上は一方的に減らす。
  * - 士気の減少はまだ無い。
  */
 import { axialDistance, type Offset } from '@norden/map-runtime/core/hex';
 import type { HexMap } from '@norden/map-runtime/core/mapData';
+import { dirBetween } from '@norden/map-runtime/core/roads';
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { ActionId } from './actions';
+import { enterCost } from './movement';
 import type { UnitStatus } from './unitStatus';
 
 export interface CombatDef {
@@ -62,6 +66,17 @@ export function attackTargets(map: HexMap, unit: UnitData, pos: Offset): UnitDat
     const d = hexDistance(map, pos, u);
     return d >= minRange && d <= maxRange;
   });
+}
+
+/** pos から隣の target へ突撃したときに飛び出る HEX（飛び出せなければ null） */
+export function chargeLanding(map: HexMap, pos: Offset, target: Offset): Offset | null {
+  const dir = dirBetween(map, pos, target);
+  if (dir < 0) return null;
+  const n = map.layout.neighborInDir(target.col, target.row, dir);
+  const from = map.get(target.col, target.row);
+  const to = map.get(n.col, n.row);
+  if (!from || !to || map.unitAt(n.col, n.row) || enterCost(from, dir, to) === null) return null;
+  return n;
 }
 
 export interface AttackResult {

@@ -8,6 +8,7 @@
  * - 攻撃は 1 ターンに 1 回で、予約した移動先から射程内の敵を選ぶ。相手へ赤い矢印を出す（遠隔攻撃は放物線）。
  *   攻撃を予約した後は移動できない。騎兵だけは攻撃の後にも移動を予約できる（ZOC の中からは動けないので、
  *   実際に動けるのは相手を壊滅させて ZOC が消えたときなど）。
+ * - 突撃（騎兵）は相手を突き抜けて向こうの HEX へ飛び出る。飛び出る先は予約のときに決め、矢印もそこまで伸ばす。
  * - 決定でユニットがルートに沿って歩き、攻撃し、（騎兵なら）続きを歩く（その間は操作を受け付けない）。
  *   兵数が 0 になったユニットは消える。
  *
@@ -26,7 +27,7 @@ import { SceneContext } from '@norden/map-runtime/render/scene';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import type { MenuAction } from './actions';
 import { ActionMenu } from './actionMenu';
-import { attackResult, attackTargets, COMBAT_DEFS, hexDistance, isAttack, type AttackResult } from './combat';
+import { attackResult, attackTargets, chargeLanding, COMBAT_DEFS, hexDistance, isAttack, type AttackResult } from './combat';
 import { inEnemyZoc, movePath, moveRange, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
 import { UnitTags } from './unitTags';
@@ -47,6 +48,8 @@ const WALK_STEPS_PER_HEX = 2;
 const STRIKE_SEC = 0.6;
 /** 直接攻撃で相手へ踏み込む量（相手までの距離比） */
 const STRIKE_LUNGE = 0.3;
+/** 突撃で相手を突き抜けて飛び出るときのアニメーションの時間（秒）。相手を通り過ぎる時点（半分）で当たる */
+const CHARGE_SEC = 0.8;
 /** 当たったユニットの揺れ（hexSize 比） */
 const HIT_SHAKE = 0.05;
 
@@ -56,6 +59,8 @@ export interface PlannedAttack {
   target: UnitData;
   /** 何回目の移動の後に攻撃するか（legs のうち、これより前が攻撃前の移動、以降が攻撃後の移動） */
   afterLeg: number;
+  /** 突撃で飛び出る HEX（突撃でない・飛び出せないなら null） */
+  landing: Offset | null;
 }
 
 /** 選択中のユニットの予約 */
@@ -260,8 +265,9 @@ export class BattleApp {
     return i > 0 ? plan.legs[i - 1] : plan.unit;
   }
 
-  /** 予約した移動の先（予約が無ければユニットのいる HEX） */
+  /** 予約した行動の後にいる HEX（最後の移動先、突撃で飛び出る先。予約が無ければユニットのいる HEX） */
   static planPos(plan: Plan): Offset {
+    if (BattleApp.attackIsLast(plan) && plan.attack!.landing) return plan.attack!.landing;
     return plan.legs.at(-1) ?? plan.unit;
   }
 
@@ -334,7 +340,10 @@ export class BattleApp {
 
   /** 攻撃を予約する */
   private setAttack(action: MenuAction, target: UnitData): void {
-    this.plan!.attack = { action, target, afterLeg: this.plan!.legs.length };
+    const plan = this.plan!;
+    const pos = BattleApp.planPos(plan);
+    const landing = action.id === 'charge' ? chargeLanding(this.map!, pos, target) : null;
+    plan.attack = { action, target, afterLeg: plan.legs.length, landing };
     this.endTargeting();
     this.planChanged();
   }
@@ -364,7 +373,8 @@ export class BattleApp {
 
   private showAttackArrow(plan: Plan | null): void {
     if (!plan?.attack) return this.view.setAttack(null, null);
-    this.view.setAttack(BattleApp.attackPos(plan), plan.attack.target, COMBAT_DEFS[plan.unit.type].ranged);
+    const { target, landing } = plan.attack;
+    this.view.setAttack(BattleApp.attackPos(plan), target, COMBAT_DEFS[plan.unit.type].ranged, landing);
   }
 
   /** 予約を実行する。攻撃の前の移動 → 攻撃 → 攻撃の後の移動（騎兵）の順に進める */
@@ -401,7 +411,7 @@ export class BattleApp {
     exec.start = performance.now();
     exec.hit = false;
     if (phase.kind === 'strike') {
-      exec.duration = STRIKE_SEC;
+      exec.duration = exec.plan.attack!.landing ? CHARGE_SEC : STRIKE_SEC;
       return;
     }
     exec.line = new Polyline(smoothPath(movePath(phase.legs).map((o) => map.layout.offsetToWorld(o.col, o.row))));
@@ -437,7 +447,10 @@ export class BattleApp {
     this.nextPhase();
   }
 
-  /** 攻撃のアニメーションを進める。直接攻撃は相手へ踏み込み、半分の時点で当てて兵数を減らす */
+  /**
+   * 攻撃のアニメーションを進める。直接攻撃は相手へ踏み込み、半分の時点で当てて兵数を減らす。
+   * 突撃で飛び出せるときは、相手を突き抜けて向こうの HEX まで駆け抜け、着いたらそこへ移動を確定する。
+   */
   private stepStrike(exec: Execution, now: number): void {
     const map = this.map!;
     const s = map.layout.size;
@@ -447,14 +460,24 @@ export class BattleApp {
     const a = map.layout.offsetToWorld(plan.unit.col, plan.unit.row);
     const b = map.layout.offsetToWorld(attack.target.col, attack.target.row);
     const facing: Facing = b.x >= a.x ? 'right' : 'left';
-    // 直接攻撃は相手へ踏み込んで戻る。遠隔攻撃はその場で小さく跳ねる
-    const ranged = COMBAT_DEFS[plan.unit.type].ranged;
-    const k = Math.sin(Math.min(t * 2, 1) * Math.PI);
-    const lunge = ranged ? 0 : k * STRIKE_LUNGE;
-    const ax = a.x + (b.x - a.x) * lunge;
-    const az = a.z + (b.z - a.z) * lunge;
-    const hop = ranged ? k * 0.05 * s : 0;
-    this.view.units.moveTo(plan.unit, new THREE.Vector3(ax, this.view.groundAt(ax, az) + hop, az), facing);
+    const landing = attack.landing;
+    if (landing) {
+      // 相手（中間点）を通り過ぎて向こうの HEX まで。出だしと止まるところだけゆっくり
+      const c = map.layout.offsetToWorld(landing.col, landing.row);
+      const e = t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
+      const x = a.x + (c.x - a.x) * e;
+      const z = a.z + (c.z - a.z) * e;
+      this.view.units.moveTo(plan.unit, new THREE.Vector3(x, this.view.groundAt(x, z), z), facing);
+    } else {
+      // 直接攻撃は相手へ踏み込んで戻る。遠隔攻撃はその場で小さく跳ねる
+      const ranged = COMBAT_DEFS[plan.unit.type].ranged;
+      const k = Math.sin(Math.min(t * 2, 1) * Math.PI);
+      const lunge = ranged ? 0 : k * STRIKE_LUNGE;
+      const ax = a.x + (b.x - a.x) * lunge;
+      const az = a.z + (b.z - a.z) * lunge;
+      const hop = ranged ? k * 0.05 * s : 0;
+      this.view.units.moveTo(plan.unit, new THREE.Vector3(ax, this.view.groundAt(ax, az) + hop, az), facing);
+    }
 
     if (t >= 0.5 && !exec.hit) {
       exec.hit = true;
@@ -466,8 +489,9 @@ export class BattleApp {
       this.view.units.moveTo(attack.target, new THREE.Vector3(b.x + shake, this.view.groundAt(b.x, b.z), b.z));
     }
     if (t < 1) return;
-    // 攻撃で壊滅したら続きの移動はしない
+    // 攻撃で壊滅したら飛び出し・続きの移動はしない
     if (exec.report.attack?.unitDestroyed) exec.phases = [];
+    else if (landing && map.moveUnit(plan.unit, landing.col, landing.row)) plan.status.moved = true;
     this.view.rebuildUnits();
     this.nextPhase();
   }
@@ -565,13 +589,14 @@ export class BattleApp {
     return [map.get(o.col, o.row) ?? null, map.unitAt(o.col, o.row) ?? null];
   }
 
-  /** メニューを置く位置。移動を予約していれば、ユニットの絵を予約した移動先に置いたときの位置 */
+  /** メニューを置く位置。移動・突撃を予約していれば、ユニットの絵を予約した行動の後にいる HEX に置いたときの位置 */
   private menuAnchor(placements: readonly UnitPlacement[]): UnitPlacement | null {
     const plan = this.plan;
     const map = this.map;
     const p = plan && placements.find((x) => x.unit === plan.unit);
-    if (!plan || !map || !p || plan.legs.length === 0) return p ?? null;
+    if (!plan || !map || !p) return p ?? null;
     const pos = BattleApp.planPos(plan);
+    if (pos.col === plan.unit.col && pos.row === plan.unit.row) return p;
     const c = map.layout.offsetToWorld(pos.col, pos.row);
     return { ...p, foot: new THREE.Vector3(c.x, this.view.groundAt(c.x, c.z), c.z) };
   }
