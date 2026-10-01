@@ -610,3 +610,36 @@ body.dragging #drop-hint {
   border-top: 4px solid transparent;
   border-bottom: 4px solid transparent;
 }
+
+/* --- 頭上に出す数字（popups.ts） --- */
+.popups {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.popup {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 20px;
+  font-weight: 800;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 0 3px #000,
+    0 1px 2px #000,
+    0 0 6px rgba(0, 0, 0, 0.8);
+  will-change: transform, opacity;
+}
+
+.popup.damage {
+  color: #ff6a50;
+}
+
+.popup.counter {
+  color: #ffb070;
+  font-size: 16px;
+}

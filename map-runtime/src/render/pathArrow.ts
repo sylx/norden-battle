@@ -1,8 +1,8 @@
 /**
- * 経路の矢印（移動ルートの表示など）。HEX の中心を結んだ折れ線の角を丸め、
- * 地面（水面・橋の上）に沿う太い帯と、先端の矢じりを 1 本の帯として作る。
+ * 経路の矢印（移動ルート・攻撃の対象の表示など）。HEX の中心を結んだ折れ線の角を丸め、
+ * 太い帯と先端の矢じりを 1 本の帯として作る。高さは呼び出し側が決める（地面に沿わせる・放物線で浮かせる）。
  *
- * ユニットと同じく深度テストをせずに地形・木より手前に描き、ユニット（影・絵）よりは奥に描く。
+ * ユニットと同じく深度テストをせずに地形・木より手前に描く。ユニットより奥か手前かは描画順（style.order）で決める。
  * 縁取り用に一回り大きい帯を後ろに重ね、本体には進む向きへ流れる山形の縞を付ける。
  */
 import * as THREE from 'three';
@@ -22,13 +22,21 @@ const ACROSS = 6;
 /** 地面から浮かせる量（hexSize 比） */
 const LIFT = 0.01;
 
-const FILL_COLOR = 0xffd451;
-const STRIPE_COLOR = 0xfff6d8;
-const OUTLINE_COLOR = 0x2a1a0c;
+export interface ArrowStyle {
+  fill: THREE.ColorRepresentation;
+  stripe: THREE.ColorRepresentation;
+  outline: THREE.ColorRepresentation;
+  /** 縁取りの描画順（本体は +1）。ユニットの影 9・絵 10 より小さければ奥、大きければ手前 */
+  order: number;
+}
 
-/** 縁取り・本体の描画順（ユニットの影 9・絵 10 より奥） */
-const OUTLINE_ORDER = 7;
-const FILL_ORDER = 8;
+/** 移動ルートの矢印（金色、ユニットより奥） */
+const DEFAULT_STYLE: ArrowStyle = { fill: 0xffd451, stripe: 0xfff6d8, outline: 0x2a1a0c, order: 7 };
+
+/**
+ * 矢印の各点の高さ。(x, z) は位置、d は経路に沿った距離、total は経路の長さ（d は両端で少しはみ出すことがある）
+ */
+export type ArrowHeight = (x: number, z: number, d: number, total: number) => number;
 
 export class PathArrow {
   readonly group = new THREE.Group();
@@ -36,31 +44,35 @@ export class PathArrow {
   readonly time: THREE.IUniform<number> = { value: 0 };
   private readonly fill: THREE.ShaderMaterial;
   private readonly outline: THREE.ShaderMaterial;
+  private readonly order: number;
 
-  constructor() {
+  constructor(style: Partial<ArrowStyle> = {}) {
+    const st = { ...DEFAULT_STYLE, ...style };
     this.group.name = 'path-arrow';
-    this.fill = arrowMaterial(FILL_COLOR, this.time, true);
-    this.outline = arrowMaterial(OUTLINE_COLOR, this.time, false);
+    this.fill = arrowMaterial(st.fill, st.stripe, this.time, true);
+    this.outline = arrowMaterial(st.outline, st.stripe, this.time, false);
+    this.order = st.order;
   }
 
   /**
    * path（出発地 → 到着地の HEX）に沿って矢印を作る。null か 2 HEX 未満なら消す。
-   * groundAt はその位置の地面（水面・橋の上を含む）の高さ。
+   * heightAt は各点の高さ。endGap（hexSize 比）だけ到着地の中心の手前で矢じりを止める（相手のユニットの足元に刺さるように）。
    */
-  set(path: readonly Offset[] | null, layout: HexLayout, groundAt: (x: number, z: number) => number): void {
+  set(path: readonly Offset[] | null, layout: HexLayout, heightAt: ArrowHeight, endGap = 0): void {
     this.clear();
     if (!path || path.length < 2) return;
     const s = layout.size;
     this.fill.uniforms.uHexSize.value = s;
     const line = smoothPath(path.map((o) => layout.offsetToWorld(o.col, o.row)));
     const outline = OUTLINE * s;
+    const gap = endGap * s;
     const back = new THREE.Mesh(
-      arrowGeometry(line, s, groundAt, { shaft: SHAFT_HALF * s + outline, head: HEAD_HALF * s + outline * 1.8, extend: outline * 1.6 }),
+      arrowGeometry(line, s, heightAt, { shaft: SHAFT_HALF * s + outline, head: HEAD_HALF * s + outline * 1.8, extend: outline * 1.6, gap }),
       this.outline,
     );
-    back.renderOrder = OUTLINE_ORDER;
-    const front = new THREE.Mesh(arrowGeometry(line, s, groundAt, { shaft: SHAFT_HALF * s, head: HEAD_HALF * s, extend: 0 }), this.fill);
-    front.renderOrder = FILL_ORDER;
+    back.renderOrder = this.order;
+    const front = new THREE.Mesh(arrowGeometry(line, s, heightAt, { shaft: SHAFT_HALF * s, head: HEAD_HALF * s, extend: 0, gap }), this.fill);
+    front.renderOrder = this.order + 1;
     this.group.add(back, front);
   }
 
@@ -70,7 +82,8 @@ export class PathArrow {
     this.outline.dispose();
   }
 
-  private clear(): void {
+  /** 矢印を消す */
+  clear(): void {
     for (const child of [...this.group.children]) {
       this.group.remove(child);
       (child as THREE.Mesh).geometry.dispose();
@@ -80,20 +93,21 @@ export class PathArrow {
 
 /**
  * 矢印の帯。横断方向の列を進む向きに並べ、幅は帯の部分で shaft、矢じりの付け根で head に広げて先端で 0 にする。
- * extend は縁取り用に両端と矢じりを伸ばす量。
+ * extend は縁取り用に両端と矢じりを伸ばす量、gap は到着地の中心の手前で止める量。
  */
 function arrowGeometry(
   pts: Vec2[],
   s: number,
-  groundAt: (x: number, z: number) => number,
-  w: { shaft: number; head: number; extend: number },
+  heightAt: ArrowHeight,
+  w: { shaft: number; head: number; extend: number; gap: number },
 ): THREE.BufferGeometry {
   const line = new Polyline(pts);
   const total = line.length;
-  const start = Math.min(START_GAP * s, total * 0.3) - w.extend;
+  const end = total - w.gap;
+  const start = Math.min(START_GAP * s, end * 0.3) - w.extend;
   // 経路が短いときは矢じりを縮める
-  const headLen = Math.min(HEAD_LEN * s, (total - START_GAP * s) * 0.6) + w.extend * 1.5;
-  const tip = total + w.extend;
+  const headLen = Math.min(HEAD_LEN * s, (end - START_GAP * s) * 0.6) + w.extend * 1.5;
+  const tip = end + w.extend;
   const headBase = tip - headLen;
 
   // 進む向きの刻み（矢じりの付け根は帯の幅と矢じりの幅の 2 列を同じ位置に置く）
@@ -118,7 +132,7 @@ function arrowGeometry(
       const u = (k / ACROSS) * 2 - 1;
       const x = cx - p.tz * u * row.half;
       const z = cz + p.tx * u * row.half;
-      pos.push(x, groundAt(x, z) + lift, z);
+      pos.push(x, heightAt(x, z, row.d, total) + lift, z);
       along.push(row.d);
       across.push(u * row.half);
     }
@@ -137,11 +151,16 @@ function arrowGeometry(
   return g;
 }
 
-function arrowMaterial(color: number, time: THREE.IUniform<number>, stripes: boolean): THREE.ShaderMaterial {
+function arrowMaterial(
+  color: THREE.ColorRepresentation,
+  stripe: THREE.ColorRepresentation,
+  time: THREE.IUniform<number>,
+  stripes: boolean,
+): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uColor: { value: new THREE.Color(color) },
-      uStripe: { value: new THREE.Color(STRIPE_COLOR) },
+      uStripe: { value: new THREE.Color(stripe) },
       uTime: time,
       uHexSize: { value: 1 },
     },

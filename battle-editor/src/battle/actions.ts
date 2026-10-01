@@ -5,8 +5,9 @@
  * 2 階層目（攻撃の種類・指揮官のスキル）は選べるものだけを並べる。
  * 選べるかどうかは残り行動力・兵種・指揮官のスキルで決まる。コスト・兵種の制限は仮の値。
  *
- * 行動は予約してから最後にまとめて実行する。移動を予約すると、残り行動力は予約した分を引いたものになり、
+ * 行動は予約してから最後にまとめて実行する。移動・攻撃を予約すると、残り行動力は予約した分を引いたものになり、
  * 「退却」の代わりに予約を実行する「決定」と、予約をすべて取り消す「取消」が並ぶ。
+ * 攻撃は 1 ターンに 1 回で、攻撃を予約した後は移動できない。
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { UnitStatus } from './unitStatus';
@@ -40,6 +41,8 @@ interface ActionDef {
 
 interface GroupDef {
   name: string;
+  /** 攻撃の項目（攻撃できる相手・攻撃済みかで選べるかが変わる） */
+  attack?: boolean;
   /** 2 階層目。'skills' は指揮官のスキル */
   children: readonly ActionDef[] | 'skills';
 }
@@ -49,6 +52,7 @@ const MENU: readonly (ActionDef | GroupDef)[] = [
   { id: 'move', name: '移動' },
   {
     name: '攻撃',
+    attack: true,
     children: [
       { id: 'attack', name: '通常攻撃', cost: 2 },
       { id: 'volley', name: '一斉攻撃', cost: 3, types: ['archer', 'mage'] },
@@ -78,6 +82,10 @@ export interface MenuContext {
   zocLocked: boolean;
   /** 予約した行動があるか（「退却」の代わりに「決定」「取消」を出す） */
   planned: boolean;
+  /** 攻撃を予約したか（それ以上は移動・攻撃できない） */
+  attackPlanned: boolean;
+  /** 攻撃できる敵がいるか（予約した移動先から） */
+  hasTargets: boolean;
 }
 
 const CONFIRM: MenuAction = { id: 'confirm', name: '決定' };
@@ -95,7 +103,8 @@ export interface MenuEntry {
 }
 
 /** ユニットの行動メニューの 1 階層目 */
-export function buildActionMenu({ unit, status, ap, canMove, zocLocked, planned }: MenuContext): MenuEntry[] {
+export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
+  const { unit, status, ap, canMove, zocLocked, planned } = ctx;
   const lacksAp = (cost: number | undefined) => ap < (cost ?? 0);
   return MENU.flatMap((def): MenuEntry | MenuEntry[] => {
     if ('id' in def) {
@@ -103,11 +112,16 @@ export function buildActionMenu({ unit, status, ap, canMove, zocLocked, planned 
         return [CONFIRM, CANCEL].map((action) => ({ name: action.name, enabled: true, action }));
       }
       const action = { id: def.id, name: def.name, cost: def.cost };
+      if (def.id === 'move' && ctx.attackPlanned) return { name: def.name, enabled: false, reason: '攻撃の後は移動できない', action };
       if (def.id === 'move' && zocLocked) return { name: def.name, enabled: false, reason: '敵の ZOC の中にいる', action };
       if (def.id === 'move' && !canMove) return { name: def.name, enabled: false, reason: '移動できる HEX がない', action };
       if (def.types && !def.types.includes(unit.type)) return { name: def.name, enabled: false, reason: 'この兵種は使えない', action };
       if (lacksAp(def.cost)) return { name: def.name, enabled: false, reason: '行動力が足りない', action };
       return { name: def.name, enabled: true, action };
+    }
+    if (def.attack) {
+      const reason = status.attacked ? 'このターンは攻撃済み' : ctx.attackPlanned ? '攻撃は予約済み' : !ctx.hasTargets ? '攻撃できる敵がいない' : null;
+      if (reason) return { name: def.name, enabled: false, reason };
     }
     const cands: MenuAction[] =
       def.children === 'skills'

@@ -17,6 +17,12 @@ import { buildStructures } from './structures';
 import { buildTerrainMeshes, disposeObject, type TerrainMeshes } from './terrainMeshes';
 import { BRIDGE_DECK, UnitLayer } from './units';
 
+/** 攻撃の矢印を相手の HEX の中心の手前で止める量（hexSize 比。足元に刺さるように） */
+const ATTACK_END_GAP = 0.3;
+/** 遠隔攻撃の放物線の高さ（距離比）と、飛び出す高さ（hexSize 比） */
+const ATTACK_ARC_RISE = 0.3;
+const ATTACK_ARC_LIFT = 0.35;
+
 export interface MapDisplay {
   grid: boolean;
   trees: boolean;
@@ -47,6 +53,8 @@ export class MapView {
   readonly units = new UnitLayer();
   /** 経路の矢印（移動ルートなど） */
   readonly pathArrow = new PathArrow();
+  /** 攻撃の対象を指す赤い矢印（遠隔攻撃は放物線。ユニットより手前に描く） */
+  readonly attackArrow = new PathArrow({ fill: 0xe0402e, stripe: 0xffc8b0, outline: 0x2a0c08, order: 13 });
   map: HexMap | null = null;
 
   /** 地形・木・人工物を作り直したとき */
@@ -64,7 +72,7 @@ export class MapView {
 
   constructor(ctx: SceneContext) {
     this.ctx = ctx;
-    ctx.overlay.add(this.units.group, this.pathArrow.group);
+    ctx.overlay.add(this.units.group, this.pathArrow.group, this.attackArrow.group);
     ctx.onShadowPass = (active) => this.decor?.forest.setShadowPass(active);
     this.units.art.onChange = () => this.rebuildUnits();
   }
@@ -77,7 +85,8 @@ export class MapView {
   setMap(map: HexMap, resetCamera = true): void {
     this.map = map;
     this.overlay.setLayout(map.layout);
-    this.pathArrow.set(null, map.layout, () => 0);
+    this.pathArrow.clear();
+    this.attackArrow.clear();
     this.ctx.parchment.uniforms.uPaperScale.value = map.layout.size;
     this.regenerate(resetCamera);
   }
@@ -224,6 +233,29 @@ export class MapView {
     if (this.map) this.pathArrow.set(path, this.map.layout, (x, z) => this.groundAt(x, z));
   }
 
+  /**
+   * from から to のユニットへ攻撃の矢印を出す（null で消す）。
+   * arc = false は地面に沿うまっすぐな矢印、true は放物線を描いて飛ぶ矢印（遠隔攻撃）。
+   */
+  setAttack(from: Offset | null, to: Offset | null, arc = false): void {
+    const map = this.map;
+    if (!map || !from || !to) return this.attackArrow.clear();
+    const a = map.layout.offsetToWorld(from.col, from.row);
+    const b = map.layout.offsetToWorld(to.col, to.row);
+    const ya = this.groundAt(a.x, a.z);
+    const yb = this.groundAt(b.x, b.z);
+    const s = map.layout.size;
+    const peak = Math.hypot(b.x - a.x, b.z - a.z) * ATTACK_ARC_RISE;
+    const heightAt = arc
+      ? (_x: number, _z: number, d: number, total: number) => {
+          // 両端の地面の高さを結んだ線の上に放物線を乗せる（ユニットの胸の高さから飛び出して足元に落ちる）
+          const t = Math.min(Math.max(d / total, 0), 1);
+          return ya + (yb - ya) * t + 4 * peak * t * (1 - t) + ATTACK_ARC_LIFT * s * (1 - t);
+        }
+      : (x: number, z: number) => this.groundAt(x, z);
+    this.attackArrow.set([from, to], map.layout, heightAt, ATTACK_END_GAP);
+  }
+
   /** ユニットが立つ地面の高さ。水の上は水面、橋の HEX は橋の上（ユニットの足元と同じ高さ） */
   groundAt(x: number, z: number): number {
     const map = this.map;
@@ -240,6 +272,7 @@ export class MapView {
     this.overlay.uniforms.uTime.value = windUniforms.uTime.value;
     this.units.time.value = windUniforms.uTime.value;
     this.pathArrow.time.value = windUniforms.uTime.value;
+    this.attackArrow.time.value = windUniforms.uTime.value;
     // 俯角を変えたら板絵を焼き直す
     this.decor?.forest.setPitch(this.ctx.pitch);
     this.ctx.render();

@@ -6,6 +6,7 @@ import { listMapFiles, loadMapFile, type MapFileInfo } from '@norden/map-runtime
 import type { ForestMode } from '@norden/map-runtime/render/foliage';
 import { DEFAULT_PIXEL_RATIO } from '@norden/map-runtime/render/scene';
 import type { BattleApp } from './app';
+import { isAttack } from './combat';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -131,35 +132,57 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
       .join('');
   };
   app.onHover = (c, u) => {
-    // 移動先を選んでいる間は、そこまでに使う行動力も出す
+    // 移動先を選んでいる間はそこまでに使う行動力、攻撃の相手を選んでいる間は結果の予測も出す
+    const extra: string[][] = [];
     const step = app.moveStepAt(c);
-    const move = step && [['移動', `行動力 ${step.cost}（予約の合計）${step.zoc ? '<br>敵の ZOC: 入るとそれ以上動けない' : ''}`]];
-    renderInfo($('hover-info'), c, u, move || []);
+    if (step) extra.push(['移動', `行動力 ${step.cost}（予約の合計）${step.zoc ? '<br>敵の ZOC: 入るとそれ以上動けない' : ''}`]);
+    const attack = app.attackPreviewAt(c);
+    if (attack) extra.push(['攻撃', `敵 -${attack.damage}${attack.direct ? ` / 反撃 -${attack.counter}` : '（反撃なし）'}`]);
+    renderInfo($('hover-info'), c, u, extra);
   };
   app.onSelect = (c, u) => renderInfo($('select-info'), c, u);
   const unitLabel = (u: UnitData) => `${TEAM_DEFS[u.team].name} ${UNIT_DEFS[u.type].name} (${u.col}, ${u.row})`;
+  const back = 'Esc・範囲外クリック: メニューに戻る';
   app.onAction = (u, a) =>
     setStatus(
       a.id === 'move'
-        ? `${unitLabel(u)}: 移動先を選んでください（青い HEX。橙の斜線は敵の ZOC で、入るとそれ以上動けない）/ Esc・範囲外クリック: メニューに戻る`
-        : // 移動以外の処理はまだ無いので、選んだものを知らせるだけ
-          `${unitLabel(u)}: 「${escapeHtml(a.name)}」を選択${a.cost !== undefined ? `（行動力 ${a.cost}）` : ''}— 未実装`,
+        ? `${unitLabel(u)}: 移動先を選んでください（青い HEX。橙の斜線は敵の ZOC で、入るとそれ以上動けない）/ ${back}`
+        : isAttack(a.id)
+          ? `${unitLabel(u)}: ${escapeHtml(a.name)}の相手を選んでください（赤い HEX）/ ${back}`
+          : // 移動・攻撃以外の処理はまだ無いので、選んだものを知らせるだけ
+            `${unitLabel(u)}: 「${escapeHtml(a.name)}」を選択${a.cost !== undefined ? `（行動力 ${a.cost}）` : ''}— 未実装`,
     );
   app.onPlanChange = (plan) => {
     const last = plan.legs.at(-1);
+    const parts = [
+      last && `(${last.col}, ${last.row}) まで移動（${plan.legs.length} 回・行動力 ${last.cost}）`,
+      plan.attack && `${unitLabel(plan.attack.target)} に${escapeHtml(plan.attack.action.name)}（行動力 ${plan.attack.action.cost ?? 0}）`,
+    ].filter(Boolean);
     setStatus(
-      last
-        ? `${unitLabel(plan.unit)}: (${last.col}, ${last.row}) まで移動を予約（${plan.legs.length} 回・行動力 ${last.cost}）/ 決定: 実行 / 取消: すべて取り消す / Esc: 1 つ戻す`
+      parts.length > 0
+        ? `${unitLabel(plan.unit)}: ${parts.join(' → ')} を予約 / 決定: 実行 / 取消: すべて取り消す / Esc: 1 つ戻す`
         : `${unitLabel(plan.unit)}: 予約を取り消しました / ${idleStatus}`,
     );
   };
-  app.onMoveCancel = () => setStatus(idleStatus);
+  app.onTargetCancel = () => setStatus(idleStatus);
   // --- ターン ---
   app.onTurn = (turn) => ($('turn-number').textContent = String(turn));
   $('btn-end-turn').addEventListener('click', () => {
     if (app.endTurn()) setStatus(`ターン ${app.turn} — 全ユニットの行動力が回復しました / ${idleStatus}`);
   });
-  app.onExecute = (u, from, cost) => setStatus(`(${from.col}, ${from.row}) → ${unitLabel(u)} へ移動しました（行動力 ${cost} 使用）`);
+  app.onExecute = ({ unit, from, moveCost, attack }) => {
+    const parts: string[] = [];
+    if (moveCost > 0) parts.push(`(${from.col}, ${from.row}) から移動（行動力 ${moveCost}）`);
+    if (attack) {
+      const { result } = attack;
+      parts.push(
+        `${TEAM_DEFS[attack.target.team].name} ${UNIT_DEFS[attack.target.type].name}に${escapeHtml(attack.action.name)}: ` +
+          `敵 -${result.damage}${attack.targetDestroyed ? '（壊滅）' : ''}` +
+          (result.direct ? ` / 反撃 -${result.counter}${attack.unitDestroyed ? '（壊滅）' : ''}` : ''),
+      );
+    }
+    setStatus(`${unitLabel(unit)}: ${parts.join(' → ')}`);
+  };
   renderInfo($('hover-info'), null, null);
   renderInfo($('select-info'), null, null);
 
