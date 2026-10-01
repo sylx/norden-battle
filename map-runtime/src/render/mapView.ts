@@ -54,6 +54,7 @@ export class MapView {
 
   private meshes: TerrainMeshes | null = null;
   private terrainData: TerrainData | null = null;
+  private heightmap: Heightmap | null = null;
   /** 木と人工物（地形を作り直さずに差し替えられる部分） */
   private decor: { forest: Forest; structures: THREE.Group; roads: THREE.Group } | null = null;
   private stats: GenStats = { ms: 0, vertices: 0, trees: 0 };
@@ -92,6 +93,7 @@ export class MapView {
     this.ctx.scene.add(this.meshes.group);
     this.ctx.invalidateShadows();
     this.terrainData = data;
+    this.heightmap = new Heightmap(data);
     this.stats = { ms: data.stats.ms, vertices: data.nx * data.nz, trees: 0 };
     this.rebuildDecor();
     this.ctx.fitTo(
@@ -219,18 +221,17 @@ export class MapView {
 
   /** 経路（出発地 → 到着地の HEX）に沿って地面に矢印を出す。null で消す */
   setPath(path: readonly Offset[] | null): void {
+    if (this.map) this.pathArrow.set(path, this.map.layout, (x, z) => this.groundAt(x, z));
+  }
+
+  /** ユニットが立つ地面の高さ。水の上は水面、橋の HEX は橋の上（ユニットの足元と同じ高さ） */
+  groundAt(x: number, z: number): number {
     const map = this.map;
     const data = this.terrainData;
-    if (!map || !data) return;
-    const hm = new Heightmap(data);
-    const deck = data.waterLevel + BRIDGE_DECK * map.layout.size;
-    // 水の上は水面、橋の HEX は橋の上（ユニットの足元と同じ高さ）
-    const groundAt = (x: number, z: number) => {
-      const o = map.layout.worldToOffset(x, z);
-      const floor = map.get(o.col, o.row)?.feature === 'bridge' ? deck : data.waterLevel;
-      return Math.max(hm.heightAt(x, z), floor);
-    };
-    this.pathArrow.set(path, map.layout, groundAt);
+    if (!map || !data) return 0;
+    const o = map.layout.worldToOffset(x, z);
+    const floor = map.get(o.col, o.row)?.feature === 'bridge' ? data.waterLevel + BRIDGE_DECK * map.layout.size : data.waterLevel;
+    return Math.max(this.heightmap!.heightAt(x, z), floor);
   }
 
   /** 毎フレーム呼ぶ（風揺れの時間を進めて描画する） */

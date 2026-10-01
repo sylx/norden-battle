@@ -12,7 +12,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
   const status = $('status');
   const setStatus = (html: string) => (status.innerHTML = html);
-  const idleStatus = 'クリック: ユニットを選択 / Esc: 選択を外す';
+  const idleStatus = 'クリック: ユニットを選択 / Esc: 予約を 1 つ戻す・選択を外す';
   const showError = (e: unknown) => {
     const msg = e instanceof MapParseError ? `マップの読み込みに失敗: ${e.message}` : String(e);
     setStatus(`<span class="err">${escapeHtml(msg)}</span>`);
@@ -133,7 +133,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
   app.onHover = (c, u) => {
     // 移動先を選んでいる間は、そこまでに使う行動力も出す
     const step = app.moveStepAt(c);
-    renderInfo($('hover-info'), c, u, step ? [['移動', `行動力 ${step.cost}`]] : []);
+    renderInfo($('hover-info'), c, u, step ? [['移動', `行動力 ${step.cost}（予約の合計）`]] : []);
   };
   app.onSelect = (c, u) => renderInfo($('select-info'), c, u);
   const unitLabel = (u: UnitData) => `${TEAM_DEFS[u.team].name} ${UNIT_DEFS[u.type].name} (${u.col}, ${u.row})`;
@@ -142,12 +142,18 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
       a.id === 'move'
         ? `${unitLabel(u)}: 移動先を選んでください（青い HEX）/ Esc・範囲外クリック: メニューに戻る`
         : // 移動以外の処理はまだ無いので、選んだものを知らせるだけ
-          `${unitLabel(u)}: 「${escapeHtml(a.name)}」を選択（行動力 ${a.cost}）— 未実装`,
+          `${unitLabel(u)}: 「${escapeHtml(a.name)}」を選択${a.cost !== undefined ? `（行動力 ${a.cost}）` : ''}— 未実装`,
     );
-  // 移動の予約はまだ無いので、選んだ移動先を知らせるだけ
-  app.onMoveTarget = (u, step) =>
-    setStatus(`${unitLabel(u)}: (${step.col}, ${step.row}) へ移動（行動力 ${step.cost}）— ほかの HEX で選び直し / 予約は未実装`);
+  app.onPlanChange = (plan) => {
+    const last = plan.legs.at(-1);
+    setStatus(
+      last
+        ? `${unitLabel(plan.unit)}: (${last.col}, ${last.row}) まで移動を予約（${plan.legs.length} 回・行動力 ${last.cost}）/ 決定: 実行 / Esc: 1 つ戻す`
+        : `${unitLabel(plan.unit)}: 予約なし / ${idleStatus}`,
+    );
+  };
   app.onMoveCancel = () => setStatus(idleStatus);
+  app.onExecute = (u, from, cost) => setStatus(`(${from.col}, ${from.row}) → ${unitLabel(u)} へ移動しました（行動力 ${cost} 使用）`);
   renderInfo($('hover-info'), null, null);
   renderInfo($('select-info'), null, null);
 

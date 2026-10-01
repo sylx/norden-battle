@@ -201,6 +201,18 @@ export class HexMap {
     this.units.set(unit.row * this.layout.cols + unit.col, { ...unit });
   }
 
+  /** ユニットを空いている HEX へ動かす（同じオブジェクトの col・row を書き換える）。動かせたら true */
+  moveUnit(unit: UnitData, col: number, row: number): boolean {
+    const { cols } = this.layout;
+    const from = unit.row * cols + unit.col;
+    if (this.units.get(from) !== unit || !this.layout.inBounds(col, row) || this.unitAt(col, row)) return false;
+    this.units.delete(from);
+    unit.col = col;
+    unit.row = row;
+    this.units.set(row * cols + col, unit);
+    return true;
+  }
+
   removeUnit(col: number, row: number): void {
     this.units.delete(row * this.layout.cols + col);
   }

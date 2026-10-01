@@ -1,7 +1,8 @@
 /**
  * 選択中のユニットの近くに出す行動メニュー（HTML で画面に重ねる）。
  *
- * - ユニットの絵の右（入らなければ左）に置き、カメラを動かしても毎フレーム追いかける。
+ * - ユニットの絵（移動を予約したら予約した移動先に置いた絵）の右（入らなければ左）に置き、
+ *   カメラを動かしても毎フレーム追いかける。
  * - 上部にユニットの状態（情報札と同じ顔・兵士数・士気と、残り行動力）を出す。
  * - 2 階層目は 1 階層目の項目の横に開く。マウスは項目に乗せる、タッチはタップで開く。
  * - パネルの四隅には飾り罫（.corner）を置く。いまは CSS の仮の線で、画像に差し替えられるよう
@@ -10,8 +11,7 @@
 import * as THREE from 'three';
 import { TEAM_DEFS, UNIT_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
-import { buildActionMenu, type MenuAction, type MenuEntry } from './actions';
-import type { UnitStatus } from './unitStatus';
+import { buildActionMenu, type MenuAction, type MenuContext, type MenuEntry } from './actions';
 import { renderStatus, STATUS_HTML } from './unitTags';
 
 /** ユニットの絵とメニューの間隔（CSS ピクセル） */
@@ -56,12 +56,13 @@ export class ActionMenu {
     return this.unit !== null;
   }
 
-  /** ユニットのメニューを開く（null で閉じる） */
-  open(unit: UnitData | null, status: UnitStatus | undefined): void {
+  /** ユニットのメニューを開く（null で閉じる）。開いたまま呼ぶと中身を作り直す */
+  open(ctx: MenuContext | null): void {
     this.closeSub();
-    this.unit = unit && status ? unit : null;
-    this.root.hidden = !this.unit;
-    if (!unit || !status) return;
+    this.unit = ctx?.unit ?? null;
+    this.root.hidden = !ctx;
+    if (!ctx) return;
+    const { unit, status } = ctx;
 
     const team = TEAM_DEFS[unit.team];
     this.root.style.setProperty('--team', team.color);
@@ -71,14 +72,18 @@ export class ActionMenu {
     card.innerHTML = STATUS_HTML;
     renderStatus(card, status);
     const ap = el('div', 'menu-ap');
-    ap.append(el('span', 'label', '行動力'), el('span', 'value', `${status.ap}`), el('span', 'max', `/${status.maxAp}`));
+    ap.append(el('span', 'label', '行動力'), el('span', 'value', `${ctx.ap}`), el('span', 'max', `/${status.maxAp}`));
+    // 予約で使う分は欠けて見せる（0.5 刻みなので半分の印もある）
     const pips = el('span', 'pips');
-    for (let i = 0; i < status.maxAp; i++) pips.append(el('i', i < status.ap ? 'on' : ''));
+    for (let i = 0; i < status.maxAp; i++) {
+      const cls = i + 1 <= ctx.ap ? 'on' : i < ctx.ap ? 'half' : i < status.ap ? 'spent' : '';
+      pips.append(el('i', cls));
+    }
     ap.append(pips);
     head.append(title, card, ap);
 
     const list = el('ul', 'menu-items');
-    for (const entry of buildActionMenu(unit, status)) list.append(this.item(entry));
+    for (const entry of buildActionMenu(ctx)) list.append(this.item(entry));
     this.body(this.main).replaceChildren(head, list);
   }
 
@@ -91,11 +96,10 @@ export class ActionMenu {
     return true;
   }
 
-  /** 毎フレーム、描画の後に呼ぶ。選択中のユニットの絵の横へメニューを動かす */
-  update(placements: readonly UnitPlacement[], camera: THREE.PerspectiveCamera): void {
-    const unit = this.unit;
-    if (!unit) return;
-    const p = placements.find((x) => x.unit === unit);
+  /** 毎フレーム、描画の後に呼ぶ。anchor（ユニットの絵の位置と大きさ）の横へメニューを動かす */
+  update(anchor: UnitPlacement | null, camera: THREE.PerspectiveCamera): void {
+    if (!this.unit) return;
+    const p = anchor;
     const container = this.root.parentElement!;
     const w = container.clientWidth;
     const h = container.clientHeight;
@@ -126,7 +130,8 @@ export class ActionMenu {
   private item(entry: MenuEntry): HTMLLIElement {
     const li = el('li', 'menu-item');
     li.append(el('span', 'name', entry.name));
-    if (entry.action) li.append(cost(entry.action.cost));
+    if (entry.action?.cost !== undefined) li.append(cost(entry.action.cost));
+    if (entry.action?.id === 'confirm') li.classList.add('confirm');
     if (entry.children) li.append(el('span', 'arrow'));
     if (!entry.enabled) {
       li.classList.add('disabled');
@@ -159,7 +164,8 @@ export class ActionMenu {
     const list = el('ul', 'menu-items');
     for (const a of actions) {
       const item = el('li', 'menu-item');
-      item.append(el('span', 'name', a.name), cost(a.cost));
+      item.append(el('span', 'name', a.name));
+      if (a.cost !== undefined) item.append(cost(a.cost));
       item.addEventListener('click', () => this.choose(a));
       list.append(item);
     }
