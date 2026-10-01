@@ -2,9 +2,11 @@
  * ユニットに重ねる情報札（指揮官の顔・兵士数と士気のグラフ）。
  *
  * - HTML で画面に重ねるので、カメラの拡大縮小に関係なく同じ大きさで表示される。
- * - 札はユニットの頭上に置き、頭から札へ軍の色の引き出し線を引く（札の縁と顔の枠も軍の色）。
+ * - 札はユニットの足元に置く（札の縁と顔の枠は軍の色）。
  * - 札どうしが重なるときは、周りの空いている位置へずらす（画面上の位置を毎フレーム決め直す）。
- *   ユニットの絵になるべくかぶらない位置・前のフレームと同じ位置を優先して、カメラを動かしてもちらつかないようにする。
+ *   なるべく小さなずれで済む位置・ユニットの絵にかぶらない位置・前のフレームと同じ位置を優先して、
+ *   カメラを動かしてもちらつかないようにする。
+ * - 足元から離れてしまったときだけ、ユニットの中心から札へ軍の色の引き出し線を引く。
  */
 import * as THREE from 'three';
 import type { Offset } from '@norden/map-runtime/core/hex';
@@ -19,25 +21,32 @@ const TAG_H = 40;
 const FACE_SIZE = 32;
 /** 顔を円に切り抜くときの拡大率（顔画像の縁の余白を落とす） */
 const FACE_ZOOM = 1.15;
-/** 既定の位置での、頭と札の下端の間 */
-const HEAD_GAP = 8;
-/** 札の位置の候補の間隔と範囲（既定の位置から左右・上下に何段ずらすか） */
-const STEP_X = TAG_W / 2 + 4;
-const STEP_Y = TAG_H / 2 + 4;
-const RANGE_X = 3;
-const RANGE_UP = 3;
-const RANGE_DOWN = 2;
+/** 既定の位置での、足元から札の上端までの距離（負なら札の上端が足元より上で、足に少しかかる） */
+const FOOT_OFFSET = -8;
+/** 札の位置の候補の間隔と範囲（既定の位置から左右・上下に何段ずらすか）。細かく刻んで小さなずれで済ませる */
+const STEP_X = TAG_W / 4;
+const STEP_Y = TAG_H / 2;
+const RANGE_X = 4;
+const RANGE_UP = 4;
+const RANGE_DOWN = 3;
 /** 位置を決めるときの重み */
 const COST_TAG_OVERLAP = 40; // 札どうしの重なり（面積あたり）。実質的に禁止
-const COST_SPRITE_OVERLAP = 0.25; // ユニットの絵へのかぶり（面積あたり）
+const COST_OWN_OVERLAP = 0.6; // 自分の絵へのかぶり（面積あたり）
+const COST_SPRITE_OVERLAP = 0.25; // ほかのユニットの絵へのかぶり（面積あたり）
 const COST_OFFSCREEN = 4; // 画面外にはみ出す面積あたり
-const COST_DISTANCE = 1.6; // 既定の位置からの距離あたり
-const COST_BELOW = 1.5; // 頭より下へ下げるときの追加（距離あたり）
+const COST_DISTANCE = 2; // 既定の位置からの距離あたり
 const BONUS_KEEP = 120; // 前のフレームと同じ候補
+/** 足元と札がこれ（px）より離れたら引き出し線を引く */
+const LINE_MIN_GAP = 12;
 /** 画面外のユニットの札は出さない（この余白まで） */
 const OFFSCREEN_MARGIN = 80;
 /** 士気がこれ未満なら低い色にする */
 const LOW_MORALE = 30;
+
+interface Point {
+  x: number;
+  y: number;
+}
 
 interface Rect {
   l: number;
@@ -61,14 +70,14 @@ interface Tag {
   shown: string;
 }
 
-/** 候補の位置（既定の位置＝札の下端中央が頭の真上 HEAD_GAP からのずれ）。既定の位置が先頭 */
+/** 候補の位置（既定の位置＝札の上端中央が足元から FOOT_OFFSET の位置からのずれ）。既定の位置が先頭 */
 const SLOTS: { dx: number; dy: number; dist: number }[] = (() => {
   const out: { dx: number; dy: number; dist: number }[] = [];
   for (let j = -RANGE_UP; j <= RANGE_DOWN; j++) {
     for (let i = -RANGE_X; i <= RANGE_X; i++) {
       const dx = i * STEP_X;
       const dy = j * STEP_Y;
-      out.push({ dx, dy, dist: Math.hypot(dx, dy) + (dy > 0 ? dy * COST_BELOW : 0) });
+      out.push({ dx, dy, dist: Math.hypot(dx, dy) });
     }
   }
   return out.sort((a, b) => a.dist - b.dist);
@@ -120,8 +129,8 @@ export class UnitTags {
       return { x: ((v.x + 1) / 2) * w, y: ((1 - v.y) / 2) * h, behind: v.z > 1 };
     };
 
-    // ユニットの頭の位置と、画面上の絵の範囲
-    const items: { tag: Tag; head: { x: number; y: number }; priority: number }[] = [];
+    // ユニットの足元と、画面上の絵の範囲
+    const items: { tag: Tag; foot: Point; sprite: Rect; priority: number }[] = [];
     const sprites: Rect[] = [];
     const isAt = (u: UnitData, o: Offset | null) => !!o && o.col === u.col && o.row === u.row;
     for (const p of placements) {
@@ -130,7 +139,8 @@ export class UnitTags {
       const foot = toScreen(p.foot);
       const head = toScreen(v.copy(up).multiplyScalar(p.height).add(p.foot));
       const half = toScreen(v.copy(right).multiplyScalar(p.width / 2).add(p.foot)).x - foot.x;
-      sprites.push({ l: head.x - half, t: head.y, r: head.x + half, b: foot.y });
+      const sprite = { l: head.x - half, t: head.y, r: head.x + half, b: foot.y };
+      sprites.push(sprite);
       const tag = this.tagFor(p.unit);
       const off =
         foot.behind ||
@@ -145,20 +155,20 @@ export class UnitTags {
       this.render(tag, status, isAt(p.unit, hover) || isAt(p.unit, selected));
       // 強調するもの → 手前（画面の下）のユニットの順に、良い位置を先に取る
       const priority = (isAt(p.unit, selected) ? 2e6 : 0) + (isAt(p.unit, hover) ? 1e6 : 0) + foot.y;
-      items.push({ tag, head, priority });
+      items.push({ tag, foot, sprite, priority });
     }
     items.sort((a, b) => b.priority - a.priority);
 
     const placed: Rect[] = [];
-    items.forEach(({ tag, head }, order) => {
+    items.forEach(({ tag, foot, sprite }, order) => {
       let best = 0;
       let bestCost = Infinity;
       SLOTS.forEach((slot, s) => {
-        const rect = tagRect(head, slot);
+        const rect = tagRect(foot, slot);
         let cost = slot.dist * COST_DISTANCE - (s === tag.slot ? BONUS_KEEP : 0);
         if (cost >= bestCost) return;
         for (const p of placed) cost += overlap(rect, p) * COST_TAG_OVERLAP;
-        for (const sp of sprites) cost += overlap(rect, sp) * COST_SPRITE_OVERLAP;
+        for (const sp of sprites) cost += overlap(rect, sp) * (sp === sprite ? COST_OWN_OVERLAP : COST_SPRITE_OVERLAP);
         cost += (area(rect) - overlap(rect, screen)) * COST_OFFSCREEN;
         if (cost < bestCost) {
           bestCost = cost;
@@ -166,19 +176,24 @@ export class UnitTags {
         }
       });
       tag.slot = best;
-      const rect = tagRect(head, SLOTS[best]);
+      const rect = tagRect(foot, SLOTS[best]);
       placed.push(rect);
       tag.el.style.transform = `translate(${rect.l}px, ${rect.t}px)`;
       // 優先度の高いもの（先に置いたもの）ほど手前
       tag.el.style.zIndex = String(items.length - order);
       tag.el.hidden = false;
 
-      // 引き出し線: ユニットの頭から札のいちばん近い点へ
-      const ex = Math.min(Math.max(head.x, rect.l + 4), rect.r - 4);
-      const ey = Math.min(Math.max(head.y, rect.t), rect.b);
-      setAttrs(tag.line, { x1: head.x, y1: head.y, x2: ex, y2: ey });
-      setAttrs(tag.dot, { cx: head.x, cy: head.y });
-      tag.line.style.display = tag.dot.style.display = '';
+      // 足元から離れたときだけ、ユニットの中心から札のいちばん近い点へ引き出し線を引く
+      const near = nearestOnRect(rect, foot);
+      if (Math.hypot(near.x - foot.x, near.y - foot.y) > LINE_MIN_GAP) {
+        const center = { x: (sprite.l + sprite.r) / 2, y: (sprite.t + sprite.b) / 2 };
+        const end = nearestOnRect(rect, center);
+        setAttrs(tag.line, { x1: center.x, y1: center.y, x2: end.x, y2: end.y });
+        setAttrs(tag.dot, { cx: center.x, cy: center.y });
+        tag.line.style.display = tag.dot.style.display = '';
+      } else {
+        tag.line.style.display = tag.dot.style.display = 'none';
+      }
     });
   }
 
@@ -256,10 +271,15 @@ export class UnitTags {
 }
 
 /** 候補の位置に置いたときの札の範囲 */
-function tagRect(head: { x: number; y: number }, slot: { dx: number; dy: number }): Rect {
-  const cx = head.x + slot.dx;
-  const b = head.y - HEAD_GAP + slot.dy;
-  return { l: cx - TAG_W / 2, t: b - TAG_H, r: cx + TAG_W / 2, b };
+function tagRect(foot: Point, slot: { dx: number; dy: number }): Rect {
+  const cx = foot.x + slot.dx;
+  const t = foot.y + FOOT_OFFSET + slot.dy;
+  return { l: cx - TAG_W / 2, t, r: cx + TAG_W / 2, b: t + TAG_H };
+}
+
+/** 札の上でいちばん近い点（角の丸みの分だけ内側に寄せる） */
+function nearestOnRect(r: Rect, p: Point): Point {
+  return { x: Math.min(Math.max(p.x, r.l + 6), r.r - 6), y: Math.min(Math.max(p.y, r.t), r.b) };
 }
 
 function overlap(a: Rect, b: Rect): number {
