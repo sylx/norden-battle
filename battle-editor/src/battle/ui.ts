@@ -5,7 +5,7 @@ import { TEAM_DEFS, UNIT_DEFS, type UnitData } from '@norden/map-runtime/core/un
 import { listMapFiles, loadMapFile, type MapFileInfo } from '@norden/map-runtime/mapFiles';
 import type { ForestMode } from '@norden/map-runtime/render/foliage';
 import { DEFAULT_PIXEL_RATIO } from '@norden/map-runtime/render/scene';
-import type { BattleApp } from './app';
+import { BattleApp } from './app';
 import { isAttack } from './combat';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -153,14 +153,20 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
             `${unitLabel(u)}: 「${escapeHtml(a.name)}」を選択${a.cost !== undefined ? `（行動力 ${a.cost}）` : ''}— 未実装`,
     );
   app.onPlanChange = (plan) => {
-    const last = plan.legs.at(-1);
+    // 攻撃の前の移動 → 攻撃 → 攻撃の後の移動（騎兵）の順に並べる
+    const split = plan.attack?.afterLeg ?? plan.legs.length;
+    const moves = (legs: typeof plan.legs) => {
+      const last = legs.at(-1);
+      return last && `(${last.col}, ${last.row}) まで移動（${legs.length} 回）`;
+    };
     const parts = [
-      last && `(${last.col}, ${last.row}) まで移動（${plan.legs.length} 回・行動力 ${last.cost}）`,
-      plan.attack && `${unitLabel(plan.attack.target)} に${escapeHtml(plan.attack.action.name)}（行動力 ${plan.attack.action.cost ?? 0}）`,
+      moves(plan.legs.slice(0, split)),
+      plan.attack && `${unitLabel(plan.attack.target)} に${escapeHtml(plan.attack.action.name)}`,
+      moves(plan.legs.slice(split)),
     ].filter(Boolean);
     setStatus(
       parts.length > 0
-        ? `${unitLabel(plan.unit)}: ${parts.join(' → ')} を予約 / 決定: 実行 / 取消: すべて取り消す / Esc: 1 つ戻す`
+        ? `${unitLabel(plan.unit)}: ${parts.join(' → ')} を予約（行動力 ${BattleApp.planCost(plan)}）/ 決定: 実行 / 取消: すべて取り消す / Esc: 1 つ戻す`
         : `${unitLabel(plan.unit)}: 予約を取り消しました / ${idleStatus}`,
     );
   };

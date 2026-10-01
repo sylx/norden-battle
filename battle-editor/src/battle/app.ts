@@ -6,8 +6,8 @@
  * ユニットを選択 → 行動メニュー → 移動 → 移動先を選ぶ → 移動先でメニュー → … → 攻撃 → 相手を選ぶ → 決定。
  * - 移動は何回かに分けて予約でき、予約したルートは地面に矢印で出す。
  * - 攻撃は 1 ターンに 1 回で、予約した移動先から射程内の敵を選ぶ。相手へ赤い矢印を出す（遠隔攻撃は放物線）。
- *   攻撃を予約した後は移動できない。
- * - 決定でユニットがルートに沿って歩き、着いたら攻撃する（その間は操作を受け付けない）。
+ *   攻撃を予約した後は移動できない。騎兵だけは攻撃の後にも移動を予約できる（敵の ZOC の中からでも動き出せる）。
+ * - 決定でユニットがルートに沿って歩き、攻撃し、（騎兵なら）続きを歩く（その間は操作を受け付けない）。
  *   兵数が 0 になったユニットは消える。
  *
  * ターン終了で全ユニットの行動力が最大まで戻る。敵の ZOC の中のユニットは、そのターンにまだ移動していなければ動き出せる。
@@ -53,15 +53,17 @@ const HIT_SHAKE = 0.05;
 export interface PlannedAttack {
   action: MenuAction;
   target: UnitData;
+  /** 何回目の移動の後に攻撃するか（legs のうち、これより前が攻撃前の移動、以降が攻撃後の移動） */
+  afterLeg: number;
 }
 
 /** 選択中のユニットの予約 */
 export interface Plan {
   unit: UnitData;
   status: UnitStatus;
-  /** 予約した移動（各回の到着地。cost はそこまでの合計） */
+  /** 予約した移動（各回の到着地。cost はそこまでに予約した行動の合計） */
   legs: MoveStep[];
-  /** 予約した攻撃（移動の後に行う） */
+  /** 予約した攻撃 */
   attack: PlannedAttack | null;
 }
 
@@ -71,6 +73,8 @@ export interface ExecuteReport {
   from: Offset;
   /** 移動で使った行動力（移動しなければ 0） */
   moveCost: number;
+  /** 使った行動力の合計 */
+  cost: number;
   attack?: PlannedAttack & { result: AttackResult; targetDestroyed: boolean; unitDestroyed: boolean };
 }
 
@@ -79,11 +83,16 @@ type Targeting =
   | { kind: 'move'; cells: Map<number, MoveStep> }
   | { kind: 'attack'; action: MenuAction; cells: Map<number, UnitData> };
 
-/** 決定した予約の実行（アニメーション）。walk: ルートに沿って歩く → strike: 攻撃する */
+/** 実行の 1 段階。walk: ルートに沿って歩く、strike: 攻撃する */
+type Phase = { kind: 'walk'; legs: MoveStep[] } | { kind: 'strike' };
+
+/** 決定した予約の実行（アニメーション）。phases を順に進める */
 interface Execution {
   plan: Plan;
   report: ExecuteReport;
-  phase: 'walk' | 'strike';
+  /** これから行う段階 */
+  phases: Phase[];
+  phase: Phase;
   start: number;
   /** 秒 */
   duration: number;
@@ -164,7 +173,7 @@ export class BattleApp {
       if (e.key !== 'Escape' || this.exec) return;
       if (this.targeting) this.cancelTargeting();
       else if (this.menu.closeSub()) return;
-      else if (this.plan && (this.plan.attack || this.plan.legs.length > 0)) this.undo();
+      else if (this.plan && BattleApp.planned(this.plan)) this.undo();
       else this.setSelected(null);
     });
     this.ctx.renderer.setAnimationLoop(() => this.frame());
@@ -218,19 +227,38 @@ export class BattleApp {
     return attackResult(plan.unit, plan.status, target, ts, this.targeting.action.id, distance);
   }
 
+  static planned(plan: Plan): boolean {
+    return plan.legs.length > 0 || !!plan.attack;
+  }
+
+  /** 攻撃が予約の最後か（攻撃の後の移動が無いか） */
+  static attackIsLast(plan: Plan): boolean {
+    return !!plan.attack && plan.attack.afterLeg === plan.legs.length;
+  }
+
+  /** 予約した行動（移動・攻撃）で使う行動力。移動の cost はそれまでの予約を含む合計なので、最後の予約から求まる */
+  static planCost(plan: Plan): number {
+    return (plan.legs.at(-1)?.cost ?? 0) + (BattleApp.attackIsLast(plan) ? (plan.attack!.action.cost ?? 0) : 0);
+  }
+
   /** 予約した移動で使う行動力 */
   static moveCost(plan: Plan): number {
-    return plan.legs.at(-1)?.cost ?? 0;
+    return BattleApp.planCost(plan) - (plan.attack?.action.cost ?? 0);
   }
 
-  /** 予約した行動（移動・攻撃）で使う行動力 */
-  static planCost(plan: Plan): number {
-    return BattleApp.moveCost(plan) + (plan.attack?.action.cost ?? 0);
-  }
-
-  /** 続きの移動を探すときの条件。そのターンにまだ移動していなければ（予約も無ければ）敵の ZOC から動き出せる */
+  /**
+   * 続きの移動を探すときの条件。そのターンにまだ移動していなければ（予約も無ければ）敵の ZOC から動き出せる。
+   * 攻撃の直後（騎兵）も ZOC から動き出せる。
+   */
   static moveOptions(plan: Plan): MoveOptions {
-    return { spent: BattleApp.moveCost(plan), escapeZoc: !plan.status.moved && plan.legs.length === 0 };
+    const turnStart = !plan.status.moved && plan.legs.length === 0;
+    return { spent: BattleApp.planCost(plan), escapeZoc: turnStart || BattleApp.attackIsLast(plan) };
+  }
+
+  /** 攻撃する HEX（攻撃の前の移動の先） */
+  static attackPos(plan: Plan): Offset {
+    const i = plan.attack?.afterLeg ?? plan.legs.length;
+    return i > 0 ? plan.legs[i - 1] : plan.unit;
   }
 
   /** 予約した移動の先（予約が無ければユニットのいる HEX） */
@@ -307,7 +335,7 @@ export class BattleApp {
 
   /** 攻撃を予約する */
   private setAttack(action: MenuAction, target: UnitData): void {
-    this.plan!.attack = { action, target };
+    this.plan!.attack = { action, target, afterLeg: this.plan!.legs.length };
     this.endTargeting();
     this.planChanged();
   }
@@ -319,10 +347,10 @@ export class BattleApp {
     this.planChanged();
   }
 
-  /** 最後の予約（攻撃、なければ最後の移動）を取り消す */
+  /** 最後の予約を取り消す */
   private undo(): void {
     const plan = this.plan!;
-    if (plan.attack) plan.attack = null;
+    if (BattleApp.attackIsLast(plan)) plan.attack = null;
     else plan.legs.pop();
     this.planChanged();
   }
@@ -337,25 +365,54 @@ export class BattleApp {
 
   private showAttackArrow(plan: Plan | null): void {
     if (!plan?.attack) return this.view.setAttack(null, null);
-    this.view.setAttack(BattleApp.planPos(plan), plan.attack.target, COMBAT_DEFS[plan.unit.type].ranged);
+    this.view.setAttack(BattleApp.attackPos(plan), plan.attack.target, COMBAT_DEFS[plan.unit.type].ranged);
   }
 
-  /** 予約を実行する。移動があれば歩かせ、着いたら攻撃する */
+  /** 予約を実行する。攻撃の前の移動 → 攻撃 → 攻撃の後の移動（騎兵）の順に進める */
   private execute(): void {
-    const map = this.map;
     const plan = this.plan;
-    if (!map || !plan || (plan.legs.length === 0 && !plan.attack)) return;
-    const report: ExecuteReport = { unit: plan.unit, from: { col: plan.unit.col, row: plan.unit.row }, moveCost: 0 };
+    if (!this.map || !plan || !BattleApp.planned(plan)) return;
+    const report: ExecuteReport = {
+      unit: plan.unit,
+      from: { col: plan.unit.col, row: plan.unit.row },
+      moveCost: BattleApp.moveCost(plan),
+      cost: BattleApp.planCost(plan),
+    };
+    const split = plan.attack?.afterLeg ?? plan.legs.length;
+    const phases: Phase[] = [
+      { kind: 'walk', legs: plan.legs.slice(0, split) },
+      ...(plan.attack ? [{ kind: 'strike' as const }, { kind: 'walk' as const, legs: plan.legs.slice(split) }] : []),
+    ];
     this.menu.open(null);
-    if (plan.legs.length === 0) return this.startStrike(plan, report);
-    const line = new Polyline(smoothPath(movePath(plan.legs).map((o) => map.layout.offsetToWorld(o.col, o.row))));
-    const hexStep = map.layout.size * Math.sqrt(3);
-    const duration = Math.max(line.length / hexStep / WALK_HEX_PER_SEC, WALK_MIN_SEC);
-    this.exec = { plan, report, phase: 'walk', start: performance.now(), duration, line, facing: undefined, hit: false };
+    this.exec = { plan, report, phases, phase: phases[0], start: 0, duration: 0, line: null, facing: undefined, hit: false };
+    this.nextPhase();
   }
 
-  /** 移動のアニメーションを進める。着いたら移動を確定して攻撃へ */
-  private stepWalk(exec: Execution, now: number): void {
+  /** 実行の次の段階へ進む（空の移動は飛ばす）。段階が無くなったら終える */
+  private nextPhase(): void {
+    const exec = this.exec!;
+    const map = this.map!;
+    let phase = exec.phases.shift();
+    while (phase?.kind === 'walk' && phase.legs.length === 0) phase = exec.phases.shift();
+    if (!phase) {
+      this.exec = null;
+      return this.finish(exec.plan, exec.report);
+    }
+    exec.phase = phase;
+    exec.start = performance.now();
+    exec.hit = false;
+    if (phase.kind === 'strike') {
+      exec.duration = STRIKE_SEC;
+      return;
+    }
+    exec.line = new Polyline(smoothPath(movePath(phase.legs).map((o) => map.layout.offsetToWorld(o.col, o.row))));
+    const hexStep = map.layout.size * Math.sqrt(3);
+    exec.duration = Math.max(exec.line.length / hexStep / WALK_HEX_PER_SEC, WALK_MIN_SEC);
+    exec.facing = undefined;
+  }
+
+  /** 移動のアニメーションを進める。着いたら移動を確定して次の段階へ */
+  private stepWalk(exec: Execution, legs: MoveStep[], now: number): void {
     const map = this.map!;
     const s = map.layout.size;
     const line = exec.line!;
@@ -373,22 +430,12 @@ export class BattleApp {
     this.view.units.moveTo(exec.plan.unit, foot, exec.facing);
     if (t < 1) return;
 
-    // 移動を確定する（ユニットを最後の移動先へ動かして行動力を使う）
-    const { plan, report } = exec;
-    const to = BattleApp.planPos(plan);
-    if (map.moveUnit(plan.unit, to.col, to.row)) {
-      report.moveCost = BattleApp.moveCost(plan);
-      plan.status.ap -= report.moveCost;
-      plan.status.moved = true;
-    }
+    // 移動を確定する（ユニットをこの段階の最後の移動先へ動かす）
+    const { plan } = exec;
+    const to = legs[legs.length - 1];
+    if (map.moveUnit(plan.unit, to.col, to.row)) plan.status.moved = true;
     this.view.rebuildUnits();
-    this.exec = null;
-    if (plan.attack) this.startStrike(plan, report);
-    else this.finish(report);
-  }
-
-  private startStrike(plan: Plan, report: ExecuteReport): void {
-    this.exec = { plan, report, phase: 'strike', start: performance.now(), duration: STRIKE_SEC, line: null, facing: undefined, hit: false };
+    this.nextPhase();
   }
 
   /** 攻撃のアニメーションを進める。直接攻撃は相手へ踏み込み、半分の時点で当てて兵数を減らす */
@@ -420,8 +467,10 @@ export class BattleApp {
       this.view.units.moveTo(attack.target, new THREE.Vector3(b.x + shake, this.view.groundAt(b.x, b.z), b.z));
     }
     if (t < 1) return;
-    this.exec = null;
-    this.finish(exec.report);
+    // 攻撃で壊滅したら続きの移動はしない
+    if (exec.report.attack?.unitDestroyed) exec.phases = [];
+    this.view.rebuildUnits();
+    this.nextPhase();
   }
 
   /** 攻撃の結果を兵数に反映し、頭上に減った数を出す */
@@ -433,7 +482,6 @@ export class BattleApp {
     const result = attackResult(plan.unit, plan.status, attack.target, ts, attack.action.id, hexDistance(map, plan.unit, attack.target));
     ts.soldiers -= result.damage;
     plan.status.soldiers -= result.counter;
-    plan.status.ap -= attack.action.cost ?? 0;
     plan.status.attacked = true;
     report.attack = { ...attack, result, targetDestroyed: ts.soldiers <= 0, unitDestroyed: plan.status.soldiers <= 0 };
 
@@ -445,9 +493,10 @@ export class BattleApp {
     if (up && result.direct) this.popups.show(up, report.attack.unitDestroyed ? `-${result.counter} 壊滅` : `-${result.counter}`, 'counter');
   }
 
-  /** 実行を終える。兵数が 0 になったユニットを消し、生き残っていれば選び直す */
-  private finish(report: ExecuteReport): void {
+  /** 実行を終える。行動力を使い、兵数が 0 になったユニットを消し、生き残っていれば選び直す */
+  private finish(plan: Plan, report: ExecuteReport): void {
     const map = this.map!;
+    plan.status.ap -= report.cost;
     const removed = [report.attack?.targetDestroyed && report.attack.target, report.attack?.unitDestroyed && report.unit];
     for (const u of removed) {
       if (!u) continue;
@@ -473,8 +522,9 @@ export class BattleApp {
       ap: plan.status.ap - BattleApp.planCost(plan),
       canMove: moveRange(map, plan.unit, pos, plan.status.ap, options).size > 0,
       zocLocked: inEnemyZoc(map, plan.unit, pos) && !options.escapeZoc,
-      planned: plan.legs.length > 0 || !!plan.attack,
+      planned: BattleApp.planned(plan),
       attackPlanned: !!plan.attack,
+      canMoveAfterAttack: !!COMBAT_DEFS[plan.unit.type].moveAfterAttack,
       hasTargets: attackTargets(map, plan.unit, pos).length > 0,
     });
   }
@@ -533,8 +583,8 @@ export class BattleApp {
       this.setHover(this.pick());
     }
     const exec = this.exec;
-    if (exec?.phase === 'walk') this.stepWalk(exec, performance.now());
-    else if (exec?.phase === 'strike') this.stepStrike(exec, performance.now());
+    if (exec?.phase.kind === 'walk') this.stepWalk(exec, exec.phase.legs, performance.now());
+    else if (exec?.phase.kind === 'strike') this.stepStrike(exec, performance.now());
     this.view.render();
     const placements = this.view.units.placements();
     this.tags.update(placements, this.ctx.camera, this.view.display.units, this.hovered, this.selected);

@@ -4,6 +4,7 @@
  * - 兵種ごとの射程（minRange〜maxRange、HEX の距離）。弓兵は 1〜2、ほかは 1。
  *   隣接したユニットを攻撃できない兵種（砲兵など）は minRange = 2 にする。
  * - ranged の兵種（弓兵）の攻撃は放物線の矢印で出す。
+ * - moveAfterAttack の兵種（騎兵）だけ、攻撃の後に移動できる（一撃離脱）。攻撃した HEX が敵の ZOC の中でも動き出せる。
  * - 隣接（距離 1）の相手への攻撃は直接攻撃で、相手も反撃して両軍の兵数が減る。距離 2 以上は一方的に減らす。
  * - 士気の減少はまだ無い。
  */
@@ -18,6 +19,8 @@ export interface CombatDef {
   maxRange: number;
   /** 遠隔攻撃の兵種（矢印を放物線で出す） */
   ranged: boolean;
+  /** 攻撃の後に移動できる */
+  moveAfterAttack?: boolean;
   /** 攻撃力・防御力（倍率） */
   attack: number;
   defense: number;
@@ -26,7 +29,7 @@ export interface CombatDef {
 export const COMBAT_DEFS: Record<UnitType, CombatDef> = {
   infantry: { minRange: 1, maxRange: 1, ranged: false, attack: 1.0, defense: 1.0 },
   archer: { minRange: 1, maxRange: 2, ranged: true, attack: 0.9, defense: 0.7 },
-  cavalry: { minRange: 1, maxRange: 1, ranged: false, attack: 1.2, defense: 0.9 },
+  cavalry: { minRange: 1, maxRange: 1, ranged: false, moveAfterAttack: true, attack: 1.2, defense: 0.9 },
   mage: { minRange: 1, maxRange: 1, ranged: false, attack: 1.3, defense: 0.6 },
 };
 
