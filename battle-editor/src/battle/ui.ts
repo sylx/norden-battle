@@ -21,7 +21,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     console.error(e);
   };
 
-  const log = new BattleLog(document.body);
+  // 行動メニューより奥に置くため、メニューと同じ #viewport の中に置く
+  const log = new BattleLog($('viewport'));
 
   // --- マップ（map-editor が assets/maps/ に保存したもの） ---
   const mapSel = $<HTMLSelectElement>('map-select');

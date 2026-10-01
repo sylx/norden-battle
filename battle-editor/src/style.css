@@ -446,8 +446,8 @@ body.dragging #drop-hint {
   position: absolute;
   left: 0;
   top: 0;
-  /* 情報札（.unit-tags）より手前 */
-  z-index: 2;
+  /* 情報札（.unit-tags）・戦闘ログより手前 */
+  z-index: 3;
   user-select: none;
   will-change: transform;
 }
@@ -622,7 +622,7 @@ body.dragging #drop-hint {
 .popups {
   position: absolute;
   inset: 0;
-  z-index: 3;
+  z-index: 4;
   overflow: hidden;
   pointer-events: none;
 }
@@ -657,7 +657,11 @@ body.dragging #drop-hint {
   right: 12px;
   /* ステータス行（bottom 10px・高さ 26px）とターン表示の上 */
   bottom: 104px;
-  z-index: 20;
+  /*
+   * #viewport の中に置き、情報札（1）より手前・行動メニュー（3）より奥にする。
+   * 左のパネルなど #viewport の後ろに並ぶ画面の部品よりも奥になる
+   */
+  z-index: 2;
   width: min(320px, calc(100vw - 24px));
   padding: 20px var(--frame-pad-x) var(--frame-pad-y);
   background: linear-gradient(rgba(48, 36, 24, 0.95), rgba(28, 20, 14, 0.95));
