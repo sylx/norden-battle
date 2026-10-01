@@ -32,12 +32,19 @@ export interface UnitStatus {
 }
 
 export const MAX_MORALE = 100;
-const MAX_AP = 5;
 
 /** 指揮官の顔画像。1 枚に FACE_GRID × FACE_GRID の顔を並べたもの */
 export const FACE_SHEET_URL = faceSheetUrl;
 export const FACE_GRID = 3;
 export const FACE_COUNT = FACE_GRID * FACE_GRID;
+
+/** 兵種ごとの最大行動力（仮） */
+const MAX_AP: Record<UnitType, number> = {
+  infantry: 4,
+  archer: 4,
+  cavalry: 6,
+  mage: 4,
+};
 
 /** 兵種ごとの最大兵士数（仮） */
 const MAX_SOLDIERS: Record<UnitType, number> = {
@@ -93,8 +100,8 @@ export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStat
       maxSoldiers: max,
       soldiers: Math.round((max * (0.3 + 0.7 * hash(u.col, u.row, 1))) / 10) * 10,
       morale: Math.round(20 + 80 * hash(u.col, u.row, 2)),
-      ap: MAX_AP,
-      maxAp: MAX_AP,
+      ap: MAX_AP[u.type],
+      maxAp: MAX_AP[u.type],
       face,
       skills: FACE_SKILLS[face] ?? [],
       leadership: FACE_ABILITIES[face]?.[0] ?? 50,
