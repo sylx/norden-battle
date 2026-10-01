@@ -5,7 +5,7 @@
  * 行動は予約してから「決定」でまとめて実行する:
  * ユニットを選択 → 行動メニュー → 移動 → 移動先を選ぶ → 移動先でメニュー → … → 攻撃 → 相手を選ぶ → 決定。
  * - 移動は何回かに分けて予約でき、予約したルートは地面に矢印で出す。
- * - 攻撃は 1 ターンに 1 回で、予約した移動先から射程内の敵を選ぶ。相手へ赤い矢印を出す（遠隔攻撃は放物線）。
+ * - 攻撃は 1 ターンに 1 回で、予約した移動先から射程内の敵を選ぶ（射程内の HEX を薄い赤、相手のいる HEX を濃い赤で塗る）。相手へ赤い矢印を出す（遠隔攻撃は放物線）。
  *   一斉攻撃は、ほかの味方とも隣接している敵（金の斜線）しか選べない。ほかの敵を選ぶと「包囲していません」でやり直し。
  *   相手に隣接している味方からも細い赤い矢印を出し、実行するとその味方も一緒に踏み込んで攻撃する。
  *   攻撃を予約した後は移動できない。騎兵だけは攻撃の後にも移動を予約できる（一撃離脱。攻撃の直後は敵の ZOC の中からでも
@@ -36,6 +36,7 @@ import type { MenuAction } from './actions';
 import { ActionMenu } from './actionMenu';
 import {
   attackForecast,
+  attackRange,
   attackResult,
   attackTargets,
   chargeLanding,
@@ -401,10 +402,14 @@ export class BattleApp {
     const plan = this.plan;
     if (!map || !plan) return;
     const cols = map.layout.cols;
-    const cells = new Map(attackTargets(map, plan.unit, BattleApp.planPos(plan)).map((u) => [u.row * cols + u.col, u]));
+    const pos = BattleApp.planPos(plan);
+    const cells = new Map(attackTargets(map, plan.unit, pos).map((u) => [u.row * cols + u.col, u]));
     this.targeting = { kind: 'attack', action, cells };
-    // 一斉攻撃は、選べる（ほかの味方と取り囲んだ）相手に印を付ける
-    const range = [...cells.values()].map((u) => ({ col: u.col, row: u.row, mark: action.id === 'volley' && !this.rejectReason(action, u) }));
+    // 射程内の HEX を薄く塗り、相手のいる HEX は濃く塗る。一斉攻撃は、選べる（ほかの味方と取り囲んだ）相手に印を付ける
+    const range = attackRange(map, plan.unit, pos).map((o) => {
+      const u = cells.get(o.row * cols + o.col);
+      return u ? { ...o, mark: action.id === 'volley' && !this.rejectReason(action, u) } : { ...o, weak: true };
+    });
     this.view.setRange(range, ATTACK_RANGE_COLOR, VOLLEY_MARK_COLOR);
     this.menu.suspended = true;
     this.setHover(this.hovered);

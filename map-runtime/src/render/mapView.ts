@@ -9,7 +9,7 @@ import type { HexMap } from '../core/mapData';
 import { buildRoadPaths, RoadIndex } from '../core/roads';
 import { DEFAULT_TERRAIN_PARAMS, generateTerrain, Heightmap, placeVegetation, type TerrainData, type TerrainParams } from '../core/terrainGen';
 import { Forest, windUniforms, type ForestMode } from './foliage';
-import { HexOverlay } from './hexOverlay';
+import { HexOverlay, type RangeCell } from './hexOverlay';
 import { PathArrow } from './pathArrow';
 import { buildRoadMesh } from './roads';
 import type { SceneContext } from './scene';
@@ -229,8 +229,8 @@ export class MapView {
     this.units.setFocus(o);
   }
 
-  /** 範囲（移動範囲など）の HEX を塗り、外周を縁取る。mark の付いた HEX には印を付ける。null で消す */
-  setRange(cells: Iterable<Offset & { mark?: boolean }> | null, color?: THREE.ColorRepresentation, markColor?: THREE.ColorRepresentation): void {
+  /** 範囲（移動範囲など）の HEX を塗り、外周を縁取る。mark の付いた HEX には印を付け、weak の HEX は薄く塗る。null で消す */
+  setRange(cells: Iterable<RangeCell> | null, color?: THREE.ColorRepresentation, markColor?: THREE.ColorRepresentation): void {
     this.overlay.setRange(cells, color, markColor);
   }
 

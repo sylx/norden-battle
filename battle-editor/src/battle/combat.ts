@@ -73,6 +73,19 @@ export function attackTargets(map: HexMap, unit: UnitData, pos: Offset): UnitDat
   });
 }
 
+/** unit が pos から攻撃できる範囲の HEX（相手がいるかどうかに関わらない） */
+export function attackRange(map: HexMap, unit: UnitData, pos: Offset): Offset[] {
+  const { minRange, maxRange } = COMBAT_DEFS[unit.type];
+  const out: Offset[] = [];
+  for (let row = 0; row < map.layout.rows; row++) {
+    for (let col = 0; col < map.layout.cols; col++) {
+      const d = hexDistance(map, pos, { col, row });
+      if (d >= minRange && d <= maxRange) out.push({ col, row });
+    }
+  }
+  return out;
+}
+
 /** pos から隣の target へ突撃したときに飛び出る HEX（飛び出せなければ null） */
 export function chargeLanding(map: HexMap, pos: Offset, target: Offset): Offset | null {
   const dir = dirBetween(map, pos, target);

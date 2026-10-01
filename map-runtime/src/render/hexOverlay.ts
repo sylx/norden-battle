@@ -6,9 +6,13 @@
  * HEX ごとの塗り（地形の確認用など）は cols×rows の DataTexture で渡す。
  * 移動範囲などの「範囲」は別の cols×rows のテクスチャで渡し、塗りと範囲の外周の縁取りで見せる。
  * 範囲の中の一部の HEX には印（別の色の斜線。移動範囲では「敵の ZOC で止まる」）を付けられる。
+ * 範囲の中で薄く塗るだけの HEX（weak。攻撃範囲のうち相手のいない HEX など）も混ぜられる。
  */
 import * as THREE from 'three';
 import type { HexLayout, Offset } from '../core/hex';
+
+/** 範囲の HEX。mark は印（斜線）を付け、weak は薄く塗る */
+export type RangeCell = Offset & { mark?: boolean; weak?: boolean };
 
 export interface HexOverlayUniforms {
   [name: string]: THREE.IUniform;
@@ -24,7 +28,7 @@ export interface HexOverlayUniforms {
   uFocus: THREE.IUniform<THREE.Vector2>;
   /** 強調の明滅に使う時間（秒） */
   uTime: THREE.IUniform<number>;
-  /** 範囲（移動範囲など）。r = 1 は範囲内、r = 0.5 は範囲内で印付き、0 は範囲外 */
+  /** 範囲（移動範囲など）。r = 1 は範囲内、r = 0.5 は範囲内で印付き、r = 0.25 は範囲内で薄く塗る、0 は範囲外 */
   uRangeTex: THREE.IUniform<THREE.DataTexture>;
   uRangeColor: THREE.IUniform<THREE.Color>;
   uRangeMarkColor: THREE.IUniform<THREE.Color>;
@@ -113,11 +117,16 @@ vec2 hexAcross(vec2 p, vec2 lp) {
 
 bool hexInRange(vec2 off) {
   if (off.x < 0.0 || off.y < 0.0 || off.x >= uGridDim.x || off.y >= uGridDim.y) return false;
-  return texelFetch(uRangeTex, ivec2(off), 0).r > 0.25;
+  return texelFetch(uRangeTex, ivec2(off), 0).r > 0.125;
 }
 
 bool hexRangeMarked(vec2 off) {
-  return texelFetch(uRangeTex, ivec2(off), 0).r < 0.75;
+  float r = texelFetch(uRangeTex, ivec2(off), 0).r;
+  return r > 0.375 && r < 0.75;
+}
+
+bool hexRangeWeak(vec2 off) {
+  return texelFetch(uRangeTex, ivec2(off), 0).r < 0.375;
 }
 
 float hexHash(vec2 p) {
@@ -168,8 +177,9 @@ if (hexInMap) {
 
   bool hexIsRange = uRangeOn == 1 && hexInRange(hexI.xy);
   if (hexIsRange) {
-    // 範囲内はゆっくり明滅する塗り。印付きの HEX は別の色の斜線を重ねる
-    diffuseColor.rgb = mix(diffuseColor.rgb, uRangeColor, 0.3 + 0.06 * sin(uTime * 2.5));
+    // 範囲内はゆっくり明滅する塗り（weak は薄く）。印付きの HEX は別の色の斜線を重ねる
+    float hexFill = hexRangeWeak(hexI.xy) ? 0.12 : 0.3 + 0.06 * sin(uTime * 2.5);
+    diffuseColor.rgb = mix(diffuseColor.rgb, uRangeColor, hexFill);
     if (hexRangeMarked(hexI.xy)) {
       float stripe = step(0.5, fract((vHexWorld.x - vHexWorld.z) / (uHexSize * 0.22)));
       diffuseColor.rgb = mix(diffuseColor.rgb, uRangeMarkColor, 0.25 + 0.3 * stripe);
@@ -286,14 +296,14 @@ export class HexOverlay {
     u.uRangeOn.value = 0;
   }
 
-  /** 範囲（移動範囲など）を出す。mark の付いた HEX には印を付ける。cells = null で消す */
-  setRange(cells: Iterable<Offset & { mark?: boolean }> | null, color?: THREE.ColorRepresentation, markColor?: THREE.ColorRepresentation): void {
+  /** 範囲（移動範囲など）を出す。mark の付いた HEX には印を付け、weak の HEX は薄く塗る。cells = null で消す */
+  setRange(cells: Iterable<RangeCell> | null, color?: THREE.ColorRepresentation, markColor?: THREE.ColorRepresentation): void {
     const u = this.uniforms;
     const tex = u.uRangeTex.value;
     const { width } = tex.image as { width: number };
     const data = tex.image.data as Uint8Array;
     data.fill(0);
-    for (const o of cells ?? []) data[o.row * width + o.col] = o.mark ? 128 : 255;
+    for (const o of cells ?? []) data[o.row * width + o.col] = o.mark ? 128 : o.weak ? 64 : 255;
     tex.needsUpdate = true;
     u.uRangeOn.value = cells ? 1 : 0;
     if (color !== undefined) u.uRangeColor.value.set(color);
