@@ -9,7 +9,7 @@
  *   ランダム = 1 + roll × RANDOM_SPREAD（roll は −1〜1）
  *
  *   迎撃     = 相手が迎撃の構えの近接ユニットなら INTERCEPT_GUARD
- *   一斉攻撃 = 一斉攻撃なら 1 + 加わる味方の数 × VOLLEY_BONUS
+ *   一斉攻撃 = 一斉攻撃なら VOLLEY_RATE[加わる味方の数]（多いほど 1 隊あたりの増え方も大きくなる）
  *
  *   ダメージ = (兵の力 × 統率 + 武力) × 士気 × 包囲 × 迎撃 × 一斉攻撃 × ランダム（0〜相手の兵数）
  *
@@ -62,8 +62,11 @@ const COUNTER_RATE = 0.1;
 /** 迎撃の構えの近接ユニットが受けるダメージと、返す反撃の倍率 */
 const INTERCEPT_GUARD = 0.5;
 const INTERCEPT_COUNTER = 1.5;
-/** 一斉攻撃に加わる味方 1 隊あたりのダメージの増え方 */
-const VOLLEY_BONUS = 0.3;
+/**
+ * 一斉攻撃のダメージの倍率。添え字は加わる味方の数（相手の周りの 6 HEX のうち自分の分を除いて最大 5）。
+ * 加わる隊が多いほど 1 隊あたりの増え方も大きくする
+ */
+const VOLLEY_RATE = [1, 1.3, 1.7, 2.2, 2.8, 3.5];
 
 /** ダメージの計算に使う、ユニットの状態（strength は武力。魔術師は知力を入れる） */
 export interface Fighter extends Pick<UnitStatus, 'soldiers' | 'morale' | 'leadership' | 'strength'> {
@@ -76,6 +79,11 @@ export interface Fighter extends Pick<UnitStatus, 'soldiers' | 'morale' | 'leade
   supporters: number;
   /** 攻撃が魔法になる兵種か（魔術師。反撃を除く） */
   magic: boolean;
+}
+
+/** 味方が supporters 隊加わったときの一斉攻撃のダメージの倍率 */
+export function volleyRate(supporters: number): number {
+  return VOLLEY_RATE[Math.min(supporters, VOLLEY_RATE.length - 1)];
 }
 
 /** −1〜1 の乱数（ランダム係数の roll） */
@@ -96,7 +104,7 @@ export function calcDamage(att: Fighter, def: Fighter, action: AttackKind, roll:
   const morale = 1 + (att.morale - 50) * MORALE_RATE;
   const encircled = def.encircled ? ENCIRCLED_RATE : 1;
   const guard = def.guarding && !magic ? INTERCEPT_GUARD : 1;
-  const volley = action === 'volley' ? 1 + att.supporters * VOLLEY_BONUS : 1;
+  const volley = action === 'volley' ? volleyRate(att.supporters) : 1;
   const random = 1 + roll * RANDOM_SPREAD;
   const raw = Math.max(0, troops * leadership + strength) * morale * encircled * guard * volley * random;
   return Math.min(def.soldiers, Math.round(raw));

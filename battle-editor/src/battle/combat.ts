@@ -14,7 +14,7 @@
  * - 迎撃（app.ts）: 近接ユニットは構えている間、受けるダメージが減って反撃が増える（damage.ts）。
  *   間接（ranged）ユニットは構えている間、射程に入った敵へ 1 回だけ自動で攻撃する（interceptFire。反撃は受けない）。
  * - 包囲（movement.ts の encircled）されている相手へのダメージは増える。
- * - 一斉攻撃は直接攻撃の兵種だけで、相手が攻撃する自分のほかの味方とも隣接している（取り囲んでいる）ときにできる。
+ * - 一斉攻撃は直接攻撃の兵種だけで、相手が攻撃する自分のほかの味方（直接攻撃の兵種）とも隣接している（取り囲んでいる）ときにできる。
  *   隣接している味方（volleySupporters）も一緒に攻撃する演出が入り、その数だけダメージが増える（damage.ts）。
  * - 攻撃の後、与えたダメージと反撃で受けたダメージの比で両軍の士気が増減する。
  */
@@ -162,9 +162,14 @@ function fighter({ unit, status }: Combatant, encircled: boolean): Fighter {
   return { type: unit.type, soldiers, morale, leadership, strength: mightOf(unit, status), encircled, guarding, supporters: 0, magic };
 }
 
-/** target を一斉攻撃するときに加わる味方（target に隣接している、attacker 以外の attacker の味方） */
+/**
+ * target を一斉攻撃するときに加わる味方（target に隣接している、attacker 以外の attacker の味方）。
+ * 一斉攻撃ができる兵種（直接攻撃の兵種。間接の弓兵・魔術師は除く）だけが加わる
+ */
 export function volleySupporters(map: HexMap, attacker: UnitData, target: Offset): UnitData[] {
-  return map.allUnits().filter((u) => u.team === attacker.team && u !== attacker && hexDistance(map, u, target) === 1);
+  return map
+    .allUnits()
+    .filter((u) => u.team === attacker.team && u !== attacker && !COMBAT_DEFS[u.type].ranged && hexDistance(map, u, target) === 1);
 }
 
 /** who が who.pos で包囲されているか（other は other.pos にいるとして判定する） */

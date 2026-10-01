@@ -6,6 +6,7 @@ import { DEFAULT_PIXEL_RATIO } from '@norden/map-runtime/render/scene';
 import { BattleApp } from './app';
 import { BattleLog } from './battleLog';
 import { isAttack } from './combat';
+import { volleyRate } from './damage';
 import { TerrainInfo, type InfoRow } from './terrainInfo';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -130,7 +131,7 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
       const { direct, encircled, supporters, morale } = f.expected;
       extra.push([
         '攻撃',
-        (supporters > 0 ? `一斉攻撃: 味方 ${supporters} 隊が加わる<br>` : '') +
+        (supporters > 0 ? `一斉攻撃: 味方 ${supporters} 隊が加わる（×${volleyRate(supporters)}）<br>` : '') +
           `敵 ${range(f.damage)}${encircled ? '（包囲 ×1.2）' : ''}<br>` +
           (direct ? `反撃 ${range(f.counter)}` : '反撃なし') +
           `<br>士気 ${signed(morale.attacker)} / 敵の士気 ${signed(morale.defender)}（目安）`,
