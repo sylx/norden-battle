@@ -1046,6 +1046,10 @@ export class BattleApp {
     if (exec?.phase.kind === 'walk') this.stepWalk(exec, exec.phase, performance.now());
     else if (exec?.phase.kind === 'strike') this.stepStrike(exec, performance.now());
     else if (exec?.phase.kind === 'intercept') this.stepIntercept(exec, exec.phase, performance.now());
+    // 攻撃の演出の間は、移動のルートと攻撃の矢印を隠す（演出が終われば、残りのルートをまた出す）
+    const v = this.view;
+    const arrowsShown = !this.exec?.fx;
+    for (const arrow of [v.pathArrow, v.afterPathArrow, v.attackArrow, v.supportArrow]) arrow.group.visible = arrowsShown;
     this.cameraFocus.update(performance.now());
     this.slashFx.update(this.ctx.camera);
     this.lanceFx.update(this.ctx.camera);
