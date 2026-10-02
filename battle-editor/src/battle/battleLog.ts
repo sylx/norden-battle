@@ -28,6 +28,10 @@ export interface AttackLogEntry {
   direct: boolean;
   /** 相手が包囲されていたか */
   encircled: boolean;
+  /** 相手が森にいたか */
+  forest: boolean;
+  /** 高所から攻撃してダメージが増えた標高レベルの差（増えなければ 0） */
+  highGround: number;
   morale: MoraleChange;
   /** 攻撃の後の兵数 */
   attackerLeft: number;
@@ -99,6 +103,8 @@ export class BattleLog {
     const who = el('div', 'log-who');
     who.append(unit(e.attacker), el('span', 'log-verb', 'が'), unit(e.target), el('span', 'log-verb', 'に'));
     if (e.encircled) who.append(el('span', 'log-encircled', '包囲'));
+    if (e.forest) who.append(el('span', 'log-terrain', '森'));
+    if (e.highGround > 0) who.append(el('span', 'log-terrain', `高所+${e.highGround}`));
     who.append(el('span', 'log-action', e.actionName));
 
     const result = el('div', 'log-result');

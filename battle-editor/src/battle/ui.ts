@@ -6,7 +6,7 @@ import { DEFAULT_PIXEL_RATIO } from '@norden/map-runtime/render/scene';
 import { BattleApp } from './app';
 import { BattleLog } from './battleLog';
 import { isAttack } from './combat';
-import { volleyRate } from './damage';
+import { FOREST_GUARD, highGroundRate, volleyRate } from './damage';
 import { TerrainInfo, type InfoRow } from './terrainInfo';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -128,11 +128,12 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
     const f = app.attackPreviewAt(c);
     if (f && 'rejected' in f) extra.push(['攻撃', `<span class="err">${escapeHtml(f.rejected)}</span>`]);
     else if (f) {
-      const { direct, encircled, supporters, morale } = f.expected;
+      const { direct, encircled, forest, highGround, supporters, morale } = f.expected;
       extra.push([
         '攻撃',
         (supporters > 0 ? `一斉攻撃: 味方 ${supporters} 隊が加わる（×${volleyRate(supporters)}）<br>` : '') +
-          `敵 ${range(f.damage)}${encircled ? '（包囲 ×1.2）' : ''}<br>` +
+          `敵 ${range(f.damage)}${encircled ? '（包囲 ×1.2）' : ''}${forest ? `（森 ×${FOREST_GUARD}）` : ''}` +
+          `${highGround > 0 ? `（高所 +${highGround} ×${highGroundRate(highGround)}）` : ''}<br>` +
           (direct ? `反撃 ${range(f.counter)}` : '反撃なし') +
           `<br>士気 ${signed(morale.attacker)} / 敵の士気 ${signed(morale.defender)}（目安）`,
       ]);
@@ -199,6 +200,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
           counter: 0,
           direct: false,
           encircled: result.encircled,
+          forest: result.forest,
+          highGround: result.highGround,
           morale: result.morale,
           attackerLeft: app.statuses.get(i.unit)?.soldiers ?? 0,
           targetLeft: i.targetLeft,
@@ -221,6 +224,8 @@ export function setupUI(app: BattleApp): { loadInitial(): Promise<void> } {
         counter: result.counter,
         direct: result.direct,
         encircled: result.encircled,
+        forest: result.forest,
+        highGround: result.highGround,
         morale: result.morale,
         attackerLeft: attack.unitLeft,
         targetLeft: attack.targetLeft,

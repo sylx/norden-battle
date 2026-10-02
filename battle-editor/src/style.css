@@ -1158,6 +1158,17 @@ body.dragging #drop-hint {
   color: #ff9a7a;
 }
 
+/* 森・高所など、ダメージが増減した地形 */
+.battle-log .log-terrain {
+  padding: 0 4px;
+  border: 1px solid rgba(184, 224, 138, 0.6);
+  border-radius: 2px;
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.1em;
+  color: #b8e08a;
+}
+
 .battle-log .log-destroyed {
   padding: 0 4px;
   border-radius: 2px;

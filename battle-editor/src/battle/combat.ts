@@ -15,6 +15,7 @@
  *   間接（ranged）ユニットは構えている間、射程に入った敵へ 1 回だけ自動で攻撃する（interceptFire。反撃は受けない）。
  *   弓兵（interceptHalts）に撃たれた敵は、そこで移動を止められ、残りの予約も行動力も失う（騎兵（unhaltable）は除く）。
  * - 包囲（movement.ts の encircled）されている相手へのダメージは増える。
+ * - 森にいる相手へのダメージは減り、弓兵が相手より高い HEX から攻撃するとダメージが増える（damage.ts）。
  * - 一斉攻撃は直接攻撃の兵種だけで、相手が攻撃する自分のほかの味方（直接攻撃の兵種）とも隣接している（取り囲んでいる）ときにできる。
  *   隣接している味方（volleySupporters）も一緒に攻撃する演出が入り、その数だけダメージが増える（damage.ts）。
  * - 攻撃の後、与えたダメージと反撃で受けたダメージの比で両軍の士気が増減する。
@@ -24,7 +25,7 @@ import type { HexMap } from '@norden/map-runtime/core/mapData';
 import { dirBetween } from '@norden/map-runtime/core/roads';
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { ActionId } from './actions';
-import { ATTACK_POWER, calcCounter, calcDamage, type AttackKind, type Fighter } from './damage';
+import { ATTACK_POWER, calcCounter, calcDamage, highGroundLevels, type AttackKind, type Fighter } from './damage';
 import { moraleChange, type MoraleChange } from './morale';
 import { encircled, enterCost } from './movement';
 import type { UnitStatus } from './unitStatus';
@@ -119,6 +120,10 @@ export interface AttackResult {
   direct: boolean;
   /** 相手が包囲されているか（ダメージが増える） */
   encircled: boolean;
+  /** 相手が森にいるか（ダメージが減る） */
+  forest: boolean;
+  /** 高所から攻撃してダメージが増えた標高レベルの差（増えなければ 0） */
+  highGround: number;
   /** 一斉攻撃に加わった味方の数（一斉攻撃でなければ 0） */
   supporters: number;
   /** 士気の増減 */
@@ -133,16 +138,25 @@ export interface AttackRolls {
 
 /**
  * attacker が defender を kind で攻撃したときの結果。
- * 包囲は両者をそれぞれの pos に置いて判定する（予約中・移動の途中はまだそこにいないため）。
+ * 包囲・地形は両者をそれぞれの pos に置いて判定する（予約中・移動の途中はまだそこにいないため）。
  */
 export function attackResult(map: HexMap, attacker: Combatant, defender: Combatant, kind: AttackKind, rolls: AttackRolls): AttackResult {
   const supporters = kind === 'volley' ? volleySupporters(map, attacker.unit, defender.pos).length : 0;
-  const att = { ...fighter(attacker, encircledAt(map, attacker, defender)), supporters };
-  const def = fighter(defender, encircledAt(map, defender, attacker));
+  const att = { ...fighter(map, attacker, encircledAt(map, attacker, defender)), supporters };
+  const def = fighter(map, defender, encircledAt(map, defender, attacker));
   const direct = !INDIRECT_KINDS.includes(kind) && hexDistance(map, attacker.pos, defender.pos) <= 1;
   const damage = calcDamage(att, def, kind, rolls.damage);
   const counter = direct ? calcCounter(att, { ...def, soldiers: def.soldiers - damage }, rolls.counter) : 0;
-  return { damage, counter, direct, encircled: def.encircled, supporters, morale: moraleChange(damage, counter, att.strength, def.strength) };
+  return {
+    damage,
+    counter,
+    direct,
+    encircled: def.encircled,
+    forest: def.inForest,
+    highGround: highGroundLevels(att, def),
+    supporters,
+    morale: moraleChange(damage, counter, att.strength, def.strength),
+  };
 }
 
 /** 攻撃の結果の予測（ランダム係数が真ん中のときの結果と、ダメージ・反撃の幅） */
@@ -160,11 +174,24 @@ export function attackForecast(map: HexMap, attacker: Combatant, defender: Comba
   return { expected: at(0, 0), damage: [low.damage, high.damage], counter: [high.counter, low.counter] };
 }
 
-function fighter({ unit, status }: Combatant, encircled: boolean): Fighter {
+function fighter(map: HexMap, { unit, status, pos }: Combatant, encircled: boolean): Fighter {
   const { soldiers, morale, leadership } = status;
   const guarding = status.intercepting && !COMBAT_DEFS[unit.type].ranged;
   const magic = !!COMBAT_DEFS[unit.type].magic;
-  return { type: unit.type, soldiers, morale, leadership, strength: mightOf(unit, status), encircled, guarding, supporters: 0, magic };
+  const cell = map.get(pos.col, pos.row);
+  return {
+    type: unit.type,
+    soldiers,
+    morale,
+    leadership,
+    strength: mightOf(unit, status),
+    encircled,
+    guarding,
+    supporters: 0,
+    magic,
+    inForest: cell?.terrain === 'forest',
+    elevation: cell?.elevation ?? 0,
+  };
 }
 
 /**
