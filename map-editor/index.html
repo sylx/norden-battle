@@ -43,6 +43,20 @@
       </section>
 
       <section>
+        <h2>街道マップ</h2>
+        <div class="grid2">
+          <label>都市 A <input id="link-a" type="text" placeholder="例: P004" /></label>
+          <label>都市 B <input id="link-b" type="text" placeholder="例: P012" /></label>
+        </div>
+        <div id="area-list" class="area-list"></div>
+        <div class="tools">
+          <button data-tool="area">範囲を配置</button>
+        </div>
+        <label class="check"><input id="chk-area-preview" type="checkbox" /> 範囲だけ表示</label>
+        <p class="hint">戦略マップの街道でつながる 2 都市（A–B）を 1 枚に描いたマップで、侵攻方向ごとの戦闘の範囲を決めます。範囲は防衛する都市の ID で引きます（A→B の侵攻なら B の範囲）。都市を選んで「範囲を配置」でマップをクリック・ドラッグすると、その HEX を中心に範囲が動きます（列・行は偶数に寄せます）。「範囲だけ表示」はゲームの戦闘で使う切り出し後の見た目です（その間は編集できません）。ファイル名は road-&lt;小さい ID&gt;-&lt;大きい ID&gt;.json にします</p>
+      </section>
+
+      <section>
         <h2>人工物の配置</h2>
         <div id="tools" class="tools">
           <button data-tool="select" class="active">選択</button>

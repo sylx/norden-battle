@@ -288,6 +288,32 @@ export class MapView {
     return Math.max(this.heightmap!.heightAt(x, z), floor);
   }
 
+  /** 地形・木・人工物・ユニット・矢印の GPU 資源を破棄する（SceneContext は呼び出し側で破棄する） */
+  dispose(): void {
+    if (this.decor) {
+      this.ctx.scene.remove(this.decor.forest.group, this.decor.structures, this.decor.roads);
+      this.decor.forest.dispose();
+      disposeObject(this.decor.structures);
+      disposeObject(this.decor.roads);
+      this.decor = null;
+    }
+    if (this.meshes) {
+      this.ctx.scene.remove(this.meshes.group);
+      this.meshes.dispose();
+      this.meshes = null;
+    }
+    this.ctx.overlay.remove(this.units.group, this.pathArrow.group, this.afterPathArrow.group, this.attackArrow.group, this.supportArrow.group);
+    this.units.dispose();
+    for (const arrow of [this.pathArrow, this.afterPathArrow, this.attackArrow, this.supportArrow]) arrow.dispose();
+    this.overlay.uniforms.uCellTex.value.dispose();
+    this.overlay.uniforms.uRangeTex.value.dispose();
+    this.ctx.onShadowPass = () => {};
+    this.units.art.onChange = () => {};
+    this.map = null;
+    this.terrainData = null;
+    this.heightmap = null;
+  }
+
   /** 毎フレーム呼ぶ（風揺れの時間を進めて描画する） */
   render(): void {
     windUniforms.uTime.value = performance.now() / 1000;

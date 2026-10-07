@@ -14,6 +14,8 @@ view.setMap(new HexMap(await loadMapFile('fluen.json')));
 renderer.setAnimationLoop(() => view.render());
 ```
 
+画面を離れるときは `view.dispose()`（地形・木・人工物・ユニットの GPU 資源）→ `ctx.dispose()`（レンダラ・コントロール・キャンバス。WebGL のコンテキストも手放す）の順に破棄する。
+
 マップファイルを使うツールは Vite の設定に `mapsPlugin` を入れる（`readOnly: true` で保存を禁止）:
 
 ```ts
@@ -29,6 +31,7 @@ src/
   core/            three.js 非依存
     hex.ts           HEX 座標系（オフセット/軸座標/ワールド座標の変換）
     mapData.ts       マップ JSON の型・パース・書き出し
+    battleArea.ts    街道マップから戦闘の範囲を切り出す（cropMap）
     features.ts      人工物の定義・橋の向き・城/砦の領域判定
     roads.ts         街道の接続データ・中心線（ベジェ曲線）・距離検索
     terrainTypes.ts  地形タイプ定義（色・高さオフセット・木の密度）
@@ -73,6 +76,37 @@ server/
 - `roads`（省略可）: 街道がつながっている方向（0..5）の配列。隣の HEX 側の逆方向は読み込み時に補う。マップ外への方向も可
   - 城・砦の門は道が来ている辺に、橋は道の向きに合わせて架かる。道沿いには木が生えず、村の家は道を避けて建つ
 - `cells` に無い HEX は `plains` / `elevation: 0`
+- `link`（省略可）: 街道マップの両端の都市 `{ "cities": ["P004", "P012"] }`（nordencult の戦略マップの都市 ID）
+- `battleAreas`（省略可）: 街道マップ上の戦闘の範囲の左上の HEX。防衛する都市の ID で引く（下記）
+- `origin`（省略可）: 切り出したマップの、元のマップでの左上の HEX（`cropMap` が付ける）
+
+## 街道マップと戦闘の範囲
+
+戦略マップの街道 A–B ごとに、A と B の両方の都市を描いた大きなマップ（街道マップ、`road-<小さい ID>-<大きい ID>.json`）を
+1 枚作り、侵攻方向ごとの戦闘の範囲を持たせる。範囲は防衛する都市の ID で引く:
+A→B の侵攻では B を含む範囲 `battleAreas.B`、B→A では `battleAreas.A`。
+
+```json
+{
+  "version": 1,
+  "name": "アンバリア–フルーエン",
+  "seed": 3,
+  "grid": { "orientation": "flat", "cols": 32, "rows": 20, "hexSize": 1 },
+  "link": { "cities": ["P004", "P012"] },
+  "battleAreas": {
+    "P004": { "col": 14, "row": 2 },
+    "P012": { "col": 0, "row": 2 }
+  },
+  "cells": []
+}
+```
+
+- 範囲の大きさは `BATTLE_AREA_SIZE`（16×16。`core/mapData.ts`）。範囲はマップに収まっていなければならない
+- 範囲の左上は、flat（odd-q）では列を、pointy（odd-r）では行を偶数にする。奇数だと切り出したときに HEX のずれ方が反転する（`isAlignedOrigin`）
+- `cropMap(data, area)`（`core/battleArea.ts`）で範囲を切り出す。HEX・人工物・街道・ユニットを新しい座標に移し、範囲の外へ向かう街道の方向は残す。
+  切り出したマップには `origin` が付き、地形のノイズ・木の配置・街道の揺らぎ・建物の形を元のマップでの座標で引くので、
+  元のマップと同じ見た目になる（範囲の縁だけは、外の HEX が無い分だけ地形の混ざり方が変わる）
+- map-editor の「街道マップ」欄で両端の都市と範囲を設定できる
 
 ## 地形生成の仕組み
 

@@ -1,4 +1,5 @@
 import GUI from 'lil-gui';
+import { BATTLE_AREA_SIZE } from '@norden/map-runtime/core/battleArea';
 import { FEATURE_DEFS } from '@norden/map-runtime/core/features';
 import { MapParseError, parseMapData, stringifyMapData, type HexCell, type MapData } from '@norden/map-runtime/core/mapData';
 import { generateRandomMap } from '@norden/map-runtime/core/randomMap';
@@ -38,7 +39,8 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   const updateTitle = () => {
     const data = app.map?.data;
     $('map-title').textContent = data
-      ? `${currentFile ?? '（未保存）'} — ${data.name} — ${data.grid.orientation} ${data.grid.cols}×${data.grid.rows}`
+      ? `${currentFile ?? '（未保存）'} — ${data.name} — ${data.grid.orientation} ${data.grid.cols}×${data.grid.rows}` +
+        (app.previewing ? `（${app.areaCity} の範囲を表示中）` : '')
       : '-';
   };
 
@@ -61,11 +63,13 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
 
   /** file = assets/maps/ のファイル名（それ以外から開いたときは null。保存欄にはその候補を入れる） */
   const load = (data: MapData, file: string | null, suggestedFile?: string) => {
+    previewChk.checked = false;
     app.loadMap(data);
     currentFile = file;
     mapSel.value = file && files.some((f) => f.file === file) ? file : '';
     nameInput.value = data.name;
     fileNameInput.value = file ?? (suggestedFile && isValidMapFileName(suggestedFile) ? suggestedFile : mapFileNameFor(data.name));
+    renderLink();
     updateTitle();
   };
 
@@ -150,6 +154,87 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
     if (f) loadJsonText(await f.text(), f.name);
   });
 
+  // --- 街道マップ（両端の都市と、防衛する都市ごとの戦闘の範囲） ---
+  const linkA = $<HTMLInputElement>('link-a');
+  const linkB = $<HTMLInputElement>('link-b');
+  const areaList = $('area-list');
+  const previewChk = $<HTMLInputElement>('chk-area-preview');
+
+  function renderLink(): void {
+    const data = app.map?.data;
+    linkA.value = data?.link?.cities[0] ?? '';
+    linkB.value = data?.link?.cities[1] ?? '';
+    const cities = [...new Set([...(data?.link?.cities ?? []), ...Object.keys(data?.battleAreas ?? {})])];
+    if (!app.areaCity || !cities.includes(app.areaCity)) app.areaCity = cities[0] ?? null;
+    if (cities.length === 0) {
+      const p = document.createElement('p');
+      p.className = 'empty';
+      p.textContent = '都市 A・B を入れると範囲を置けます';
+      areaList.replaceChildren(p);
+    } else {
+      areaList.replaceChildren(
+        ...cities.map((city) => {
+          const area = data?.battleAreas?.[city];
+          const row = document.createElement('div');
+          row.className = 'area';
+          const label = document.createElement('label');
+          const radio = document.createElement('input');
+          radio.type = 'radio';
+          radio.name = 'area-city';
+          radio.checked = city === app.areaCity;
+          radio.addEventListener('change', () => {
+            app.areaCity = city;
+            if (app.previewing) app.previewArea(data?.battleAreas?.[city] ? city : null);
+            previewChk.checked = app.previewing;
+            app.showArea();
+            renderLink();
+            updateTitle();
+          });
+          const pos = document.createElement('span');
+          pos.className = 'pos';
+          pos.textContent = area ? `(${area.col}, ${area.row})` : '未設定';
+          label.append(radio, `${city} の範囲 `, pos);
+          const del = document.createElement('button');
+          del.textContent = '削除';
+          del.disabled = !area || app.previewing;
+          del.addEventListener('click', () => app.setBattleArea(city, null));
+          row.append(label, del);
+          return row;
+        }),
+      );
+    }
+    const areaReady = !!(app.areaCity && data?.battleAreas?.[app.areaCity]);
+    previewChk.disabled = !areaReady && !app.previewing;
+  }
+
+  const applyLink = () => {
+    const data = app.map?.data;
+    if (!data) return;
+    const a = linkA.value.trim();
+    const b = linkB.value.trim();
+    if (!a && !b) delete data.link;
+    else if (a && b && a !== b) {
+      data.link = { cities: [a, b] };
+      // 街道マップのファイル名（ゲームはこの名前で読む）
+      if (!currentFile) fileNameInput.value = `road-${[a, b].sort().join('-')}.json`;
+    } else {
+      if (a && b) showError('都市 A と B には異なる都市 ID を入れてください');
+      return;
+    }
+    renderLink();
+    app.showArea();
+  };
+  linkA.addEventListener('change', applyLink);
+  linkB.addEventListener('change', applyLink);
+  app.onAreaChange = renderLink;
+  previewChk.addEventListener('change', () => {
+    if (previewChk.checked) setTool('select');
+    app.previewArea(previewChk.checked ? app.areaCity : null);
+    previewChk.checked = app.previewing;
+    renderLink();
+    updateTitle();
+  });
+
   // --- ランダム生成 ---
   const seedInput = $<HTMLInputElement>('rnd-seed');
   const randomize = () => {
@@ -204,6 +289,12 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   // --- 人工物の配置ツール ---
   const toolButtons = [...document.querySelectorAll<HTMLButtonElement>('button[data-tool]')];
   const setTool = (tool: EditTool) => {
+    if (tool === 'area' && app.previewing) {
+      app.onMessage('範囲のプレビュー中は動かせません');
+      return;
+    }
+    if (tool === 'area' && !app.areaCity) app.onMessage('「街道マップ」欄で都市 A・B を入れてください');
+    else if (tool === 'area') setStatus(`${app.areaCity} の範囲（${BATTLE_AREA_SIZE.cols}×${BATTLE_AREA_SIZE.rows}）: クリック・ドラッグした HEX を中心に置きます`);
     app.tool = tool;
     for (const b of toolButtons) b.classList.toggle('active', b.dataset.tool === tool);
   };
@@ -236,12 +327,13 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
 
   // --- HEX 情報 ---
   const renderInfo = (el: HTMLElement, cell: HexCell | null) => {
-    if (!cell || !app.map) {
+    const map = app.shownMap;
+    if (!cell || !map) {
       el.innerHTML = '<dt>-</dt><dd></dd>';
       return;
     }
-    const a = app.map.layout.offsetToAxial(cell.col, cell.row);
-    const unit = app.map.unitAt(cell.col, cell.row);
+    const a = map.layout.offsetToAxial(cell.col, cell.row);
+    const unit = map.unitAt(cell.col, cell.row);
     el.innerHTML = [
       ['座標', `(${cell.col}, ${cell.row})`],
       ['軸座標', `q=${a.q}, r=${a.r}`],

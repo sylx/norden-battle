@@ -255,3 +255,36 @@ body.dragging #drop-hint {
   --string-color: #cfe08a;
   --font-size: 12px;
 }
+
+.area-list {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.area-list .area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.area-list .area label {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+}
+
+.area-list .area .pos {
+  color: var(--text-dim);
+}
+
+.area-list .area button {
+  flex: 0 0 auto;
+}
+
+.area-list .empty {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+}

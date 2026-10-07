@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { BATTLE_AREA_SIZE, cropMap, snapBattleArea } from '@norden/map-runtime/core/battleArea';
 import { bridgeAxis, bridgeAxisCandidates, canPlaceFeature, FEATURE_DEFS, type FeatureId } from '@norden/map-runtime/core/features';
 import { axialRound, type Offset } from '@norden/map-runtime/core/hex';
 import { HexMap, type HexCell, type MapData } from '@norden/map-runtime/core/mapData';
@@ -15,8 +16,11 @@ export type { GenStats };
 
 export type OverlayMode = 'none' | 'terrain' | 'elevation';
 
-/** クリック時の動作: 選択 / 人工物の配置 / 撤去 / 森の伐採・植林 / 街道（ドラッグ） / ユニットの配置 */
-export type EditTool = 'select' | FeatureId | 'erase' | 'forest' | 'road' | 'unit';
+/** クリック時の動作: 選択 / 人工物の配置 / 撤去 / 森の伐採・植林 / 街道（ドラッグ） / ユニットの配置 / 戦闘の範囲（ドラッグ） */
+export type EditTool = 'select' | FeatureId | 'erase' | 'forest' | 'road' | 'unit' | 'area';
+
+/** 街道マップの戦闘の範囲の枠の色 */
+const AREA_COLOR = 0xffb040;
 
 const ELEV_COLORS = [0x3f7f5f, 0x7fae4f, 0xc8c35a, 0xd89a4a, 0xb0603a, 0x8a5a4a, 0xf0f0f0].map((c) => new THREE.Color(c));
 
@@ -30,13 +34,21 @@ export class EditorApp {
   readonly unitBrush: { type: UnitType; team: TeamId } = { type: 'infantry', team: 'blue' };
   selected: Offset | null = null;
   tool: EditTool = 'select';
+  /** 枠を表示し、範囲ツールで動かす戦闘の範囲（battleAreas のキー = 防衛する都市の ID） */
+  areaCity: string | null = null;
 
   onHover: (cell: HexCell | null) => void = () => {};
   onSelect: (cell: HexCell | null) => void = () => {};
   onGenerated: (stats: GenStats) => void = () => {};
   /** 編集操作の結果メッセージ（配置できない場合など） */
   onMessage: (msg: string) => void = () => {};
+  /** 戦闘の範囲を動かしたとき */
+  onAreaChange: () => void = () => {};
 
+  /** 範囲だけのプレビュー中の、元のマップ（編集と保存はこちら） */
+  private previewSource: HexMap | null = null;
+  /** 範囲ツールでドラッグ中 */
+  private areaDrag = false;
   /** 街道ツール・撤去ツールでドラッグ中の HEX の並び */
   private drag: { tool: 'road' | 'erase'; path: Offset[] } | null = null;
   private readonly raycaster = new THREE.Raycaster();
@@ -55,6 +67,7 @@ export class EditorApp {
     el.addEventListener('pointermove', (e) => {
       this.setPointer(e);
       if (this.drag) this.extendDrag();
+      if (this.areaDrag) this.moveArea(this.pick());
     });
     el.addEventListener('pointerleave', () => this.setHover(null));
     // capture で MapControls より先に受け取り、なぞり描き中はパンさせない
@@ -62,7 +75,16 @@ export class EditorApp {
       'pointerdown',
       (e) => {
         this.downPos = { x: e.clientX, y: e.clientY };
-        if (e.button !== 0 || (this.tool !== 'road' && this.tool !== 'erase')) return;
+        if (e.button !== 0 || this.previewSource) return;
+        if (this.tool === 'area') {
+          this.setPointer(e);
+          if (!this.moveArea(this.pick())) return;
+          this.areaDrag = true;
+          this.ctx.controls.enabled = false;
+          el.setPointerCapture(e.pointerId);
+          return;
+        }
+        if (this.tool !== 'road' && this.tool !== 'erase') return;
         this.setPointer(e);
         const o = this.pick();
         if (!o) return;
@@ -74,6 +96,12 @@ export class EditorApp {
       { capture: true },
     );
     el.addEventListener('pointerup', (e) => {
+      if (this.areaDrag) {
+        this.areaDrag = false;
+        this.ctx.controls.enabled = true;
+        this.downPos = null;
+        return;
+      }
       if (this.drag) {
         this.finishDrag();
         this.downPos = null;
@@ -89,8 +117,18 @@ export class EditorApp {
     this.ctx.renderer.setAnimationLoop(() => this.frame());
   }
 
+  /** 編集中のマップ（範囲のプレビュー中も元のマップ） */
   get map(): HexMap | null {
+    return this.previewSource ?? this.view.map;
+  }
+
+  /** 表示中のマップ（範囲のプレビュー中は切り出したマップ） */
+  get shownMap(): HexMap | null {
     return this.view.map;
+  }
+
+  get previewing(): boolean {
+    return this.previewSource !== null;
   }
 
   get params(): TerrainParams {
@@ -110,8 +148,81 @@ export class EditorApp {
   }
 
   loadMap(data: MapData, resetCamera = true): void {
+    this.previewSource = null;
     this.view.setMap(new HexMap(data), resetCamera);
     this.setSelected(null);
+    this.showArea();
+  }
+
+  /**
+   * 戦闘の範囲を設定する（o は左上。偶数の列・行に寄せ、マップに収める）。null で削除。
+   * マップが範囲より小さければ何もしない。
+   */
+  setBattleArea(city: string, o: Offset | null): void {
+    const map = this.map;
+    if (!map || this.previewSource) return;
+    const data = map.data;
+    if (o === null) {
+      if (data.battleAreas) delete data.battleAreas[city];
+      if (data.battleAreas && Object.keys(data.battleAreas).length === 0) delete data.battleAreas;
+    } else {
+      if (data.grid.cols < BATTLE_AREA_SIZE.cols || data.grid.rows < BATTLE_AREA_SIZE.rows) {
+        this.onMessage(`マップが戦闘の範囲（${BATTLE_AREA_SIZE.cols}×${BATTLE_AREA_SIZE.rows}）より小さいため置けません`);
+        return;
+      }
+      data.battleAreas = { ...data.battleAreas, [city]: snapBattleArea(data, o) };
+    }
+    this.showArea();
+    this.onAreaChange();
+  }
+
+  /** 範囲ツール: カーソルの HEX が中央に来るように動かす */
+  private moveArea(o: Offset | null): boolean {
+    const city = this.areaCity;
+    if (!o || !city) {
+      if (!city) this.onMessage('「街道マップ」欄で範囲を動かす都市を選んでください');
+      return false;
+    }
+    const cur = this.map?.data.battleAreas?.[city];
+    const next = snapBattleArea(this.map!.data, {
+      col: o.col - Math.floor(BATTLE_AREA_SIZE.cols / 2),
+      row: o.row - Math.floor(BATTLE_AREA_SIZE.rows / 2),
+    });
+    if (cur && cur.col === next.col && cur.row === next.row) return true;
+    this.setBattleArea(city, next);
+    return true;
+  }
+
+  /** areaCity の範囲の枠を出す（プレビュー中・範囲が無いときは消す） */
+  showArea(): void {
+    const area = this.areaCity ? this.map?.data.battleAreas?.[this.areaCity] : undefined;
+    if (!area || this.previewSource) {
+      this.view.setRange(null);
+      return;
+    }
+    const cells: { col: number; row: number; weak: boolean }[] = [];
+    for (let row = area.row; row < area.row + BATTLE_AREA_SIZE.rows; row++) {
+      for (let col = area.col; col < area.col + BATTLE_AREA_SIZE.cols; col++) cells.push({ col, row, weak: true });
+    }
+    this.view.setRange(cells, AREA_COLOR);
+  }
+
+  /** city の範囲だけを切り出して表示する（ゲームの戦闘で使う形）。null で元のマップに戻す。プレビュー中は編集できない */
+  previewArea(city: string | null): void {
+    const source = this.map;
+    if (!source) return;
+    const area = city ? source.data.battleAreas?.[city] : undefined;
+    if (city && !area) return;
+    this.previewSource = null;
+    if (area) {
+      this.view.setMap(new HexMap(cropMap(source.toJSON(), area)), true);
+      this.previewSource = source;
+    } else {
+      this.view.setMap(source, true);
+    }
+    this.setSelected(null);
+    this.updateCellColors();
+    this.showArea();
   }
 
   regenerate(resetCamera = false): void {
@@ -129,13 +240,13 @@ export class EditorApp {
 
   /** 表示確認用に 2 軍を並べる（既存のユニットは置き換える） */
   deployDemoUnits(): void {
-    if (!this.map) return;
+    if (!this.map || this.previewSource) return;
     this.map.replaceUnits(deployDemoUnits(this.map));
     this.rebuildUnits();
   }
 
   clearUnits(): void {
-    if (!this.map) return;
+    if (!this.map || this.previewSource) return;
     this.map.replaceUnits([]);
     this.rebuildUnits();
   }
@@ -150,7 +261,7 @@ export class EditorApp {
   }
 
   updateCellColors(): void {
-    const map = this.map;
+    const map = this.shownMap;
     if (!map) return;
     const mode = this.overlayMode;
     const tmp = new THREE.Color();
@@ -180,10 +291,12 @@ export class EditorApp {
   private applyTool(o: Offset | null): void {
     const map = this.map;
     const tool = this.tool;
-    if (tool === 'select' || !o || !map) {
+    if (tool === 'select' || !o || !map || this.previewSource) {
+      if (tool !== 'select' && this.previewSource) this.onMessage('範囲のプレビュー中は編集できません');
       this.setSelected(o);
       return;
     }
+    if (tool === 'area') return;
     const cell = map.get(o.col, o.row)!;
     if (tool === 'forest') {
       // 森は地表の色・起伏にも効くので地形ごと作り直す
@@ -308,13 +421,13 @@ export class EditorApp {
 
   private setHover(o: Offset | null): void {
     this.view.setHover(o);
-    this.onHover(o && this.map ? this.map.get(o.col, o.row)! : null);
+    this.onHover(o && this.shownMap ? this.shownMap.get(o.col, o.row)! : null);
   }
 
   private setSelected(o: Offset | null): void {
     this.selected = o;
     this.view.setSelected(o);
-    this.onSelect(o && this.map ? this.map.get(o.col, o.row)! : null);
+    this.onSelect(o && this.shownMap ? this.shownMap.get(o.col, o.row)! : null);
   }
 
   private frame(): void {

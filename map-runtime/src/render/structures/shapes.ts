@@ -22,6 +22,12 @@ export interface BuildCtx {
   roads: RoadIndex;
 }
 
+/** HEX ごとの乱数。切り出したマップでも元のマップと同じ形になるよう、元のマップでの座標で引く */
+export function structureRng(ctx: BuildCtx, seed: number, col: number, row: number, salt: number): Rng {
+  const o = ctx.map.data.origin;
+  return cellRng(seed, col + (o?.col ?? 0), row + (o?.row ?? 0), salt);
+}
+
 export type Rng = () => number;
 
 /** 色を ±amount の範囲でばらつかせる */

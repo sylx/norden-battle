@@ -24,8 +24,10 @@ export function smoothPath(points: Vec2[]): Vec2[] {
 /** 折れ線上の距離 d の位置と進む向き */
 export class Polyline {
   private readonly acc: number[] = [0];
+  private readonly pts: Vec2[];
 
-  constructor(private readonly pts: Vec2[]) {
+  constructor(pts: Vec2[]) {
+    this.pts = pts;
     for (let i = 1; i < pts.length; i++) this.acc.push(this.acc[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
   }
 

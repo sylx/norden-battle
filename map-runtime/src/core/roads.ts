@@ -81,6 +81,7 @@ export function normalizeRoads(map: HexMap): void {
 export function buildRoadPaths(map: HexMap): Vec2[][] {
   const layout = map.layout;
   const noise = new Noise(map.data.seed + 303);
+  const { x: ox, z: oz } = map.noiseOffset;
   const s = layout.size;
   const step = 0.03 * s;
   const wobble = 0.09 * s;
@@ -101,7 +102,7 @@ export function buildRoadPaths(map: HexMap): Vec2[][] {
       const tx = 2 * (1 - t) * (p1.x - p0.x) + 2 * t * (p2.x - p1.x);
       const tz = 2 * (1 - t) * (p1.z - p0.z) + 2 * t * (p2.z - p1.z);
       const tl = Math.hypot(tx, tz) || 1;
-      const w = wobble * Math.sin(Math.PI * t) * noise.simplex((x / s) * 1.2, (z / s) * 1.2);
+      const w = wobble * Math.sin(Math.PI * t) * noise.simplex(((x + ox) / s) * 1.2, ((z + oz) / s) * 1.2);
       pts.push({ x: x - (tz / tl) * w, z: z + (tx / tl) * w });
     }
     return pts;

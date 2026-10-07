@@ -104,6 +104,9 @@ export class TerrainField {
   private readonly colorNoise: Noise;
   private readonly s: number;
   private readonly cellProps: CellProps[];
+  /** ノイズを引く座標のずれ（HexMap.noiseOffset。切り出したマップを元のマップと同じ見た目にする） */
+  readonly ox: number;
+  readonly oz: number;
 
   // sample() の作業領域
   private readonly kIdx = new Int32Array(MAX_K);
@@ -115,6 +118,8 @@ export class TerrainField {
     this.map = map;
     this.p = params;
     this.s = map.layout.size;
+    this.ox = map.noiseOffset.x;
+    this.oz = map.noiseOffset.z;
     const seed = map.data.seed;
     this.noise = new Noise(seed);
     this.warpNoise = new Noise(seed + 101);
@@ -148,8 +153,10 @@ export class TerrainField {
     // ドメインワープ
     const wf = p.warpFreq / s;
     const wa = p.warpAmp * s;
-    const wx = x + wa * this.warpNoise.fbm(x * wf, z * wf, 3);
-    const wz = z + wa * this.warpNoise.fbm(x * wf + 57.1, z * wf - 31.7, 3);
+    const nx = x + this.ox;
+    const nz = z + this.oz;
+    const wx = x + wa * this.warpNoise.fbm(nx * wf, nz * wf, 3);
+    const wz = z + wa * this.warpNoise.fbm(nx * wf + 57.1, nz * wf - 31.7, 3);
 
     // 近傍 7 HEX の重み
     const a0 = layout.worldToAxial(wx, wz);
@@ -192,8 +199,10 @@ export class TerrainField {
   }
 
   /** colorWeights を使って地表の基本色を求める（sRGB） */
-  baseColor(x: number, z: number, out: number[]): void {
+  baseColor(lx: number, lz: number, out: number[]): void {
     const s = this.s;
+    const x = lx + this.ox;
+    const z = lz + this.oz;
     const v = 0.5 + 0.5 * this.colorNoise.fbm((x / s) * 1.4, (z / s) * 1.4, 3);
     out[0] = out[1] = out[2] = 0;
     for (let t = 0; t < NT; t++) {
@@ -300,7 +309,7 @@ export function generateTerrain(map: HexMap, params: TerrainParams): TerrainData
       col[1] = colors[k * 3 + 1];
       col[2] = colors[k * 3 + 2];
       const ny = normals[k * 3 + 1];
-      const nv = field.noise.simplex((x / s) * 3.1, (z / s) * 3.1);
+      const nv = field.noise.simplex(((x + field.ox) / s) * 3.1, ((z + field.oz) / s) * 3.1);
 
       const slope = 1 - ny;
       const rock = smoothstep(0.16, 0.38, slope + nv * 0.05) * (1 - waterW[k]);
@@ -364,29 +373,31 @@ export function placeVegetation(map: HexMap, data: TerrainData, params: TerrainP
   };
   const s = field.map.layout.size;
   const sp = Math.max(params.treeSpacing, 0.05) * s;
-  const x0 = data.minX;
-  const z0 = data.minZ;
+  const { ox, oz } = field;
   const x1 = data.minX + (data.nx - 1) * data.step;
   const z1 = data.minZ + (data.nz - 1) * data.step;
-  const cols = Math.floor((x1 - x0) / sp);
-  const rows = Math.floor((z1 - z0) / sp);
+  // 候補点の格子はノイズの座標に固定する（切り出したマップでも元のマップと同じ位置に木が立つ）
+  const i0 = Math.ceil((data.minX + ox) / sp);
+  const j0 = Math.ceil((data.minZ + oz) / sp);
+  const i1 = Math.floor((x1 + ox) / sp);
+  const j1 = Math.floor((z1 + oz) / sp);
   const seed = field.map.data.seed;
   const hm = new Heightmap(data);
   const MOUNTAIN = TERRAIN_INDEX.mountain;
   const FOREST = TERRAIN_INDEX.forest;
   const n = [0, 0, 0];
 
-  for (let j = 0; j < rows; j++) {
-    for (let i = 0; i < cols; i++) {
-      const x = x0 + (i + 0.1 + 0.8 * hash2(i, j, seed)) * sp;
-      const z = z0 + (j + 0.1 + 0.8 * hash2(i, j, seed + 1)) * sp;
+  for (let j = j0; j < j1; j++) {
+    for (let i = i0; i < i1; i++) {
+      const x = (i + 0.1 + 0.8 * hash2(i, j, seed)) * sp - ox;
+      const z = (j + 0.1 + 0.8 * hash2(i, j, seed + 1)) * sp - oz;
       field.sample(x, z);
       // 地表色と同じ鋭い重みを使い、森の木が森の地面の外へはみ出さないようにする
       const cw = field.colorWeights;
       let prob = 0;
       for (let t = 0; t < NT; t++) prob += cw[t] * TERRAIN_DEFS[TERRAIN_IDS[t]].treeDensity;
       // 森の縁をまだらにする
-      prob *= params.treeDensity * (0.75 + 0.5 * field.noise.simplex((x / s) * 1.7 + 300, (z / s) * 1.7));
+      prob *= params.treeDensity * (0.75 + 0.5 * field.noise.simplex(((x + ox) / s) * 1.7 + 300, ((z + oz) / s) * 1.7));
       let bushProb = 0;
       for (let t = 0; t < NT; t++) bushProb += cw[t] * TERRAIN_DEFS[TERRAIN_IDS[t]].bushDensity;
       bushProb *= params.treeDensity;
@@ -408,7 +419,7 @@ export function placeVegetation(map: HexMap, data: TerrainData, params: TerrainP
       let scale = 0.75 + 0.5 * hash2(i, j, seed + 3);
       if (kind !== TreeKind.Bush) {
         const mountainW = field.terrainWeights[MOUNTAIN];
-        const coniferBias = 0.35 + mountainW * 0.6 + 0.3 * field.noise.simplex((x / s) * 0.6, (z / s) * 0.6 + 50);
+        const coniferBias = 0.35 + mountainW * 0.6 + 0.3 * field.noise.simplex(((x + ox) / s) * 0.6, ((z + oz) / s) * 0.6 + 50);
         kind = hash2(i, j, seed + 5) < coniferBias ? TreeKind.Conifer : TreeKind.Broadleaf;
         // 森の奥ほど大きく、縁や草原の孤立木は小さめ
         scale *= 0.8 + 0.3 * forestW;
@@ -430,7 +441,11 @@ export function placeVegetation(map: HexMap, data: TerrainData, params: TerrainP
 
 /** 生成済み高さマップへの問い合わせ（ユニット配置などにも使う） */
 export class Heightmap {
-  constructor(private readonly d: TerrainData) {}
+  private readonly d: TerrainData;
+
+  constructor(d: TerrainData) {
+    this.d = d;
+  }
 
   heightAt(x: number, z: number): number {
     const { nx, nz, minX, minZ, step, heights } = this.d;

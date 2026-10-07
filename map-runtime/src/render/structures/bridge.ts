@@ -6,7 +6,7 @@ import { bridgeAxis } from '../../core/features';
 import type { Vec2 } from '../../core/hex';
 import type { HexCell } from '../../core/mapData';
 import { PAT } from './material';
-import { cellRng, hexahedron, quad, vary, type BuildCtx } from './shapes';
+import { structureRng, hexahedron, quad, vary, type BuildCtx } from './shapes';
 
 const WIDTH = 0.3;
 const PARAPET_T = 0.022;
@@ -21,7 +21,7 @@ function smoothMax(a: number, b: number, k: number): number {
 
 export function buildBridge(ctx: BuildCtx, cell: HexCell, seed: number): void {
   const layout = ctx.map.layout;
-  const rng = cellRng(seed, cell.col, cell.row, 3);
+  const rng = structureRng(ctx, seed, cell.col, cell.row, 3);
   const axis = bridgeAxis(ctx.map, cell);
   const c = layout.offsetToWorld(cell.col, cell.row);
   const na = layout.neighborInDir(cell.col, cell.row, axis);

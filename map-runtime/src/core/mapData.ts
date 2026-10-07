@@ -1,4 +1,4 @@
-import { HexLayout, type GridSpec } from './hex';
+import { HexLayout, type GridSpec, type Offset, type Vec2 } from './hex';
 import { isFeatureId, type FeatureId } from './features';
 import { normalizeRoads } from './roads';
 import { isTerrainId, type TerrainId } from './terrainTypes';
@@ -23,6 +23,11 @@ import { isTeamId, isUnitType, type UnitData } from './units';
  * - cells に含まれない HEX は plains / elevation 0 として扱う。
  * - units はユニットの配置（1 HEX に 1 部隊）。省略可。
  *   画像の左右の向きは保存せず、配置から決める（以前の形式の facing は読み込み時に無視する）。
+ * - link は街道マップ（戦略マップの街道 A–B の両端の都市を描いたマップ）の両端の都市 ID。省略可。
+ * - battleAreas は街道マップ上の戦闘の範囲（左上の HEX）。防衛する都市の ID で引く。省略可。
+ *   大きさは BATTLE_AREA_SIZE。切り出しは battleArea.ts の cropMap。
+ * - origin は切り出したマップの、元のマップでの左上の HEX（cropMap が付ける）。省略可。
+ *   地形のノイズなどを元の座標で引き、切り出しても元のマップと同じ見た目にする。
  */
 export interface HexCell {
   col: number;
@@ -39,8 +44,27 @@ export interface MapData {
   name: string;
   seed: number;
   grid: GridSpec;
+  link?: MapLink;
+  battleAreas?: Record<string, Offset>;
+  origin?: Offset;
   cells: HexCell[];
   units?: UnitData[];
+}
+
+/** 戦闘の範囲の大きさ（HEX 数）。街道マップの battleAreas はこの大きさで切り出す */
+export const BATTLE_AREA_SIZE = { cols: 16, rows: 16 } as const;
+
+/** 街道マップの両端の都市（戦略マップの都市 ID） */
+export interface MapLink {
+  cities: [string, string];
+}
+
+/**
+ * オフセット座標の偶奇: flat（odd-q）では列、pointy（odd-r）では行が偶数でないと、
+ * その位置を原点にしたとき HEX のずれ方が反転する。切り出しの左上はこの条件を満たす必要がある。
+ */
+export function isAlignedOrigin(grid: GridSpec, o: Offset): boolean {
+  return (grid.orientation === 'flat' ? o.col : o.row) % 2 === 0;
 }
 
 export class MapParseError extends Error {}
@@ -70,6 +94,39 @@ export function parseMapData(json: unknown): MapData {
     rows: rows as number,
     hexSize: hexSize as number,
   };
+
+  const offsetOf = (v: unknown, what: string): Offset => {
+    const p = v as Record<string, unknown> | null;
+    if (typeof p !== 'object' || p === null || !Number.isInteger(p.col) || !Number.isInteger(p.row))
+      fail(`${what}: col/row が不正です`);
+    const out = { col: p!.col as number, row: p!.row as number };
+    if (!isAlignedOrigin(grid, out))
+      fail(`${what}: ${grid.orientation === 'flat' ? '列' : '行'}は偶数にしてください`);
+    return out;
+  };
+
+  let link: MapLink | undefined;
+  if (o.link !== undefined) {
+    const cities = (o.link as Record<string, unknown> | null)?.cities;
+    if (!Array.isArray(cities) || cities.length !== 2 || !cities.every((c) => typeof c === 'string' && c !== '') || cities[0] === cities[1])
+      fail('link.cities は異なる 2 つの都市 ID の配列');
+    link = { cities: [(cities as string[])[0], (cities as string[])[1]] };
+  }
+
+  let battleAreas: Record<string, Offset> | undefined;
+  if (o.battleAreas !== undefined) {
+    if (typeof o.battleAreas !== 'object' || o.battleAreas === null || Array.isArray(o.battleAreas))
+      fail('battleAreas がオブジェクトではありません');
+    battleAreas = {};
+    for (const [city, v] of Object.entries(o.battleAreas as Record<string, unknown>)) {
+      const area = offsetOf(v, `battleAreas.${city}`);
+      if (area.col < 0 || area.row < 0 || area.col + BATTLE_AREA_SIZE.cols > grid.cols || area.row + BATTLE_AREA_SIZE.rows > grid.rows)
+        fail(`battleAreas.${city}: ${BATTLE_AREA_SIZE.cols}×${BATTLE_AREA_SIZE.rows} の範囲がマップに収まりません`);
+      battleAreas[city] = area;
+    }
+  }
+
+  const origin = o.origin === undefined ? undefined : offsetOf(o.origin, 'origin');
 
   if (!Array.isArray(o.cells)) fail('cells が配列ではありません');
   const cells: HexCell[] = [];
@@ -131,6 +188,9 @@ export function parseMapData(json: unknown): MapData {
     name: typeof o.name === 'string' ? o.name : 'untitled',
     seed: typeof o.seed === 'number' ? o.seed : 1,
     grid,
+    ...(link ? { link } : {}),
+    ...(battleAreas ? { battleAreas } : {}),
+    ...(origin ? { origin } : {}),
     cells,
     ...(units.length > 0 ? { units } : {}),
   };
@@ -140,6 +200,11 @@ export function parseMapData(json: unknown): MapData {
 export class HexMap {
   readonly data: MapData;
   readonly layout: HexLayout;
+  /**
+   * 地形のノイズ・木の配置などを引く座標のずれ（ワールド座標）。切り出したマップ（origin あり）では
+   * 元のマップでの位置になり、元のマップと同じ見た目になる。
+   */
+  readonly noiseOffset: Vec2;
   private readonly cells: HexCell[];
   /** HEX のインデックス → ユニット */
   private readonly units = new Map<number, UnitData>();
@@ -147,6 +212,7 @@ export class HexMap {
   constructor(data: MapData) {
     this.data = data;
     this.layout = new HexLayout(data.grid);
+    this.noiseOffset = data.origin ? this.layout.offsetToWorld(data.origin.col, data.origin.row) : { x: 0, z: 0 };
     const { cols, rows } = data.grid;
     this.cells = new Array(cols * rows);
     for (let row = 0; row < rows; row++) {
@@ -233,6 +299,8 @@ export class HexMap {
     const units = [...this.units.entries()].sort((a, b) => a[0] - b[0]).map(([, u]) => ({ ...u }));
     return {
       ...rest,
+      ...(rest.link ? { link: { cities: [...rest.link.cities] } } : {}),
+      ...(rest.battleAreas ? { battleAreas: Object.fromEntries(Object.entries(rest.battleAreas).map(([k, v]) => [k, { ...v }])) } : {}),
       cells: this.cells.map((c) => ({ ...c, ...(c.roads ? { roads: [...c.roads] } : {}) })),
       ...(units.length > 0 ? { units } : {}),
     };

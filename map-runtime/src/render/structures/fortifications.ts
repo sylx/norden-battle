@@ -9,7 +9,7 @@ import type { Offset, Vec2 } from '../../core/hex';
 import type { HexCell } from '../../core/mapData';
 import { TERRAIN_DEFS } from '../../core/terrainTypes';
 import { PAT } from './material';
-import { box, cellRng, cone, cylinder, footprint, Frame, groundRange, pyramidRoof, terrainWall, vary, type BuildCtx, type Rng } from './shapes';
+import { box, structureRng, cone, cylinder, footprint, Frame, groundRange, pyramidRoof, terrainWall, vary, type BuildCtx, type Rng } from './shapes';
 import { house, ROOF_SLATE, ROOF_THATCH, ROOF_TILE } from './village';
 
 interface Edge {
@@ -44,7 +44,7 @@ function analyzeRegion(ctx: BuildCtx, cells: HexCell[], type: FeatureId, seed: n
   const layout = ctx.map.layout;
   const key = (col: number, row: number) => `${col},${row}`;
   const inRegion = new Set(cells.map((c) => key(c.col, c.row)));
-  const rng = cellRng(seed, cells[0].col, cells[0].row, type === 'castle' ? 11 : 12);
+  const rng = structureRng(ctx, seed, cells[0].col, cells[0].row, type === 'castle' ? 11 : 12);
 
   const edges: Edge[] = [];
   const verts = new Map<string, Vec2>();

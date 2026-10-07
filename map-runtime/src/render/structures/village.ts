@@ -7,7 +7,7 @@ import { ROAD_WIDTH } from '../../core/roads';
 import { PAT, type Pattern } from './material';
 import {
   box,
-  cellRng,
+  structureRng,
   cone,
   cylinder,
   footprint,
@@ -165,7 +165,7 @@ export function buildVillage(ctx: BuildCtx, cell: HexCell, seed: number): void {
   const layout = ctx.map.layout;
   const c = layout.offsetToWorld(cell.col, cell.row);
   const ri = layout.inradius;
-  const rng = cellRng(seed, cell.col, cell.row, 1);
+  const rng = structureRng(ctx, seed, cell.col, cell.row, 1);
   const axis = rng() * Math.PI;
   const placed: { x: number; z: number; r: number }[] = [];
 

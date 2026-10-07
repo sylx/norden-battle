@@ -44,6 +44,7 @@ export class SceneContext {
   /** シャドウマップだけを更新するときの描画先（本体の描画結果は捨てる） */
   private readonly shadowDummy = new THREE.WebGLRenderTarget(1, 1);
   private fpsStart = performance.now();
+  private readonly onResize = () => this.resize();
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -84,8 +85,25 @@ export class SceneContext {
     this.sun.shadow.normalBias = 0.02;
     this.scene.add(this.sun, this.sun.target);
 
-    window.addEventListener('resize', () => this.resize());
+    window.addEventListener('resize', this.onResize);
     this.resize();
+  }
+
+  /**
+   * レンダラ・コントロール・ポストプロセスを破棄し、キャンバスを取り除く（ゲームで画面を離れるとき）。
+   * WebGL のコンテキストもすぐに手放す（作り直しを繰り返すとブラウザの上限に達するため）。
+   * シーンに載せたもの（MapView など）は先にそれぞれ破棄しておく。
+   */
+  dispose(): void {
+    window.removeEventListener('resize', this.onResize);
+    this.renderer.setAnimationLoop(null);
+    this.controls.dispose();
+    this.parchment.dispose();
+    this.shadowDummy.dispose();
+    this.sun.dispose();
+    this.renderer.dispose();
+    this.renderer.forceContextLoss();
+    this.renderer.domElement.remove();
   }
 
   /** カメラの俯角（度）を変える。注視点と距離は保つ */
