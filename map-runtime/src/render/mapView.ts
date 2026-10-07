@@ -69,6 +69,8 @@ export class MapView {
   private heightmap: Heightmap | null = null;
   /** 木と人工物（地形を作り直さずに差し替えられる部分） */
   private decor: { forest: Forest; structures: THREE.Group; roads: THREE.Group } | null = null;
+  /** decor の森に木を配置したか（木を表示しないときは配置の計算を省く） */
+  private decorHasTrees = false;
   private stats: GenStats = { ms: 0, vertices: 0, trees: 0 };
   private gridOpacity = this.overlay.uniforms.uGridOpacity.value;
   private _foliagePrepass = true;
@@ -136,7 +138,9 @@ export class MapView {
     }
     const roadPaths = buildRoadPaths(map);
     const roadIndex = new RoadIndex(roadPaths);
-    const trees = placeVegetation(map, data, this.params, roadIndex);
+    // 木を表示しないなら配置の計算も省く（表示したときに作り直す）
+    const trees = this.display.trees ? placeVegetation(map, data, this.params, roadIndex) : [];
+    this.decorHasTrees = this.display.trees;
     const roads = new THREE.Group();
     const roadMesh = buildRoadMesh(roadPaths, new Heightmap(data), data.waterLevel, map.layout.size);
     if (roadMesh) roads.add(roadMesh);
@@ -180,6 +184,10 @@ export class MapView {
 
   /** display の表示・非表示を反映する */
   applyDisplay(): void {
+    if (this.display.trees && this.decor && !this.decorHasTrees) {
+      this.rebuildDecor(); // 最後にもう一度 applyDisplay が呼ばれる
+      return;
+    }
     // 表示を切り替えたものの影も消える・現れるようにする
     this.ctx.invalidateShadows();
     this.overlay.uniforms.uGridOpacity.value = this.display.grid ? this.gridOpacity : 0;

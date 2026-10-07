@@ -31,24 +31,143 @@ body {
   display: block;
 }
 
-#panel {
+[hidden] {
+  display: none !important;
+}
+
+/* --- マップの呼び出し・保存（上部のバー） --- */
+#filebar {
   position: fixed;
   top: 12px;
   left: 12px;
-  bottom: 44px;
+  right: 270px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 6px 12px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  z-index: 10;
+}
+
+#filebar .brand {
+  min-width: 0;
+  max-width: 340px;
+}
+
+#filebar .brand .sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#filebar .group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#filebar button {
+  flex: 0 0 auto;
+}
+
+#filebar button.icon {
+  width: 30px;
+  padding: 3px 0;
+}
+
+#map-name {
+  width: 150px;
+}
+
+#map-file {
+  width: 190px;
+}
+
+/* --- 検索できるコンボボックス --- */
+.combo {
+  position: relative;
+  display: flex;
   width: 260px;
+}
+
+.combo input {
+  flex: 1;
+  min-width: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.combo .combo-toggle {
+  flex: 0 0 24px;
+  padding: 0;
+  border-left: none;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.combo-list {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 2px 0;
+  list-style: none;
+  background: #241a12;
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+  z-index: 20;
+}
+
+.combo-list li {
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.combo-list li .detail {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.combo-list li.active {
+  background: #5c4630;
+}
+
+.combo-list li.current .label::before {
+  content: '● ';
+  color: var(--accent);
+}
+
+.combo-list li.disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.combo-list li.empty {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+/* --- 編集パネル（左） --- */
+#panel {
+  position: fixed;
+  top: 76px;
+  left: 12px;
+  bottom: 44px;
+  width: 270px;
   overflow-y: auto;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
   padding: 12px 14px;
-}
-
-#panel header {
-  border-bottom: 1px solid var(--panel-border);
-  padding-bottom: 8px;
-  margin-bottom: 4px;
 }
 
 h1 {
@@ -61,6 +180,21 @@ h1 {
 .sub {
   color: var(--text-dim);
   margin-top: 2px;
+}
+
+summary {
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--accent);
+  margin: 12px 0 6px;
+  border-left: 3px solid var(--accent);
+  padding-left: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+details:not([open]) > summary {
+  color: var(--text-dim);
 }
 
 h2 {
@@ -287,4 +421,129 @@ body.dragging #drop-hint {
   margin: 0;
   color: var(--text-dim);
   font-size: 11px;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button:disabled:hover {
+  background: linear-gradient(#5a3e26, #3e2a1a);
+}
+
+/* 選んだツールのオプションだけを出す */
+.tool-opts {
+  display: none;
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid #5a4630;
+  border-radius: 4px;
+}
+
+.tool-opts.shown {
+  display: block;
+}
+
+.presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+input[type='range'] {
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+output.num {
+  width: 16px;
+  text-align: right;
+  color: var(--accent);
+}
+
+.palette {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.palette button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+}
+
+.palette button.active {
+  background: linear-gradient(#b08a3e, #7a5a24);
+  border-color: var(--accent);
+  color: #fff8e4;
+}
+
+.palette .swatch {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+}
+
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 4px 0;
+}
+
+.seg label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+input[type='radio'] {
+  accent-color: var(--accent);
+}
+
+button[data-tool].deploy.attacker {
+  border-left: 3px solid #d8442e;
+}
+
+button[data-tool].deploy.defender {
+  border-left: 3px solid #2e7ad8;
+}
+
+.area-list .area .text {
+  line-height: 1.35;
+}
+
+.area-list .area .counts {
+  font-size: 11px;
+}
+
+.area-list .area .warn {
+  color: #ff8a7a;
+}
+
+label.check.lite {
+  font-weight: bold;
+  color: var(--accent);
+}
+
+/* lil-gui は上部のバーの下から */
+body .lil-gui.autoPlace {
+  top: 12px;
+  max-height: calc(100% - 60px);
 }

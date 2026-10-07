@@ -8,42 +8,149 @@
   <body>
     <div id="viewport"></div>
 
-    <aside id="panel">
-      <header>
+    <header id="filebar">
+      <div class="brand">
         <h1>Norden Map Editor</h1>
         <div id="map-title" class="sub">-</div>
-      </header>
+      </div>
+      <div class="group">
+        <div id="map-combo"></div>
+        <button id="btn-map-load" disabled>読み込み</button>
+        <button id="btn-map-list" class="icon" title="一覧を更新">↻</button>
+      </div>
+      <div class="group">
+        <input id="map-name" type="text" placeholder="マップ名" title="マップ名" />
+        <input id="map-file" type="text" placeholder="ファイル名（例: fluen.json）" title="保存するファイル名（assets/maps/）" />
+        <button id="btn-save" title="assets/maps/ にファイル名欄の名前で保存（Ctrl+S）">保存</button>
+      </div>
+      <div class="group">
+        <button id="btn-open" title="ローカルの JSON を開く（ドロップでも開けます）">JSON を開く</button>
+        <button id="btn-download">ダウンロード</button>
+      </div>
+      <input id="file-input" type="file" accept=".json,application/json" hidden />
+    </header>
 
-      <section>
-        <h2>マップ</h2>
-        <label class="row">
-          <span>保存済み</span>
-          <select id="map-select"></select>
-        </label>
-        <div class="buttons">
-          <button id="btn-map-list">一覧を更新</button>
-        </div>
-        <label class="row">
-          <span>マップ名</span>
-          <input id="map-name" type="text" />
-        </label>
-        <label class="row">
-          <span>ファイル</span>
-          <input id="map-file" type="text" placeholder="例: fluen.json" />
-        </label>
-        <div class="buttons">
-          <button id="btn-save">保存</button>
-        </div>
-        <div class="buttons">
-          <button id="btn-open">JSON を開く</button>
-          <button id="btn-download">ダウンロード</button>
-        </div>
-        <input id="file-input" type="file" accept=".json,application/json" hidden />
-        <p class="hint">保存先はリポジトリ直下の assets/maps/ です（battle-editor からも読み込めます）。「保存」はファイル名欄の名前で書き込みます。JSON ファイルをドロップしても開けます</p>
-      </section>
+    <aside id="panel">
+      <div class="toolbar">
+        <button data-tool="select" class="active" title="Esc">選択</button>
+        <button id="btn-undo" title="Ctrl+Z" disabled>元に戻す</button>
+        <button id="btn-redo" title="Ctrl+Y / Ctrl+Shift+Z" disabled>やり直す</button>
+      </div>
 
-      <section>
-        <h2>街道マップ</h2>
+      <details open>
+        <summary>地形</summary>
+        <div class="tools">
+          <button data-tool="elevation">標高</button>
+          <button data-tool="terrain">地形</button>
+          <button data-tool="river">川</button>
+        </div>
+
+        <div class="tool-opts" data-for="elevation">
+          <div class="presets">
+            <button data-elev-preset="mountain" title="なぞった所を 3 段盛り上げ、なだらかな裾野を付けて山岳・丘陵にする">山</button>
+            <button data-elev-preset="valley" title="なぞった所を 2 段掘り下げ、両側をなだらかにする">谷</button>
+            <button data-elev-preset="plateau" title="なぞった所を周りごと 1 段持ち上げる（縁は崖）">台地</button>
+            <button data-elev-preset="flatten" title="なぞり始めた HEX の高さにそろえる">平らに</button>
+          </div>
+          <label class="row">
+            <span>操作</span>
+            <select id="elev-mode">
+              <option value="raise">上げる</option>
+              <option value="lower">下げる</option>
+              <option value="flatten">平らにする（なぞり始めの高さ）</option>
+              <option value="set">指定の高さにする</option>
+            </select>
+          </label>
+          <label class="row" data-elev-show="raise lower">
+            <span>段数</span>
+            <input id="elev-amount" type="number" min="1" max="6" value="1" />
+          </label>
+          <label class="row" data-elev-show="set">
+            <span>高さ</span>
+            <input id="elev-level" type="number" min="0" max="8" value="1" />
+          </label>
+          <label class="row">
+            <span>半径</span>
+            <input id="elev-radius" type="range" min="0" max="4" value="0" />
+            <output id="elev-radius-out" class="num">0</output>
+          </label>
+          <label class="check"><input id="elev-smooth" type="checkbox" checked /> 裾野をなだらかに</label>
+          <label class="check" data-elev-show="raise"><input id="elev-shape" type="checkbox" /> 盛った所を山岳・丘陵に</label>
+          <label class="check"><input id="elev-keep-water" type="checkbox" checked /> 水域は変えない</label>
+          <p class="hint">HEX をクリック・ドラッグでなぞります。「なだらか」は中心から 1 HEX 離れるごとに 1 段ずつ弱めます（山・谷の斜面）。[ ] キーで半径を変更。標高は「表示 → HEX 塗り → 標高」で色分けすると見やすくなります</p>
+        </div>
+
+        <div class="tool-opts" data-for="terrain">
+          <div id="terrain-palette" class="palette"></div>
+          <div class="seg">
+            <label><input type="radio" name="terrain-shape" value="rect" checked /> 矩形で範囲選択</label>
+            <label><input type="radio" name="terrain-shape" value="brush" /> ブラシ</label>
+          </div>
+          <label class="row" data-terrain-show="brush">
+            <span>半径</span>
+            <input id="terrain-radius" type="range" min="0" max="4" value="1" />
+            <output id="terrain-radius-out" class="num">1</output>
+          </label>
+          <label class="check" data-terrain-show="rect"><input id="terrain-protect" type="checkbox" checked /> 範囲内の水域・山岳は残す</label>
+          <p class="hint">矩形: ドラッグした 2 つの HEX を対角にした範囲を塗ります（森を作るときなど）。「範囲内の水域・山岳は残す」で範囲内の川・山はそのままにします。ブラシはなぞった HEX を必ず上塗りします（川を草原で塗って消すなど）。水域を塗ると標高 0 になり、建物は撤去、街道には橋が架かります</p>
+        </div>
+
+        <div class="tool-opts" data-for="river">
+          <div class="seg">
+            <label><input type="radio" name="river-mode" value="draw" checked /> 引く</label>
+            <label><input type="radio" name="river-mode" value="erase" /> 消す</label>
+          </div>
+          <label class="check" data-river-show="draw"><input id="river-deep" type="checkbox" /> 深い水域にする</label>
+          <label class="check" data-river-show="draw"><input id="river-banks" type="checkbox" checked /> 両岸を削る</label>
+          <p class="hint">引く: HEX をドラッグでなぞると川になります（標高 0。一歩戻ると取り消し）。「両岸を削る」は川から 1 HEX 先を 1 段、2 HEX 先を 2 段までに下げ、高台を流れる川でも谷になります。街道が通る HEX には橋が架かります。</p>
+          <p class="hint">消す: なぞった水域を草原に戻します（標高は隣の陸の低い方にそろえ、橋は撤去）。「地形」のブラシで草原などを塗っても消せます</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>全地形クリア</summary>
+        <label class="row">
+          <span>地形</span>
+          <select id="clear-terrain"></select>
+        </label>
+        <div class="seg">
+          <label><input type="radio" name="clear-elev" value="flat" checked /> 一定の標高</label>
+          <label><input type="radio" name="clear-elev" value="random" /> ランダムな標高</label>
+        </div>
+        <label class="row" data-clear-show="flat">
+          <span>標高</span>
+          <input id="clear-level" type="number" min="0" max="8" value="1" />
+        </label>
+        <div class="grid2" data-clear-show="random">
+          <label>最低 <input id="clear-min" type="number" min="0" max="8" value="0" /></label>
+          <label>最高 <input id="clear-max" type="number" min="0" max="8" value="4" /></label>
+          <label>起伏の細かさ <input id="clear-scale" type="number" min="0.02" max="0.6" step="0.02" value="0.12" /></label>
+          <label>シード <input id="clear-seed" type="number" value="1" /></label>
+        </div>
+        <label class="check" data-clear-show="random"><input id="clear-shape" type="checkbox" /> 高い所を丘陵・山岳に</label>
+        <label class="check"><input id="clear-features" type="checkbox" checked /> 人工物・街道も消す</label>
+        <div class="buttons">
+          <button id="btn-clear">クリア</button>
+          <button id="btn-clear-next" data-clear-show="random" title="シードを 1 つ進めてクリア">次のシード</button>
+        </div>
+        <p class="hint">全 HEX を選んだ地形にします（戦闘の範囲・初期配置地点は残ります）。「元に戻す」で戻せます</p>
+      </details>
+
+      <details open>
+        <summary>人工物</summary>
+        <div class="tools">
+          <button data-tool="bridge">橋</button>
+          <button data-tool="village">村</button>
+          <button data-tool="fort">砦</button>
+          <button data-tool="castle">城</button>
+          <button data-tool="road">街道</button>
+          <button data-tool="erase">撤去</button>
+        </div>
+        <p class="hint">HEX をクリックして配置。同じ人工物をもう一度クリックで撤去（橋は向きを変更）。隣り合う砦・城は 1 つにつながります。「街道」は HEX をドラッグでなぞって引きます。「撤去」はクリックで人工物（無ければ街道）を、ドラッグでなぞった HEX の人工物と街道をまとめて撤去します</p>
+      </details>
+
+      <details open>
+        <summary>街道マップ</summary>
         <div class="grid2">
           <label>都市 A <input id="link-a" type="text" placeholder="例: P004" /></label>
           <label>都市 B <input id="link-b" type="text" placeholder="例: P012" /></label>
@@ -51,48 +158,19 @@
         <div id="area-list" class="area-list"></div>
         <div class="tools">
           <button data-tool="area">範囲を配置</button>
+          <button data-tool="deploy-attacker" class="deploy attacker">攻撃側の配置</button>
+          <button data-tool="deploy-defender" class="deploy defender">防衛側の配置</button>
+        </div>
+        <div class="buttons">
+          <button id="btn-deploy-clear">この範囲の配置地点を消す</button>
         </div>
         <label class="check"><input id="chk-area-preview" type="checkbox" /> 範囲だけ表示</label>
-        <p class="hint">戦略マップの街道でつながる 2 都市（A–B）を 1 枚に描いたマップで、侵攻方向ごとの戦闘の範囲を決めます。範囲は防衛する都市の ID で引きます（A→B の侵攻なら B の範囲）。都市を選んで「範囲を配置」でマップをクリック・ドラッグすると、その HEX を中心に範囲が動きます（列・行は偶数に寄せます）。「範囲だけ表示」はゲームの戦闘で使う切り出し後の見た目です（その間は編集できません）。ファイル名は road-&lt;小さい ID&gt;-&lt;大きい ID&gt;.json にします</p>
-      </section>
+        <p class="hint">戦略マップの街道でつながる 2 都市（A–B）を 1 枚に描いたマップで、侵攻方向ごとの戦闘の範囲を決めます。範囲は防衛する都市の ID で引きます（A→B の侵攻なら B の範囲）。都市を選んで「範囲を配置」でマップをクリック・ドラッグすると、その HEX を中心に範囲が動きます（列・行は偶数に寄せます）。</p>
+        <p class="hint">「攻撃側の配置」「防衛側の配置」で、選んだ範囲の初期配置地点（戦闘でユニットを自由に置ける HEX）をクリック・ドラッグで塗ります。配置地点の HEX から始めると消します。範囲の外・水域には置けません。「範囲だけ表示」はゲームの戦闘で使う切り出し後の見た目です（その間は編集できません）。ファイル名は road-&lt;小さい ID&gt;-&lt;大きい ID&gt;.json にします</p>
+      </details>
 
-      <section>
-        <h2>人工物の配置</h2>
-        <div id="tools" class="tools">
-          <button data-tool="select" class="active">選択</button>
-          <button data-tool="bridge">橋</button>
-          <button data-tool="village">村</button>
-          <button data-tool="fort">砦</button>
-          <button data-tool="castle">城</button>
-          <button data-tool="erase">撤去</button>
-          <button data-tool="forest">森↔草原</button>
-          <button data-tool="road">街道</button>
-        </div>
-        <p class="hint">HEX をクリックして配置。同じ人工物をもう一度クリックで撤去（橋は向きを変更）。隣り合う砦・城は 1 つにつながります。「森↔草原」は森を伐採して草原に、草原に植林して森にします。「街道」は HEX をドラッグでなぞって引き、「撤去」でなぞると消せます</p>
-      </section>
-
-      <section>
-        <h2>ユニット</h2>
-        <div class="tools">
-          <button data-tool="unit">配置</button>
-        </div>
-        <label class="row">
-          <span>兵種</span>
-          <select id="unit-type"></select>
-        </label>
-        <label class="row">
-          <span>軍</span>
-          <select id="unit-team"></select>
-        </label>
-        <div class="buttons">
-          <button id="btn-units-demo">両軍を並べる</button>
-          <button id="btn-units-clear">全て撤去</button>
-        </div>
-        <p class="hint">「配置」で HEX をクリックすると置けます。同じユニットをもう一度クリックで左右の向きを反転、「撤去」ツールで取り除けます</p>
-      </section>
-
-      <section>
-        <h2>ランダム生成</h2>
+      <details>
+        <summary>ランダム生成</summary>
         <div class="grid2">
           <label>シード <input id="rnd-seed" type="number" value="1" /></label>
           <label>向き
@@ -108,10 +186,12 @@
           <button id="btn-random">生成</button>
           <button id="btn-random-next">次のシード</button>
         </div>
-      </section>
+      </details>
 
-      <section>
-        <h2>表示</h2>
+      <details open>
+        <summary>表示</summary>
+        <label class="check lite"><input id="chk-lite" type="checkbox" /> 軽量表示</label>
+        <p class="hint">描画解像度・地形の細かさを下げ、木・影・羊皮紙風の加工を止めます。編集が重いときに使ってください（保存されるマップは変わりません）</p>
         <label class="row">
           <span>HEX 塗り</span>
           <select id="overlay-mode">
@@ -125,16 +205,15 @@
         <label class="check"><input id="chk-water" type="checkbox" checked /> 水面</label>
         <label class="check"><input id="chk-structures" type="checkbox" checked /> 人工物</label>
         <label class="check"><input id="chk-roads" type="checkbox" checked /> 街道</label>
-        <label class="check"><input id="chk-units" type="checkbox" checked /> ユニット</label>
         <div id="legend"></div>
-      </section>
+      </details>
 
-      <section>
-        <h2>HEX 情報</h2>
+      <details open>
+        <summary>HEX 情報</summary>
         <dl id="hover-info" class="info"></dl>
         <h3>選択中</h3>
         <dl id="select-info" class="info"></dl>
-      </section>
+      </details>
     </aside>
 
     <div id="status"></div>

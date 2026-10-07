@@ -28,6 +28,9 @@ import { isTeamId, isUnitType, type UnitData } from './units';
  *   大きさは BATTLE_AREA_SIZE。切り出しは battleArea.ts の cropMap。
  * - origin は切り出したマップの、元のマップでの左上の HEX（cropMap が付ける）。省略可。
  *   地形のノイズなどを元の座標で引き、切り出しても元のマップと同じ見た目にする。
+ * - deployments は街道マップの戦闘の初期配置地点。battleAreas と同じく防衛する都市の ID で引き、
+ *   攻撃側・防衛側の HEX（街道マップの座標）を持つ。範囲の外の HEX は切り出したときに落ちる。省略可。
+ * - deploy は切り出したマップの初期配置地点（cropBattleArea が deployments から作る。切り出したマップの座標）。省略可。
  */
 export interface HexCell {
   col: number;
@@ -47,9 +50,18 @@ export interface MapData {
   link?: MapLink;
   battleAreas?: Record<string, Offset>;
   origin?: Offset;
+  deployments?: Record<string, BattleDeployment>;
+  deploy?: BattleDeployment;
   cells: HexCell[];
   units?: UnitData[];
 }
+
+/** 戦闘の初期配置の陣営 */
+export const DEPLOY_SIDES = ['attacker', 'defender'] as const;
+export type DeploySide = (typeof DEPLOY_SIDES)[number];
+
+/** 戦闘の初期配置地点（戦闘でユーザーがユニットを置ける HEX）。陣営ごとの HEX の並び */
+export type BattleDeployment = Record<DeploySide, Offset[]>;
 
 /** 戦闘の範囲の大きさ（HEX 数）。街道マップの battleAreas はこの大きさで切り出す */
 export const BATTLE_AREA_SIZE = { cols: 16, rows: 16 } as const;
@@ -128,6 +140,38 @@ export function parseMapData(json: unknown): MapData {
 
   const origin = o.origin === undefined ? undefined : offsetOf(o.origin, 'origin');
 
+  const deploymentOf = (v: unknown, what: string): BattleDeployment => {
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) fail(`${what} がオブジェクトではありません`);
+    const out: BattleDeployment = { attacker: [], defender: [] };
+    const seen = new Set<string>();
+    for (const side of DEPLOY_SIDES) {
+      const list = (v as Record<string, unknown>)[side];
+      if (list === undefined) continue;
+      if (!Array.isArray(list)) fail(`${what}.${side} が配列ではありません`);
+      (list as unknown[]).forEach((p, i) => {
+        const q = p as Record<string, unknown> | null;
+        if (typeof q !== 'object' || q === null || !Number.isInteger(q.col) || !Number.isInteger(q.row))
+          fail(`${what}.${side}[${i}]: col/row が不正です`);
+        const col = q!.col as number;
+        const row = q!.row as number;
+        if (col < 0 || row < 0 || col >= grid.cols || row >= grid.rows) fail(`${what}.${side}[${i}]: (${col}, ${row}) はマップ範囲外です`);
+        if (seen.has(`${col},${row}`)) fail(`${what}.${side}[${i}]: (${col}, ${row}) が重複しています`);
+        seen.add(`${col},${row}`);
+        out[side].push({ col, row });
+      });
+    }
+    return out;
+  };
+
+  let deployments: Record<string, BattleDeployment> | undefined;
+  if (o.deployments !== undefined) {
+    if (typeof o.deployments !== 'object' || o.deployments === null || Array.isArray(o.deployments))
+      fail('deployments がオブジェクトではありません');
+    deployments = {};
+    for (const [city, v] of Object.entries(o.deployments as Record<string, unknown>)) deployments[city] = deploymentOf(v, `deployments.${city}`);
+  }
+  const deploy = o.deploy === undefined ? undefined : deploymentOf(o.deploy, 'deploy');
+
   if (!Array.isArray(o.cells)) fail('cells が配列ではありません');
   const cells: HexCell[] = [];
   (o.cells as unknown[]).forEach((c, i) => {
@@ -191,9 +235,16 @@ export function parseMapData(json: unknown): MapData {
     ...(link ? { link } : {}),
     ...(battleAreas ? { battleAreas } : {}),
     ...(origin ? { origin } : {}),
+    ...(deployments ? { deployments } : {}),
+    ...(deploy ? { deploy } : {}),
     cells,
     ...(units.length > 0 ? { units } : {}),
   };
+}
+
+/** 初期配置地点の写し */
+export function cloneDeployment(d: BattleDeployment): BattleDeployment {
+  return { attacker: d.attacker.map((o) => ({ ...o })), defender: d.defender.map((o) => ({ ...o })) };
 }
 
 /** MapData を引きやすい形に展開したもの */
@@ -252,6 +303,11 @@ export class HexMap {
     if (cell) cell.terrain = terrain;
   }
 
+  setElevation(col: number, row: number, elevation: number): void {
+    const cell = this.get(col, row);
+    if (cell) cell.elevation = Math.round(elevation);
+  }
+
   allCells(): readonly HexCell[] {
     return this.cells;
   }
@@ -301,19 +357,31 @@ export class HexMap {
       ...rest,
       ...(rest.link ? { link: { cities: [...rest.link.cities] } } : {}),
       ...(rest.battleAreas ? { battleAreas: Object.fromEntries(Object.entries(rest.battleAreas).map(([k, v]) => [k, { ...v }])) } : {}),
+      ...(rest.deployments
+        ? { deployments: Object.fromEntries(Object.entries(rest.deployments).map(([k, v]) => [k, cloneDeployment(v)])) }
+        : {}),
+      ...(rest.deploy ? { deploy: cloneDeployment(rest.deploy) } : {}),
       cells: this.cells.map((c) => ({ ...c, ...(c.roads ? { roads: [...c.roads] } : {}) })),
       ...(units.length > 0 ? { units } : {}),
     };
   }
 }
 
-/** 1 セル 1 行の読みやすい形で JSON 文字列化する */
+/** 1 セル 1 行の読みやすい形で JSON 文字列化する（初期配置地点は陣営ごとに 1 行） */
 export function stringifyMapData(data: MapData): string {
-  const { cells, units, ...rest } = data;
+  const { cells, units, deployments, deploy, ...rest } = data;
   const head = JSON.stringify(rest, null, 2).replace(/\n}$/, '');
   const list = (key: string, items: readonly object[]) =>
     `  "${key}": [\n${items.map((c) => `    ${JSON.stringify(c)}`).join(',\n')}\n  ]`;
-  const parts = [list('cells', cells)];
+  const sides = (d: BattleDeployment, indent: string) =>
+    `{\n${DEPLOY_SIDES.map((side) => `${indent}  "${side}": ${JSON.stringify(d[side])}`).join(',\n')}\n${indent}}`;
+  const parts: string[] = [];
+  if (deployments) {
+    const entries = Object.entries(deployments).map(([city, d]) => `    ${JSON.stringify(city)}: ${sides(d, '    ')}`);
+    parts.push(entries.length > 0 ? `  "deployments": {\n${entries.join(',\n')}\n  }` : '  "deployments": {}');
+  }
+  if (deploy) parts.push(`  "deploy": ${sides(deploy, '  ')}`);
+  parts.push(list('cells', cells));
   if (units && units.length > 0) parts.push(list('units', units));
   return `${head},\n${parts.join(',\n')}\n}\n`;
 }

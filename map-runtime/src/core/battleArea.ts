@@ -3,7 +3,7 @@
  * 侵攻方向ごとの戦闘の範囲を切り出す。範囲は防衛する都市の ID で引く（A→B の侵攻なら battleAreas[B]）。
  */
 import type { Offset } from './hex';
-import { BATTLE_AREA_SIZE, HexMap, isAlignedOrigin, type MapData } from './mapData';
+import { BATTLE_AREA_SIZE, DEPLOY_SIDES, HexMap, isAlignedOrigin, type BattleDeployment, type MapData } from './mapData';
 
 export { BATTLE_AREA_SIZE, isAlignedOrigin };
 
@@ -50,4 +50,26 @@ export function cropMap(data: MapData, area: Offset, size: { cols: number; rows:
     cells: full.cells.filter(inside).map(move),
     ...(units.length > 0 ? { units } : {}),
   };
+}
+
+/**
+ * 防衛する都市 city の範囲（battleAreas[city]）を切り出したマップ。
+ * 初期配置地点（deployments[city]）のうち範囲の中のものを、切り出したマップの座標で deploy に付ける。
+ * 範囲が無ければ例外。
+ */
+export function cropBattleArea(data: MapData, city: string): MapData {
+  const area = data.battleAreas?.[city];
+  if (!area) throw new Error(`${city} の範囲（battleAreas.${city}）がありません`);
+  const out = cropMap(data, area);
+  const src = data.deployments?.[city];
+  if (!src) return out;
+  const deploy: BattleDeployment = { attacker: [], defender: [] };
+  for (const side of DEPLOY_SIDES) {
+    for (const o of src[side]) {
+      const col = o.col - area.col;
+      const row = o.row - area.row;
+      if (col >= 0 && row >= 0 && col < BATTLE_AREA_SIZE.cols && row < BATTLE_AREA_SIZE.rows) deploy[side].push({ col, row });
+    }
+  }
+  return { ...out, deploy };
 }
