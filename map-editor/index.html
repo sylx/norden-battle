@@ -125,15 +125,23 @@
           <label>最低 <input id="clear-min" type="number" min="0" max="8" value="0" /></label>
           <label>最高 <input id="clear-max" type="number" min="0" max="8" value="4" /></label>
           <label>起伏の細かさ <input id="clear-scale" type="number" min="0.02" max="0.6" step="0.02" value="0.12" /></label>
-          <label>シード <input id="clear-seed" type="number" value="1" /></label>
         </div>
         <label class="check" data-clear-show="random"><input id="clear-shape" type="checkbox" /> 高い所を丘陵・山岳に</label>
+        <label class="check"><input id="clear-forest" type="checkbox" /> ランダムに森を置く</label>
+        <div class="grid2" data-forest-show>
+          <label>森の割合 (%) <input id="clear-forest-coverage" type="number" min="0" max="100" step="5" value="30" /></label>
+          <label>森の細かさ <input id="clear-forest-scale" type="number" min="0.02" max="0.6" step="0.02" value="0.2" /></label>
+        </div>
         <label class="check"><input id="clear-features" type="checkbox" checked /> 人工物・街道も消す</label>
+        <label class="row">
+          <span>シード</span>
+          <input id="clear-seed" type="number" value="1" title="ランダムな標高・森に使います" />
+        </label>
         <div class="buttons">
           <button id="btn-clear">クリア</button>
-          <button id="btn-clear-next" data-clear-show="random" title="シードを 1 つ進めてクリア">次のシード</button>
+          <button id="btn-clear-next" title="シードを 1 つ進めてクリア">次のシード</button>
         </div>
-        <p class="hint">全 HEX を選んだ地形にします（戦闘の範囲・初期配置地点は残ります）。「元に戻す」で戻せます</p>
+        <p class="hint">全 HEX を選んだ地形にします（戦闘の範囲・初期配置地点は残ります）。「元に戻す」で戻せます。「ランダムに森を置く」は、選んだ地形のままの陸の HEX のうち指定の割合をまとまった森にします（丘陵・山岳にした所と水域は除く）</p>
       </details>
 
       <details open>
@@ -145,6 +153,25 @@
           <button data-tool="castle">城</button>
           <button data-tool="road">街道</button>
           <button data-tool="erase">撤去</button>
+        </div>
+        <div class="tool-opts" data-for="castle">
+          <div class="seg">
+            <span class="label">郭の段</span>
+            <label><input type="radio" name="castle-ward" value="1" checked /> 1（外郭）</label>
+            <label><input type="radio" name="castle-ward" value="2" /> 2</label>
+            <label><input type="radio" name="castle-ward" value="3" /> 3（最も内側）</label>
+          </div>
+          <div class="buttons">
+            <button id="btn-castle-auto" title="城の外に面した HEX を 1、その内側を 2、… と振ります">郭の段を外周から自動で振る</button>
+          </div>
+          <label class="row">
+            <span>自動の上限</span>
+            <select id="castle-auto-max">
+              <option value="2">二重</option>
+              <option value="3" selected>三重</option>
+            </select>
+          </label>
+          <p class="hint">クリック・ドラッグでなぞった HEX を選んだ段の城にします（同じ段の城をクリックで撤去、違う段なら段を変更）。段の違う HEX の境にも城壁が立ち、二重・三重の城壁になります（内側ほど高く、郭ごとに門が 1 つ）。城の地面は石畳になります</p>
         </div>
         <p class="hint">HEX をクリックして配置。同じ人工物をもう一度クリックで撤去（橋は向きを変更）。隣り合う砦・城は 1 つにつながります。「街道」は HEX をドラッグでなぞって引きます。「撤去」はクリックで人工物（無ければ街道）を、ドラッグでなぞった HEX の人工物と街道をまとめて撤去します</p>
       </details>
@@ -217,6 +244,7 @@
     </aside>
 
     <div id="status"></div>
+    <div id="cursor-info" hidden></div>
     <div id="drop-hint">ここにドロップして開く</div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -2,9 +2,11 @@
  * 城・砦。
  * 同種の HEX がつながった領域ごとに、外周の辺に壁（城 = 石の城壁、砦 = 木柵）、
  * 外周の頂点に塔、1 か所に門を置き、内側に建物を建てる。
+ * 城は HEX ごとの郭の段（ward）が違う HEX の境にも城壁を立て（二重・三重の城壁）、郭ごとに門を 1 か所開ける。
+ * 城の地面の石畳は地形のシェーダで描く（HexOverlay.setPaved）。
  */
 import * as THREE from 'three';
-import { featureRegions, type FeatureId } from '../../core/features';
+import { castleWard, featureRegions } from '../../core/features';
 import type { Offset, Vec2 } from '../../core/hex';
 import type { HexCell } from '../../core/mapData';
 import { TERRAIN_DEFS } from '../../core/terrainTypes';
@@ -22,46 +24,63 @@ interface Edge {
   out: Vec2;
 }
 
-interface Region {
-  cells: HexCell[];
-  edges: Edge[];
-  vertices: Vec2[];
-  gate: Edge | null;
-  rng: Rng;
-}
-
 export function buildFortifications(ctx: BuildCtx, seed: number): void {
-  for (const type of ['castle', 'fort'] as const) {
-    for (const cells of featureRegions(ctx.map, type)) {
-      const region = analyzeRegion(ctx, cells, type, seed);
-      if (type === 'castle') buildCastle(ctx, region);
-      else buildFort(ctx, region);
-    }
-  }
+  for (const cells of featureRegions(ctx.map, 'castle')) buildCastle(ctx, cells, seed);
+  for (const cells of featureRegions(ctx.map, 'fort')) buildFort(ctx, cells, seed);
 }
 
-function analyzeRegion(ctx: BuildCtx, cells: HexCell[], type: FeatureId, seed: number): Region {
-  const layout = ctx.map.layout;
-  const key = (col: number, row: number) => `${col},${row}`;
-  const inRegion = new Set(cells.map((c) => key(c.col, c.row)));
-  const rng = structureRng(ctx, seed, cells[0].col, cells[0].row, type === 'castle' ? 11 : 12);
+const edgeKey = (e: Edge) => `${e.cell.col},${e.cell.row},${e.dir}`;
+const vertexKey = (p: Vec2) => `${Math.round(p.x * 1000)},${Math.round(p.z * 1000)}`;
 
+/** cells の外周の辺（inside が false の隣へ向かう辺） */
+function boundaryEdges(ctx: BuildCtx, cells: readonly HexCell[], inside: (o: Offset) => boolean): Edge[] {
+  const layout = ctx.map.layout;
   const edges: Edge[] = [];
-  const verts = new Map<string, Vec2>();
   for (const cell of cells) {
     const c = layout.offsetToWorld(cell.col, cell.row);
     for (let dir = 0; dir < 6; dir++) {
       const nb = layout.neighborInDir(cell.col, cell.row, dir);
-      if (inRegion.has(key(nb.col, nb.row))) continue;
+      if (inside(nb)) continue;
       const [a, b] = layout.edgeEndpoints(cell.col, cell.row, dir);
       const n = layout.offsetToWorld(nb.col, nb.row);
       const len = Math.hypot(n.x - c.x, n.z - c.z);
       edges.push({ cell, dir, nb, a, b, out: { x: (n.x - c.x) / len, z: (n.z - c.z) / len } });
-      for (const p of [a, b]) verts.set(`${Math.round(p.x * 1000)},${Math.round(p.z * 1000)}`, p);
     }
   }
+  return edges;
+}
 
-  // 門: 街道が来ている辺を最優先。無ければ陸続きで、村や橋に面していて、高低差の小さい辺
+/** cells のうち隣り合ってつながったものの組 */
+function components(ctx: BuildCtx, cells: readonly HexCell[]): HexCell[][] {
+  const layout = ctx.map.layout;
+  const byKey = new Map(cells.map((c) => [`${c.col},${c.row}`, c]));
+  const seen = new Set<HexCell>();
+  const out: HexCell[][] = [];
+  for (const cell of cells) {
+    if (seen.has(cell)) continue;
+    const comp: HexCell[] = [];
+    const stack = [cell];
+    seen.add(cell);
+    while (stack.length > 0) {
+      const c = stack.pop()!;
+      comp.push(c);
+      for (const n of layout.neighbors(c.col, c.row)) {
+        const nc = byKey.get(`${n.col},${n.row}`);
+        if (!nc || seen.has(nc)) continue;
+        seen.add(nc);
+        stack.push(nc);
+      }
+    }
+    out.push(comp);
+  }
+  return out;
+}
+
+/**
+ * 門の辺: 街道が来ている辺を最優先。無ければ陸続きで、村や橋に面していて、高低差の小さい辺。
+ * 水域（橋を除く）・マップの外・高低差の大きすぎる辺には開けない（候補が無ければ null）。extra で点数を足せる
+ */
+function pickGate(ctx: BuildCtx, edges: readonly Edge[], rng: Rng, extra?: (e: Edge) => number): Edge | null {
   let gate: Edge | null = null;
   let best = -Infinity;
   for (const e of edges) {
@@ -76,14 +95,15 @@ function analyzeRegion(ctx: BuildCtx, cells: HexCell[], type: FeatureId, seed: n
     }
     if (e.cell.roads?.includes(e.dir)) score += 20;
     score += rng() * 0.5;
+    // 水域・マップの外（と険しすぎる辺）には開けない
+    if (score <= -5) continue;
+    score += extra?.(e) ?? 0;
     if (score > best) {
       best = score;
       gate = e;
     }
   }
-  if (best <= -5) gate = null;
-
-  return { cells, edges, vertices: [...verts.values()], gate, rng };
+  return gate;
 }
 
 /** 壁のローカル座標系: x = 壁に沿う方向, z = +1 が外側 */
@@ -98,6 +118,8 @@ function lerp2(a: Vec2, b: Vec2, t: number): Vec2 {
   return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
 }
 
+const mid = (e: Edge) => lerp2(e.a, e.b, 0.5);
+
 // ---- 城 -------------------------------------------------------------------
 
 const WALL_H = 0.2;
@@ -105,16 +127,45 @@ const WALL_T = 0.07;
 const TOWER_R = 0.08;
 const TOWER_H = 0.3;
 const GATE_HALF = 0.075;
+/** 郭の段が 1 つ内側になるごとに城壁・塔を高くする割合 */
+const WARD_RISE = 0.3;
 
-function buildCastle(ctx: BuildCtx, r: Region): void {
-  const rng = r.rng;
+const wardScale = (ward: number) => 1 + WARD_RISE * (ward - 1);
+
+function buildCastle(ctx: BuildCtx, cells: HexCell[], seed: number): void {
+  const layout = ctx.map.layout;
+  const rng = structureRng(ctx, seed, cells[0].col, cells[0].row, 11);
+  const wardAt = (o: Offset) => castleWard(ctx.map.get(o.col, o.row));
+  const maxWard = Math.max(...cells.map(castleWard));
+
+  // 郭ごと（外側から）に門を選ぶ。内側の郭の門は 1 つ外側の郭に向けて開け、外側の門の近くに寄せる
+  const gates = new Set<string>();
+  let outerGates: Vec2[] = [];
+  for (let k = 1; k <= maxWard; k++) {
+    const ringGates: Vec2[] = [];
+    const prev = outerGates;
+    // 1 つ外側の郭に面していない辺（城の外に面した辺）は避け、外側の門に近い辺ほど良い
+    const inward = (e: Edge) => {
+      const m = mid(e);
+      const near = prev.length > 0 ? Math.min(...prev.map((p) => Math.hypot(p.x - m.x, p.z - m.z))) : 0;
+      return (wardAt(e.nb) === k - 1 ? 0 : -6) - 0.6 * near;
+    };
+    for (const comp of components(ctx, cells.filter((c) => castleWard(c) >= k))) {
+      const gate = pickGate(ctx, boundaryEdges(ctx, comp, (o) => wardAt(o) >= k), rng, k === 1 ? undefined : inward);
+      if (!gate) continue;
+      gates.add(edgeKey(gate));
+      ringGates.push(mid(gate));
+    }
+    outerGates = ringGates;
+  }
+
   const stone = vary(0xb3aa98, rng, 0.05);
   const walk = stone.clone().multiplyScalar(0.8);
   const towerRoof = rng() < 0.6 ? (rng() < 0.5 ? ROOF_SLATE : ROOF_TILE[1]) : null;
 
-  const castleWall = (a: Vec2, b: Vec2, out: Vec2) => {
+  const castleWall = (a: Vec2, b: Vec2, out: Vec2, height: number) => {
     if (Math.hypot(b.x - a.x, b.z - a.z) < 0.02) return;
-    const w = terrainWall(ctx, a, b, WALL_T, WALL_H, stone, PAT.Masonry, walk);
+    const w = terrainWall(ctx, a, b, WALL_T, height, stone, PAT.Masonry, walk);
     // 狭間（外側の胸壁）
     const step = 0.045;
     const n = Math.floor(w.len / step);
@@ -131,29 +182,37 @@ function buildCastle(ctx: BuildCtx, r: Region): void {
     }
   };
 
-  for (const e of r.edges) {
-    if (e === r.gate) {
-      const mid = lerp2(e.a, e.b, 0.5);
+  // 城壁: 隣の郭の段が低い（城の外は 0）辺。外向きは段の低い側。内側の郭ほど高い
+  const towers = new Map<string, { p: Vec2; ward: number }>();
+  for (const e of boundaryEdges(ctx, cells, () => false)) {
+    const ward = castleWard(e.cell);
+    if (wardAt(e.nb) >= ward) continue;
+    const height = WALL_H * wardScale(ward);
+    if (gates.has(edgeKey(e))) {
       const len = Math.hypot(e.b.x - e.a.x, e.b.z - e.a.z);
       const t = GATE_HALF / len;
-      castleWall(e.a, lerp2(e.a, e.b, 0.5 - t), e.out);
-      castleWall(lerp2(e.a, e.b, 0.5 + t), e.b, e.out);
-      gatehouse(ctx, mid, { x: (e.b.x - e.a.x) / len, z: (e.b.z - e.a.z) / len }, e.out, stone, rng);
+      castleWall(e.a, lerp2(e.a, e.b, 0.5 - t), e.out, height);
+      castleWall(lerp2(e.a, e.b, 0.5 + t), e.b, e.out, height);
+      gatehouse(ctx, mid(e), { x: (e.b.x - e.a.x) / len, z: (e.b.z - e.a.z) / len }, e.out, height, stone, rng);
     } else {
-      castleWall(e.a, e.b, e.out);
+      castleWall(e.a, e.b, e.out, height);
+    }
+    for (const p of [e.a, e.b]) {
+      const k = vertexKey(p);
+      const t = towers.get(k);
+      if (!t || t.ward < ward) towers.set(k, { p, ward });
     }
   }
+  for (const t of towers.values()) roundTower(ctx, t.p, TOWER_R, TOWER_H * wardScale(t.ward), stone, towerRoof, rng);
 
-  for (const v of r.vertices) roundTower(ctx, v, TOWER_R, TOWER_H, stone, towerRoof, rng);
-
-  // 主塔（領域の中でいちばん内側の HEX）
-  const layout = ctx.map.layout;
-  const inner = [...r.cells].sort((p, q) => innerCount(r, q) - innerCount(r, p))[0];
+  // 主塔（いちばん内側の郭の、いちばん内側の HEX）
+  const castleNeighbors = (c: HexCell) => layout.neighbors(c.col, c.row).filter((n) => wardAt(n) > 0).length;
+  const inner = [...cells].sort((p, q) => castleWard(q) - castleWard(p) || castleNeighbors(q) - castleNeighbors(p))[0];
   const kc = layout.offsetToWorld(inner.col, inner.row);
   keep(ctx, kc, stone, towerRoof ?? ROOF_SLATE, rng);
 
   // 他の HEX に館や兵舎
-  for (const cell of r.cells) {
+  for (const cell of cells) {
     const c = layout.offsetToWorld(cell.col, cell.row);
     const n = cell === inner ? 1 : 2 + Math.floor(rng() * 2);
     const placed: { x: number; z: number; r: number }[] = cell === inner ? [{ x: kc.x, z: kc.z, r: 0.36 }] : []; // 主塔 + 付属の館
@@ -166,16 +225,12 @@ function buildCastle(ctx: BuildCtx, r: Region): void {
       const W = 0.1 + rng() * 0.04;
       const rad = Math.hypot(L, W) / 2 + 0.02;
       if (placed.some((p) => Math.hypot(p.x - x, p.z - z) < p.r + rad)) continue;
-      if (Math.hypot(x - c.x, z - c.z) + rad > layout.inradius - WALL_T - 0.03 && r.cells.length === 1) continue;
+      if (Math.hypot(x - c.x, z - c.z) + rad > layout.inradius - WALL_T - 0.03 && cells.length === 1) continue;
       house(ctx, new Frame(x, z, rng() * Math.PI), { L, W, wallH: 0.1 + rng() * 0.04, style: rng() < 0.7 ? 'stone' : 'plaster', roof: rng() < 0.5 ? ROOF_SLATE : ROOF_TILE[0] }, rng);
       placed.push({ x, z, r: rad });
       i++;
     }
   }
-}
-
-function innerCount(r: Region, cell: HexCell): number {
-  return 6 - r.edges.filter((e) => e.cell === cell).length;
 }
 
 function roundTower(ctx: BuildCtx, p: Vec2, radius: number, height: number, stone: THREE.Color, roof: number | null, rng: Rng): void {
@@ -197,11 +252,11 @@ function roundTower(ctx: BuildCtx, p: Vec2, radius: number, height: number, ston
   }
 }
 
-function gatehouse(ctx: BuildCtx, mid: Vec2, dir: Vec2, out: Vec2, stone: THREE.Color, rng: Rng): void {
+function gatehouse(ctx: BuildCtx, mid: Vec2, dir: Vec2, out: Vec2, wallH: number, stone: THREE.Color, rng: Rng): void {
   const perp = { x: -dir.z, z: dir.x };
   const f = edgeFrame(mid, dir, perp, out);
   const g = groundRange(ctx.hm, footprint(f, -GATE_HALF - 0.1, GATE_HALF + 0.1, -WALL_T, WALL_T));
-  const top = g.max + WALL_H + 0.08;
+  const top = g.max + wallH + 0.08;
   const d = WALL_T / 2 + 0.03;
   // 両脇の塔
   for (const s of [-1, 1]) {
@@ -270,8 +325,12 @@ function keep(ctx: BuildCtx, c: Vec2, stone: THREE.Color, roofColor: number, rng
 const PALISADE_H = 0.13;
 const LOG_R = 0.011;
 
-function buildFort(ctx: BuildCtx, r: Region): void {
-  const rng = r.rng;
+function buildFort(ctx: BuildCtx, cells: HexCell[], seed: number): void {
+  const rng = structureRng(ctx, seed, cells[0].col, cells[0].row, 12);
+  const inRegion = new Set(cells.map((c) => `${c.col},${c.row}`));
+  const edges = boundaryEdges(ctx, cells, (o) => inRegion.has(`${o.col},${o.row}`));
+  const gate = pickGate(ctx, edges, rng);
+  const vertices = new Map(edges.flatMap((e) => [e.a, e.b]).map((p) => [vertexKey(p), p]));
   const wood = 0x6b4f35;
 
   const palisade = (a: Vec2, b: Vec2) => {
@@ -287,8 +346,8 @@ function buildFort(ctx: BuildCtx, r: Region): void {
     }
   };
 
-  for (const e of r.edges) {
-    if (e === r.gate) {
+  for (const e of edges) {
+    if (e === gate) {
       const len = Math.hypot(e.b.x - e.a.x, e.b.z - e.a.z);
       const t = GATE_HALF / len;
       palisade(e.a, lerp2(e.a, e.b, 0.5 - t));
@@ -299,11 +358,11 @@ function buildFort(ctx: BuildCtx, r: Region): void {
     }
   }
 
-  for (const v of r.vertices) watchtower(ctx, v, rng);
+  for (const v of vertices.values()) watchtower(ctx, v, rng);
 
   // 内側に小屋と天幕
   const layout = ctx.map.layout;
-  for (const cell of r.cells) {
+  for (const cell of cells) {
     const c = layout.offsetToWorld(cell.col, cell.row);
     const placed: { x: number; z: number; r: number }[] = [];
     const n = 3 + Math.floor(rng() * 3);

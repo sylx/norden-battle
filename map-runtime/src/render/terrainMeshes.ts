@@ -82,7 +82,7 @@ function buildTerrainGeometry(d: TerrainData): THREE.BufferGeometry {
 
 function createTerrainMaterial(overlay: HexOverlay): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
-  overlay.apply(m, { clipUnderwater: true, grain: true });
+  overlay.apply(m, { clipUnderwater: true, grain: true, paving: true });
   return m;
 }
 

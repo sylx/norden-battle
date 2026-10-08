@@ -4,7 +4,8 @@
  * - bridge : 川・浅瀬の HEX に置く。featureDir（0..5）で向きを指定、省略時は両岸が陸になる向きを自動選択
  * - village: 陸の HEX に置く。家々が HEX 内に散らばる
  * - fort   : 陸の HEX に置く。隣接する fort HEX は 1 つの砦になり、外周に木柵が巡る
- * - castle : 陸の HEX に置く。隣接する castle HEX は 1 つの城になり、外周に城壁・塔・門ができる
+ * - castle : 陸の HEX に置く。隣接する castle HEX は 1 つの城になり、外周に城壁・塔・門ができる。
+ *            HEX ごとの郭の段（ward 1..3）が違う HEX の境にも城壁が立ち、二重・三重の城壁になる。地面は石畳
  */
 import type { Offset } from './hex';
 import type { HexCell, HexMap } from './mapData';
@@ -29,6 +30,15 @@ export const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
   fort: { id: 'fort', name: '砦', onWater: false },
   castle: { id: 'castle', name: '城', onWater: false },
 };
+
+/** 城の郭の段の最大（3 = 三重の城壁） */
+export const MAX_WARD = 3;
+
+/** 城の HEX の郭の段（1 = 外郭。数字が大きいほど内側）。城でなければ 0 */
+export function castleWard(cell: HexCell | undefined): number {
+  if (cell?.feature !== 'castle') return 0;
+  return Math.min(Math.max(cell.ward ?? 1, 1), MAX_WARD);
+}
 
 export function isFeatureId(v: unknown): v is FeatureId {
   return typeof v === 'string' && (FEATURE_IDS as readonly string[]).includes(v);

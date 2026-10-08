@@ -12,6 +12,8 @@ export const TERRAIN_IDS = [
   'mountain',
   'swamp',
   'wasteland',
+  'desert',
+  'snow',
 ] as const;
 
 export type TerrainId = (typeof TERRAIN_IDS)[number];
@@ -136,6 +138,30 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     isWater: false,
     moveCost: 2,
     overlay: '#d8b878',
+  },
+  desert: {
+    id: 'desert',
+    name: '砂漠',
+    color: rgb(0xc9ad78),
+    color2: rgb(0xd6bc89),
+    baseOffset: 0.01,
+    treeDensity: 0,
+    bushDensity: 0.02,
+    isWater: false,
+    moveCost: 2,
+    overlay: '#f0d27a',
+  },
+  snow: {
+    id: 'snow',
+    name: '雪原',
+    color: rgb(0xd9dcdc),
+    color2: rgb(0xe6e8e6),
+    baseOffset: 0.02,
+    treeDensity: 0,
+    bushDensity: 0,
+    isWater: false,
+    moveCost: 2,
+    overlay: '#eef4fa',
   },
 };
 

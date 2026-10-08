@@ -1,5 +1,5 @@
 import { HexLayout, type GridSpec, type Offset, type Vec2 } from './hex';
-import { isFeatureId, type FeatureId } from './features';
+import { isFeatureId, MAX_WARD, type FeatureId } from './features';
 import { normalizeRoads } from './roads';
 import { isTerrainId, type TerrainId } from './terrainTypes';
 import { isTeamId, isUnitType, type UnitData } from './units';
@@ -19,6 +19,7 @@ import { isTeamId, isUnitType, type UnitData } from './units';
  * - elevation は整数の標高レベル（0 = 水面の高さ）。
  * - feature は人工物（bridge / village / fort / castle）。省略可。
  * - featureDir は橋の向き（0..5 の方向。0 と 3 は同じ軸）。省略時は自動。
+ * - ward は城の HEX の郭の段（1..3、省略時は 1）。段の違う HEX の境に城壁が立つ（二重・三重の城壁）。
  * - roads は街道がつながっている方向（0..5）の配列。省略可。隣の HEX 側の逆方向は読み込み時に補う。
  * - cells に含まれない HEX は plains / elevation 0 として扱う。
  * - units はユニットの配置（1 HEX に 1 部隊）。省略可。
@@ -39,6 +40,8 @@ export interface HexCell {
   elevation: number;
   feature?: FeatureId;
   featureDir?: number;
+  /** 城の郭の段（2..3。1 は省略）。castle のときだけ */
+  ward?: number;
   roads?: number[];
 }
 
@@ -199,6 +202,11 @@ export function parseMapData(json: unknown): MapData {
       if (!Number.isInteger(d) || (d as number) < 0 || (d as number) > 5) fail(`cells[${i}]: featureDir は 0..5 の整数`);
       out.featureDir = d as number;
     }
+    if (cell.ward !== undefined) {
+      const w = cell.ward;
+      if (!Number.isInteger(w) || (w as number) < 1 || (w as number) > MAX_WARD) fail(`cells[${i}]: ward は 1..${MAX_WARD} の整数`);
+      if (out.feature === 'castle' && (w as number) > 1) out.ward = w as number;
+    }
     if (cell.roads !== undefined) {
       const r = cell.roads;
       if (!Array.isArray(r) || !r.every((d) => Number.isInteger(d) && d >= 0 && d <= 5))
@@ -288,14 +296,16 @@ export class HexMap {
     return this.cells[r * this.layout.cols + c];
   }
 
-  /** 人工物を設定する（feature = null で撤去） */
-  setFeature(col: number, row: number, feature: FeatureId | null, dir?: number): void {
+  /** 人工物を設定する（feature = null で撤去）。dir は橋の向き、ward は城の郭の段 */
+  setFeature(col: number, row: number, feature: FeatureId | null, dir?: number, ward?: number): void {
     const cell = this.get(col, row);
     if (!cell) return;
     delete cell.feature;
     delete cell.featureDir;
+    delete cell.ward;
     if (feature) cell.feature = feature;
     if (feature && dir !== undefined) cell.featureDir = dir;
+    if (feature === 'castle' && ward !== undefined && ward > 1) cell.ward = Math.min(Math.round(ward), MAX_WARD);
   }
 
   setTerrain(col: number, row: number, terrain: TerrainId): void {

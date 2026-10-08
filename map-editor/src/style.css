@@ -537,6 +537,44 @@ button[data-tool].deploy.defender {
   color: #ff8a7a;
 }
 
+/* カーソルの HEX の地形・標高（カーソルの右下に出す。マウスは下のマップへ通す） */
+#cursor-info {
+  position: fixed;
+  z-index: 15;
+  padding: 3px 8px;
+  background: rgba(30, 22, 16, 0.88);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+#cursor-info .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 5px;
+  vertical-align: -1px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+}
+
+#cursor-info .elev {
+  margin-left: 8px;
+  color: var(--accent);
+}
+
+#cursor-info .dim {
+  margin-left: 8px;
+  color: var(--text-dim);
+}
+
+.seg .label {
+  color: var(--text-dim);
+}
+
 label.check.lite {
   font-weight: bold;
   color: var(--accent);

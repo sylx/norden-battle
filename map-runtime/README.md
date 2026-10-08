@@ -67,12 +67,13 @@ server/
 ```
 
 - `orientation`: `flat`（odd-q オフセット）/ `pointy`（odd-r オフセット）
-- `terrain`: `deep_water` `water` `plains` `forest` `hills` `mountain` `swamp` `wasteland`
+- `terrain`: `deep_water` `water` `plains` `forest` `hills` `mountain` `swamp` `wasteland` `desert` `snow`
 - `elevation`: 整数の標高レベル（0 が水面付近）
 - `seed`: 地形ノイズのシード。同じ JSON + 同じシード + 同じパラメータなら同じ地形になる
 - `feature`（省略可）: 人工物
   - `bridge` 橋（水域のみ）。`featureDir`（0..5、0 と 3 は同じ軸）で向きを指定、省略時は両岸が陸の向きを自動選択
-  - `village` 村 / `fort` 砦 / `castle` 城（陸のみ）。隣接する砦・城は 1 つにつながり、外周に柵・城壁、頂点に塔、1 か所に門ができる
+  - `village` 村 / `fort` 砦 / `castle` 城（陸のみ）。隣接する砦・城は 1 つにつながり、外周に柵・城壁、頂点に塔、1 か所に門ができる。城の HEX の地面は石畳
+- `ward`（省略可）: 城の HEX の郭の段（1..3、省略時 1。数字が大きいほど内側）。段の違う HEX の境にも城壁・塔が立ち、郭ごとに 1 か所門ができる（二重・三重の城壁）。内側の城壁ほど高い
 - `roads`（省略可）: 街道がつながっている方向（0..5）の配列。隣の HEX 側の逆方向は読み込み時に補う。マップ外への方向も可
   - 城・砦の門は道が来ている辺に、橋は道の向きに合わせて架かる。道沿いには木が生えず、村の家は道を避けて建つ
 - `cells` に無い HEX は `plains` / `elevation: 0`

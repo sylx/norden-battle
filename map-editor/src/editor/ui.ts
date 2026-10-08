@@ -1,6 +1,6 @@
 import GUI from 'lil-gui';
 import { BATTLE_AREA_SIZE } from '@norden/map-runtime/core/battleArea';
-import { FEATURE_DEFS } from '@norden/map-runtime/core/features';
+import { castleWard, FEATURE_DEFS } from '@norden/map-runtime/core/features';
 import { MapParseError, parseMapData, stringifyMapData, type HexCell, type MapData } from '@norden/map-runtime/core/mapData';
 import { generateRandomMap } from '@norden/map-runtime/core/randomMap';
 import { DEFAULT_TERRAIN_PARAMS } from '@norden/map-runtime/core/terrainGen';
@@ -14,7 +14,7 @@ import {
   type MapFileInfo,
 } from '@norden/map-runtime/mapFiles';
 import { foliageUniforms, windUniforms } from '@norden/map-runtime/render/foliage';
-import { DEPLOY_COLORS, type EditTool, type EditorApp, type OverlayMode } from './app';
+import { DEPLOY_COLORS, PITCH_RANGE, type EditTool, type EditorApp, type OverlayMode } from './app';
 import { ComboBox } from './combobox';
 import { MAX_ELEVATION, MIN_ELEVATION, type ElevationBrush, type ElevationMode } from './terrainTools';
 
@@ -37,6 +37,7 @@ const TOOL_HINTS: Partial<Record<EditTool, string>> = {
   terrain: '地形: 矩形はドラッグで範囲を選ぶ、ブラシはなぞって塗る',
   river: '川: HEX をドラッグでなぞる（「消す」ではなぞった水域を草原に戻す）',
   road: '街道: HEX をドラッグでなぞる',
+  castle: '城: クリック・ドラッグでなぞった HEX を選んだ郭の段の城にする（同じ段をクリックで撤去）',
   erase: '撤去: クリックで人工物（無ければ街道）を撤去 / なぞった HEX の人工物・街道をまとめて撤去',
 };
 
@@ -219,6 +220,8 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
     renderLink();
     updateUndo();
     updateTitle();
+    // カーソルを動かさなくても、編集した HEX の地形・標高を出し直す
+    app.onHover(app.hoveredCell);
   };
 
   // --- ツール ---
@@ -340,26 +343,39 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   $<HTMLInputElement>('river-deep').addEventListener('change', (e) => (app.riverBrush.deep = (e.target as HTMLInputElement).checked));
   $<HTMLInputElement>('river-banks').addEventListener('change', (e) => (app.riverBrush.carveBanks = (e.target as HTMLInputElement).checked));
 
+  // --- 城（郭の段） ---
+  for (const r of document.querySelectorAll<HTMLInputElement>('input[name="castle-ward"]')) {
+    r.addEventListener('change', () => {
+      app.castleWard = Number(r.value);
+      setTool('castle');
+    });
+  }
+  $('btn-castle-auto').addEventListener('click', () => app.autoCastleWards(Number($<HTMLSelectElement>('castle-auto-max').value)));
+
   // --- 全地形クリア ---
   const clearTerrainSel = $<HTMLSelectElement>('clear-terrain');
   for (const id of TERRAIN_IDS) clearTerrainSel.add(new Option(TERRAIN_DEFS[id].name, id));
   clearTerrainSel.value = 'plains';
   const clearMode = () => document.querySelector<HTMLInputElement>('input[name="clear-elev"]:checked')!.value as 'flat' | 'random';
+  const clearForest = $<HTMLInputElement>('clear-forest');
   const renderClear = () => {
     for (const el of document.querySelectorAll<HTMLElement>('[data-clear-show]')) el.hidden = el.dataset.clearShow !== clearMode();
+    for (const el of document.querySelectorAll<HTMLElement>('[data-forest-show]')) el.hidden = !clearForest.checked;
   };
   for (const r of document.querySelectorAll<HTMLInputElement>('input[name="clear-elev"]')) r.addEventListener('change', renderClear);
+  clearForest.addEventListener('change', renderClear);
   renderClear();
   const clearSeed = $<HTMLInputElement>('clear-seed');
   const doClear = () => {
     if (!app.map || app.previewing) return;
     const random = clearMode() === 'random';
+    const seed = Number(clearSeed.value) || 1;
     app.clearTerrain({
       terrain: clearTerrainSel.value as TerrainId,
       elevation: random
         ? {
             mode: 'random',
-            seed: Number(clearSeed.value) || 1,
+            seed,
             min: intValue('clear-min', MIN_ELEVATION, MAX_ELEVATION),
             max: intValue('clear-max', MIN_ELEVATION, MAX_ELEVATION),
             scale: Math.min(Math.max(Number($<HTMLInputElement>('clear-scale').value) || 0.12, 0.01), 1),
@@ -367,6 +383,13 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
         : { mode: 'flat', level: intValue('clear-level', MIN_ELEVATION, MAX_ELEVATION) },
       shapeTerrain: $<HTMLInputElement>('clear-shape').checked,
       clearFeatures: $<HTMLInputElement>('clear-features').checked,
+      forest: clearForest.checked
+        ? {
+            seed,
+            coverage: intValue('clear-forest-coverage', 0, 100) / 100,
+            scale: Math.min(Math.max(Number($<HTMLInputElement>('clear-forest-scale').value) || 0.2, 0.01), 1),
+          }
+        : undefined,
     });
   };
   $('btn-clear').addEventListener('click', () => {
@@ -553,14 +576,48 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
       ['軸座標', `q=${a.q}, r=${a.r}`],
       ['地形', TERRAIN_DEFS[cell.terrain].name],
       ['標高', `Lv ${cell.elevation}`],
-      ['人工物', cell.feature ? FEATURE_DEFS[cell.feature].name : '-'],
+      ['人工物', featureLabel(cell)],
       ['街道', cell.roads ? `${cell.roads.length} 方向` : '-'],
       ['初期配置', deploy],
     ]
       .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
       .join('');
   };
-  app.onHover = (c) => renderInfo($('hover-info'), c);
+  // カーソルの HEX の地形・標高（カーソルの右下に出す）
+  const cursorInfo = $('cursor-info');
+  const viewport = $('viewport');
+  let cursorPos = { x: 0, y: 0 };
+  const placeCursorInfo = () => {
+    const pad = 16;
+    const w = cursorInfo.offsetWidth;
+    const h = cursorInfo.offsetHeight;
+    // 画面の端では反対側に出す
+    const x = cursorPos.x + pad + w > window.innerWidth ? cursorPos.x - pad - w : cursorPos.x + pad;
+    const y = cursorPos.y + pad + h > window.innerHeight ? cursorPos.y - pad - h : cursorPos.y + pad;
+    cursorInfo.style.left = `${x}px`;
+    cursorInfo.style.top = `${y}px`;
+  };
+  viewport.addEventListener('pointermove', (e) => {
+    cursorPos = { x: e.clientX, y: e.clientY };
+    if (!cursorInfo.hidden) placeCursorInfo();
+  });
+  viewport.addEventListener('pointerleave', () => (cursorInfo.hidden = true));
+  const renderCursorInfo = (cell: HexCell | null) => {
+    cursorInfo.hidden = !cell;
+    if (!cell) return;
+    const t = TERRAIN_DEFS[cell.terrain];
+    const feature = cell.feature ? featureLabel(cell) : '';
+    cursorInfo.innerHTML =
+      `<span class="swatch" style="background:${t.overlay}"></span>${t.name}` +
+      `<span class="elev">標高 Lv ${cell.elevation}</span>` +
+      (feature ? `<span class="dim">${feature}</span>` : '') +
+      `<span class="dim">(${cell.col}, ${cell.row})</span>`;
+    placeCursorInfo();
+  };
+  app.onHover = (c) => {
+    renderInfo($('hover-info'), c);
+    renderCursorInfo(c);
+  };
   app.onSelect = (c) => renderInfo($('select-info'), c);
   renderInfo($('hover-info'), null);
   renderInfo($('select-info'), null);
@@ -571,7 +628,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
         `生成 ${s.ms.toFixed(0)} ms`,
         `頂点 ${s.vertices.toLocaleString()}`,
         `木 ${s.trees.toLocaleString()}`,
-        '左ドラッグ: 移動（編集ツールでは編集） / 右ドラッグ: 移動 / ホイール: ズーム',
+        '左ドラッグ: 移動（編集ツールでは編集） / 右ドラッグ: 移動 / 中ドラッグ: 俯角 / ホイール: ズーム',
       ].join('<span>|</span>'),
     );
 
@@ -618,11 +675,16 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   fPaper.add(pu.uOutline, 'value', 0, 1, 0.01).name('輪郭線');
   fPaper.add(pu.uVignette, 'value', 0, 1.5, 0.01).name('周縁の焼け');
   const fCamera = gui.addFolder('カメラ');
-  const camState = { pitch: app.ctx.pitch };
-  fCamera
-    .add(camState, 'pitch', 30, 80, 1)
-    .name('俯角 (度)')
-    .onChange((v: number) => app.ctx.setPitch(v));
+  // 中ボタンのドラッグでも変わるので、表示は毎フレーム追う
+  const camState = {
+    get pitch() {
+      return app.ctx.pitch;
+    },
+    set pitch(v: number) {
+      app.ctx.setPitch(v);
+    },
+  };
+  fCamera.add(camState, 'pitch', PITCH_RANGE.min, PITCH_RANGE.max, 1).name('俯角 (度)').listen();
   const fQuality = gui.addFolder('品質');
   fQuality.add(p, 'resolution', 2, 24, 1).name('頂点密度 (/単位)').onFinishChange(regen);
   fQuality.add(p, 'margin', 0, 6, 1).name('外周マージン (HEX)').onFinishChange(regen);
@@ -714,6 +776,13 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
       await loadStored(file);
     },
   };
+}
+
+/** 人工物の名前（城は郭の段も） */
+function featureLabel(cell: HexCell): string {
+  if (!cell.feature) return '-';
+  const name = FEATURE_DEFS[cell.feature].name;
+  return cell.feature === 'castle' ? `${name}（郭 ${castleWard(cell)}）` : name;
 }
 
 function hex(c: number): string {

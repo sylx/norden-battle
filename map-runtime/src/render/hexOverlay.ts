@@ -7,6 +7,7 @@
  * 移動範囲などの「範囲」は別の cols×rows のテクスチャで渡し、塗りと範囲の外周の縁取りで見せる。
  * 範囲の中の一部の HEX には印（別の色の斜線。移動範囲では「敵の ZOC で止まる」）を付けられる。
  * 範囲の中で薄く塗るだけの HEX（weak。攻撃範囲のうち相手のいない HEX など）も混ぜられる。
+ * 石畳の HEX（城の中）も cols×rows のテクスチャで渡し、地形のシェーダで敷石の模様を描く。
  */
 import * as THREE from 'three';
 import type { HexLayout, Offset } from '../core/hex';
@@ -38,6 +39,8 @@ export interface HexOverlayUniforms {
   uCellOpacity: THREE.IUniform<number>;
   uWaterLevel: THREE.IUniform<number>;
   uGrain: THREE.IUniform<number>;
+  /** 石畳の HEX（r > 0.5） */
+  uPaveTex: THREE.IUniform<THREE.DataTexture>;
 }
 
 const GLSL_COMMON = /* glsl */ `
@@ -59,6 +62,7 @@ uniform sampler2D uCellTex;
 uniform float uCellOpacity;
 uniform float uWaterLevel;
 uniform float uGrain;
+uniform sampler2D uPaveTex;
 varying vec3 vHexWorld;
 
 // xy = オフセット座標 (col,row), z = 最寄りの辺までの距離。lp = HEX の中心からの位置
@@ -171,6 +175,38 @@ float hexRangeEdge = 0.0;
   diffuseColor.rgb *= 1.0 + (hexG - 0.5) * uGrain;
 #endif
 
+#ifdef HEX_PAVING
+if (hexInMap && texelFetch(uPaveTex, ivec2(hexI.xy), 0).r > 0.5) {
+  // 石畳: ずらした格子のボロノイで丸みのある敷石を並べ、目地を暗くする。遠くでは平均の色に溶かす
+  vec2 pp = vHexWorld.xz / (uHexSize * 0.042);
+  vec2 pi = floor(pp);
+  vec2 pf = fract(pp);
+  float pd1 = 8.0;
+  float pd2 = 8.0;
+  vec2 pid = pi;
+  for (int pj = -1; pj <= 1; pj++) {
+    for (int pk = -1; pk <= 1; pk++) {
+      vec2 pg = vec2(float(pk), float(pj));
+      vec2 po = 0.5 + 0.36 * (vec2(hexHash(pi + pg), hexHash(pi + pg + vec2(17.3, 5.1))) - 0.5);
+      vec2 pr = pg + po - pf;
+      float d = dot(pr, pr);
+      if (d < pd1) { pd2 = pd1; pd1 = d; pid = pi + pg; }
+      else if (d < pd2) pd2 = d;
+    }
+  }
+  float pfw = max(length(fwidth(pp)), 1e-4);
+  float pFade = 1.0 - smoothstep(0.2, 0.6, pfw);
+  float pGap = sqrt(pd2) - sqrt(pd1);
+  float pJoint = smoothstep(0.06, 0.06 + pfw * 1.5, pGap);
+  float pTint = 0.8 + 0.4 * hexHash(pid + vec2(3.7, 9.1));
+  // 敷石の真ん中を少し明るく（丸み）
+  float pDome = 0.9 + 0.12 * (1.0 - smoothstep(0.0, 0.5, sqrt(pd1)));
+  vec3 pStone = mix(vec3(0.29, 0.27, 0.24), diffuseColor.rgb, 0.15);
+  vec3 pDetail = pStone * mix(0.45, pTint * pDome, pJoint);
+  diffuseColor.rgb = mix(pStone * 0.92, pDetail, pFade);
+}
+#endif
+
 if (hexInMap) {
   vec4 hexCell = texelFetch(uCellTex, ivec2(hexI.xy), 0);
   diffuseColor.rgb = mix(diffuseColor.rgb, hexCell.rgb, hexCell.a * uCellOpacity);
@@ -262,6 +298,7 @@ export class HexOverlay {
       uCellOpacity: { value: 0.55 },
       uWaterLevel: { value: 0 },
       uGrain: { value: 0.6 },
+      uPaveTex: { value: HexOverlay.makeRangeTexture(1, 1) },
     };
   }
 
@@ -294,6 +331,27 @@ export class HexOverlay {
     u.uRangeTex.value.dispose();
     u.uRangeTex.value = HexOverlay.makeRangeTexture(layout.cols, layout.rows);
     u.uRangeOn.value = 0;
+    u.uPaveTex.value.dispose();
+    u.uPaveTex.value = HexOverlay.makeRangeTexture(layout.cols, layout.rows);
+  }
+
+  /** 石畳にする HEX を設定する（地形のマテリアルに paving を付けたときだけ描く） */
+  setPaved(fn: (col: number, row: number) => boolean): void {
+    const tex = this.uniforms.uPaveTex.value;
+    const { width, height } = tex.image as { width: number; height: number };
+    const data = tex.image.data as Uint8Array;
+    for (let row = 0; row < height; row++) {
+      for (let col = 0; col < width; col++) data[row * width + col] = fn(col, row) ? 255 : 0;
+    }
+    tex.needsUpdate = true;
+  }
+
+  /** テクスチャを破棄する（MapView の破棄のとき） */
+  dispose(): void {
+    const u = this.uniforms;
+    u.uCellTex.value.dispose();
+    u.uRangeTex.value.dispose();
+    u.uPaveTex.value.dispose();
   }
 
   /** 範囲（移動範囲など）を出す。mark の付いた HEX には印を付け、weak の HEX は薄く塗る。cells = null で消す */
@@ -335,11 +393,12 @@ export class HexOverlay {
   }
 
   /** MeshStandardMaterial 系のマテリアルにオーバーレイを組み込む */
-  apply(material: THREE.MeshStandardMaterial, opts: { water?: boolean; clipUnderwater?: boolean; grain?: boolean } = {}): void {
+  apply(material: THREE.MeshStandardMaterial, opts: { water?: boolean; clipUnderwater?: boolean; grain?: boolean; paving?: boolean } = {}): void {
     material.defines ??= {};
     if (opts.water) material.defines.HEX_WATER = '';
     if (opts.clipUnderwater) material.defines.HEX_CLIP_UNDERWATER = '';
     if (opts.grain) material.defines.HEX_GRAIN = '';
+    if (opts.paving) material.defines.HEX_PAVING = '';
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.uniforms);
       shader.vertexShader = shader.vertexShader
@@ -353,7 +412,8 @@ export class HexOverlay {
         .replace('#include <color_fragment>', `#include <color_fragment>\n${GLSL_COLOR}`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${GLSL_EMISSIVE}`);
     };
-    material.customProgramCacheKey = () => `hex-overlay-${opts.water ? 1 : 0}${opts.clipUnderwater ? 1 : 0}${opts.grain ? 1 : 0}`;
+    material.customProgramCacheKey = () =>
+      `hex-overlay-${opts.water ? 1 : 0}${opts.clipUnderwater ? 1 : 0}${opts.grain ? 1 : 0}${opts.paving ? 1 : 0}`;
     material.needsUpdate = true;
   }
 }

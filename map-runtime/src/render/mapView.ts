@@ -191,6 +191,9 @@ export class MapView {
     // 表示を切り替えたものの影も消える・現れるようにする
     this.ctx.invalidateShadows();
     this.overlay.uniforms.uGridOpacity.value = this.display.grid ? this.gridOpacity : 0;
+    // 城の地面の石畳は人工物と一緒に出し入れする
+    const map = this.map;
+    this.overlay.setPaved((col, row) => this.display.structures && map?.get(col, row)?.feature === 'castle');
     if (this.meshes) this.meshes.water.visible = this.display.water;
     if (this.decor) {
       this.decor.forest.group.visible = this.display.trees;
@@ -313,8 +316,7 @@ export class MapView {
     this.ctx.overlay.remove(this.units.group, this.pathArrow.group, this.afterPathArrow.group, this.attackArrow.group, this.supportArrow.group);
     this.units.dispose();
     for (const arrow of [this.pathArrow, this.afterPathArrow, this.attackArrow, this.supportArrow]) arrow.dispose();
-    this.overlay.uniforms.uCellTex.value.dispose();
-    this.overlay.uniforms.uRangeTex.value.dispose();
+    this.overlay.dispose();
     this.ctx.onShadowPass = () => {};
     this.units.art.onChange = () => {};
     this.map = null;

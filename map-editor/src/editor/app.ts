@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BATTLE_AREA_SIZE, cropBattleArea, snapBattleArea } from '@norden/map-runtime/core/battleArea';
-import { bridgeAxis, bridgeAxisCandidates, canPlaceFeature, FEATURE_DEFS, isFeatureId, type FeatureId } from '@norden/map-runtime/core/features';
+import { bridgeAxis, bridgeAxisCandidates, canPlaceFeature, castleWard, FEATURE_DEFS, isFeatureId, type FeatureId } from '@norden/map-runtime/core/features';
 import { axialRound, type Offset } from '@norden/map-runtime/core/hex';
 import { HexMap, type BattleDeployment, type DeploySide, type HexCell, type MapData } from '@norden/map-runtime/core/mapData';
 import { clearRoads, setRoad } from '@norden/map-runtime/core/roads';
@@ -12,6 +12,7 @@ import { MapView, type GenStats, type MapDisplay } from '@norden/map-runtime/ren
 import { SceneContext } from '@norden/map-runtime/render/scene';
 import {
   applyEdits,
+  autoCastleWards,
   clearTerrain,
   distanceField,
   elevationEdits,
@@ -46,9 +47,9 @@ export type EditTool =
   | 'deploy-attacker'
   | 'deploy-defender';
 
-/** ドラッグでなぞるツール */
-type StrokeTool = 'road' | 'erase' | 'elevation' | 'terrain' | 'river' | 'deploy-attacker' | 'deploy-defender';
-const STROKE_TOOLS = new Set<EditTool>(['road', 'erase', 'elevation', 'terrain', 'river', 'deploy-attacker', 'deploy-defender']);
+/** ドラッグでなぞるツール（城はなぞって塗れる。1 HEX だけならクリック扱い） */
+type StrokeTool = 'road' | 'erase' | 'castle' | 'elevation' | 'terrain' | 'river' | 'deploy-attacker' | 'deploy-defender';
+const STROKE_TOOLS = new Set<EditTool>(['road', 'erase', 'castle', 'elevation', 'terrain', 'river', 'deploy-attacker', 'deploy-defender']);
 
 interface Stroke {
   tool: StrokeTool;
@@ -66,6 +67,10 @@ const AREA_COLOR = 0xffb040;
 export const DEPLOY_COLORS: Record<DeploySide, number> = { attacker: 0xd8442e, defender: 0x2e7ad8 };
 /** ブラシの範囲（カーソル位置）の色 */
 const BRUSH_COLOR = 0xfff0c0;
+
+/** 中ボタンのドラッグでカメラの俯角を変えるときの、1 ピクセルあたりの角度（度）と範囲 */
+const PITCH_PER_PIXEL = 0.25;
+export const PITCH_RANGE = { min: 20, max: 85 } as const;
 
 /** 元に戻せる回数 */
 const UNDO_LIMIT = 100;
@@ -94,6 +99,8 @@ export class EditorApp {
   };
   readonly terrainBrush: TerrainBrush = { terrain: 'forest', shape: 'rect', radius: 1, protect: true };
   readonly riverBrush: RiverBrush = { mode: 'draw', deep: false, carveBanks: true };
+  /** 城ツールで置く郭の段（1 = 外郭。数字が大きいほど内側） */
+  castleWard = 1;
   selected: Offset | null = null;
   tool: EditTool = 'select';
   /** 枠を表示し、範囲ツール・初期配置ツールで編集する戦闘の範囲（battleAreas のキー = 防衛する都市の ID） */
@@ -123,6 +130,8 @@ export class EditorApp {
   private readonly pointer = new THREE.Vector2();
   private pointerDirty = false;
   private downPos: { x: number; y: number } | null = null;
+  /** 中ボタンで俯角を変えている間（押した位置の Y と、そのときの俯角） */
+  private pitchDrag: { y: number; pitch: number } | null = null;
 
   constructor(container: HTMLElement) {
     this.ctx = new SceneContext(container);
@@ -137,6 +146,11 @@ export class EditorApp {
     };
     const el = this.ctx.renderer.domElement;
     el.addEventListener('pointermove', (e) => {
+      if (this.pitchDrag) {
+        // 上へドラッグで水平に近く、下へで真上から見下ろす向きに（1 度刻みにして、木の板絵の焼き直しを抑える）
+        const pitch = this.pitchDrag.pitch + (e.clientY - this.pitchDrag.y) * PITCH_PER_PIXEL;
+        this.ctx.setPitch(Math.round(Math.min(Math.max(pitch, PITCH_RANGE.min), PITCH_RANGE.max)));
+      }
       this.setPointer(e);
       if (this.stroke) this.extendStroke();
       if (this.areaDrag) this.moveArea(this.pick());
@@ -146,6 +160,14 @@ export class EditorApp {
     el.addEventListener(
       'pointerdown',
       (e) => {
+        if (e.button === 1) {
+          // 中ボタンのドラッグは俯角の変更（MapControls のズームには渡さない）
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          this.pitchDrag = { y: e.clientY, pitch: this.ctx.pitch };
+          el.setPointerCapture(e.pointerId);
+          return;
+        }
         this.downPos = { x: e.clientX, y: e.clientY };
         if (e.button !== 0 || this.previewSource) return;
         if (this.tool === 'area') {
@@ -171,7 +193,17 @@ export class EditorApp {
       },
       { capture: true },
     );
+    // 中ボタンの自動スクロールを出さない
+    el.addEventListener('mousedown', (e) => {
+      if (e.button === 1) e.preventDefault();
+    });
+    // 中ボタンを離さずにキャプチャが外れたとき（pointercancel など）も俯角の変更を終える
+    el.addEventListener('lostpointercapture', () => (this.pitchDrag = null));
     el.addEventListener('pointerup', (e) => {
+      if (e.button === 1 && this.pitchDrag) {
+        this.pitchDrag = null;
+        return;
+      }
       if (this.areaDrag) {
         const { before, moved } = this.areaDrag;
         this.areaDrag = null;
@@ -206,6 +238,12 @@ export class EditorApp {
   /** 表示中のマップ（範囲のプレビュー中は切り出したマップ） */
   get shownMap(): HexMap | null {
     return this.view.map;
+  }
+
+  /** カーソルの HEX（表示中のマップ。マップの外なら null） */
+  get hoveredCell(): HexCell | null {
+    const o = this.hovered;
+    return o && this.shownMap ? this.shownMap.get(o.col, o.row)! : null;
   }
 
   get previewing(): boolean {
@@ -448,6 +486,23 @@ export class EditorApp {
     this.edited(true);
   }
 
+  /** 城の郭の段を外周から max まで振る（二重・三重の城壁） */
+  autoCastleWards(max: number): void {
+    const map = this.map;
+    if (!map || this.previewSource) return;
+    if (!map.allCells().some((c) => c.feature === 'castle')) {
+      this.onMessage('城がありません');
+      return;
+    }
+    const before = map.toJSON();
+    if (!autoCastleWards(map, max)) {
+      this.onMessage('郭の段は変わりませんでした（内側の段を作るには城を広げてください）');
+      return;
+    }
+    this.pushUndo(before);
+    this.edited(false);
+  }
+
   regenerate(resetCamera = false): void {
     this.view.regenerate(resetCamera);
   }
@@ -522,6 +577,7 @@ export class EditorApp {
     if (stroke && !edits) {
       for (const o of stroke.path) pathKeys.add(o.row * cols + o.col);
       if (stroke.tool === 'erase') pathColor = 0xd04a3a;
+      else if (stroke.tool === 'castle') pathColor = 0xc8c0b0;
       else if (stroke.tool === 'deploy-attacker' || stroke.tool === 'deploy-defender') {
         pathColor = stroke.add ? DEPLOY_COLORS[stroke.tool === 'deploy-attacker' ? 'attacker' : 'defender'] : 0x777777;
       }
@@ -599,6 +655,9 @@ export class EditorApp {
       const def = FEATURE_DEFS[tool];
       this.onMessage(`${def.name}は${def.onWater ? '水域' : '陸地'}にしか置けません`);
       return;
+    } else if (tool === 'castle' && cell.feature === 'castle' && castleWard(cell) !== this.castleWard) {
+      // 郭の段の違う城をクリックすると段を変える
+      map.setFeature(o.col, o.row, 'castle', undefined, this.castleWard);
     } else if (cell.feature === tool) {
       if (tool === 'bridge') {
         // 同じ橋をもう一度クリックすると向きを変える
@@ -611,7 +670,7 @@ export class EditorApp {
         map.setFeature(o.col, o.row, null);
       }
     } else {
-      map.setFeature(o.col, o.row, tool);
+      map.setFeature(o.col, o.row, tool, undefined, tool === 'castle' ? this.castleWard : undefined);
     }
     this.pushUndo(before);
     this.edited(false);
@@ -718,10 +777,35 @@ export class EditorApp {
       this.updateCellColors();
       return;
     }
-    // 街道・撤去: 1 HEX だけならクリック扱い
+    // 街道・撤去・城: 1 HEX だけならクリック扱い
     if (stroke.path.length === 1) {
       this.updateCellColors();
       this.applyTool(stroke.path[0]);
+      return;
+    }
+    if (stroke.tool === 'castle') {
+      // なぞった陸の HEX を、選んでいる郭の段の城にする
+      const before = map.toJSON();
+      let changed = false;
+      let water = false;
+      for (const o of stroke.path) {
+        const cell = map.get(o.col, o.row)!;
+        if (!canPlaceFeature(cell, 'castle')) {
+          water = true;
+          continue;
+        }
+        if (castleWard(cell) === this.castleWard) continue;
+        map.setFeature(o.col, o.row, 'castle', undefined, this.castleWard);
+        changed = true;
+      }
+      if (water) this.onMessage('城は陸地にしか置けません（水域の HEX は飛ばしました）');
+      if (!changed) {
+        this.updateCellColors();
+        return;
+      }
+      this.pushUndo(before);
+      this.edited(false);
+      this.setSelected(last);
       return;
     }
     if (stroke.tool === 'erase') {
@@ -754,7 +838,7 @@ export class EditorApp {
     const prev = this.hovered;
     this.hovered = o;
     this.view.setHover(o);
-    this.onHover(o && this.shownMap ? this.shownMap.get(o.col, o.row)! : null);
+    this.onHover(this.hoveredCell);
     if (!this.stroke && (prev?.col !== o?.col || prev?.row !== o?.row) && this.brushFootprintVisible()) this.updateCellColors();
   }
 

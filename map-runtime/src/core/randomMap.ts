@@ -224,6 +224,8 @@ function placeFeatures(layout: HexLayout, cells: HexCell[], seed: number): void 
 const ROAD_COST: Record<string, number> = {
   plains: 1,
   wasteland: 1.2,
+  desert: 1.5,
+  snow: 2,
   hills: 2,
   forest: 2.5,
   swamp: 4,

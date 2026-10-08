@@ -1,5 +1,5 @@
 /**
- * 地形の編集（標高ブラシ・地形の塗り・川・全地形クリア）の計算。
+ * 地形の編集（標高ブラシ・地形の塗り・川・全地形クリア）と、城の郭の段の自動設定の計算。
  * ドラッグ中は編集結果（CellEdits）を求めてプレビューし、離したときに applyEdits でマップへ書き込む。
  */
 import type { Offset } from '@norden/map-runtime/core/hex';
@@ -54,6 +54,11 @@ export interface ClearOptions {
   shapeTerrain: boolean;
   /** 人工物と街道も消す */
   clearFeatures: boolean;
+  /**
+   * ランダムな森: ノイズの高い所から coverage（0..1）の割合の陸の HEX を森にする（seed は標高と共通）。
+   * 丘陵・山岳にした HEX と水域は森にしない。scale は森のまとまりの細かさ
+   */
+  forest?: { seed: number; coverage: number; scale: number };
 }
 
 export interface CellEdit {
@@ -196,6 +201,7 @@ function fixFeature(cell: HexCell): void {
     if (cell.feature && BUILDINGS.has(cell.feature)) {
       delete cell.feature;
       delete cell.featureDir;
+      delete cell.ward;
     }
     if (!cell.feature && cell.roads && cell.roads.length > 0) cell.feature = 'bridge';
   } else if (cell.feature === 'bridge') {
@@ -241,9 +247,74 @@ export function clearTerrain(map: HexMap, opt: ClearOptions): void {
     if (opt.clearFeatures) {
       delete cell.feature;
       delete cell.featureDir;
+      delete cell.ward;
       delete cell.roads;
     } else {
       fixFeature(cell);
     }
   }
+  if (opt.forest) plantForest(map, opt.forest, opt.terrain);
+}
+
+/** clearTerrain のランダムな森。base（クリアした地形）のままの陸の HEX のうち、ノイズの高い順に coverage の割合を森にする */
+function plantForest(map: HexMap, opt: NonNullable<ClearOptions['forest']>, base: TerrainId): void {
+  const { layout } = map;
+  const noise = new Noise(opt.seed * 977 + 31);
+  const f = opt.scale / layout.size;
+  const cands = map
+    .allCells()
+    .filter((c) => c.terrain === base && !isWater(c.terrain) && c.terrain !== 'forest')
+    .map((c) => {
+      const w = layout.offsetToWorld(c.col, c.row);
+      return { c, v: noise.fbm(w.x * f, w.z * f, 4) };
+    })
+    .sort((a, b) => b.v - a.v);
+  const n = Math.round(cands.length * Math.min(Math.max(opt.coverage, 0), 1));
+  for (let i = 0; i < n; i++) {
+    const cell = cands[i].c;
+    // 建物のある HEX は森にしない（どうせ木が生えない）
+    if (cell.feature && BUILDINGS.has(cell.feature)) continue;
+    cell.terrain = 'forest';
+  }
+}
+
+/**
+ * 城の郭の段を外周から振る: 城の外（と、マップの外）に面した HEX を 1、その内側を 2、… と max まで。
+ * 変えた HEX があれば true
+ */
+export function autoCastleWards(map: HexMap, max: number): boolean {
+  const { layout } = map;
+  const { cols } = layout;
+  const depth = new Map<number, number>();
+  let frontier: HexCell[] = [];
+  for (const cell of map.allCells()) {
+    if (cell.feature !== 'castle') continue;
+    const nbs = layout.neighbors(cell.col, cell.row);
+    if (nbs.length === 6 && nbs.every((n) => map.get(n.col, n.row)!.feature === 'castle')) continue;
+    depth.set(cell.row * cols + cell.col, 1);
+    frontier.push(cell);
+  }
+  for (let d = 2; frontier.length > 0; d++) {
+    const next: HexCell[] = [];
+    for (const cell of frontier) {
+      for (const n of layout.neighbors(cell.col, cell.row)) {
+        const k = n.row * cols + n.col;
+        const nc = map.get(n.col, n.row)!;
+        if (nc.feature !== 'castle' || depth.has(k)) continue;
+        depth.set(k, d);
+        next.push(nc);
+      }
+    }
+    frontier = next;
+  }
+  let changed = false;
+  for (const [k, d] of depth) {
+    const cell = cellAt(map, k);
+    const ward = Math.min(d, max);
+    if ((cell.ward ?? 1) === ward) continue;
+    if (ward > 1) cell.ward = ward;
+    else delete cell.ward;
+    changed = true;
+  }
+  return changed;
 }
