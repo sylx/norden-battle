@@ -4,6 +4,7 @@
  *
  * - ファイル名は兵種 ID（infantry.png など）。軍ごとに変えたいときは infantry_red.png のように軍 ID を付ける。
  * - 読み込んだ画像は spriteCleanup で背景を抜き、余白を切り詰めてから使う。
+ * - 軍ごとの画像が無ければ、兵種の画像を軍の色相で着色して使う（tintSprite）。
  * - プレースホルダーは 100×100 の座標系で右向きに描き、下端（y = 100）が足元。軍ごとに服の色を変える。
  */
 import * as THREE from 'three';
@@ -35,14 +36,22 @@ export class UnitArt {
   private readonly cache = new Map<string, UnitImage>();
   /** URL → 整えた画像 */
   private readonly loaded = new Map<string, HTMLCanvasElement | 'loading' | 'failed'>();
+  /** `${URL}:${軍}` → 軍の色に着色した画像 */
+  private readonly tinted = new Map<string, HTMLCanvasElement>();
 
   get(type: UnitType, team: TeamId, facing: Facing): UnitImage {
-    const url = IMAGE_URLS.get(`${type}_${team}`) ?? IMAGE_URLS.get(type);
+    const teamUrl = IMAGE_URLS.get(`${type}_${team}`);
+    const url = teamUrl ?? IMAGE_URLS.get(type);
     const canvas = url ? this.image(url, type) : null;
-    const key = canvas ? `${url}:${facing}` : `${type}:${team}:${facing}`;
+    const key = canvas ? `${url}:${team}:${facing}` : `${type}:${team}:${facing}`;
     let out = this.cache.get(key);
     if (!out) {
-      out = makeUnitImage(canvas ?? drawPlaceholder(type, TEAM_DEFS[team].color), facing === 'left');
+      const src = !canvas
+        ? drawPlaceholder(type, TEAM_DEFS[team].color)
+        : teamUrl
+          ? canvas
+          : this.tint(`${url}:${team}`, canvas, TEAM_DEFS[team].color);
+      out = makeUnitImage(src, facing === 'left');
       this.cache.set(key, out);
     }
     return out;
@@ -51,6 +60,16 @@ export class UnitArt {
   dispose(): void {
     for (const v of this.cache.values()) v.texture.dispose();
     this.cache.clear();
+    this.tinted.clear();
+  }
+
+  private tint(key: string, canvas: HTMLCanvasElement, color: string): HTMLCanvasElement {
+    let out = this.tinted.get(key);
+    if (!out) {
+      out = tintSprite(canvas, color);
+      this.tinted.set(key, out);
+    }
+    return out;
   }
 
   private image(url: string, type: UnitType): HTMLCanvasElement | null {
@@ -97,6 +116,37 @@ function makeUnitImage(canvas: HTMLCanvasElement, flip: boolean): UnitImage {
       return alpha[(y * w + x) * 4 + 3] / 255;
     },
   };
+}
+
+/**
+ * 画像を 1 つの色相で塗り直す（HSL の着色）。明るさは元の輝度のまま、色相は color のもの、彩度は最大にする。
+ * 暗い所は黒から純色へ、明るい所は純色から白へ寄る。
+ */
+function tintSprite(canvas: HTMLCanvasElement, color: string): HTMLCanvasElement {
+  const hsl = { h: 0, s: 0, l: 0 };
+  const pure = new THREE.Color(color);
+  pure.getHSL(hsl, THREE.SRGBColorSpace);
+  pure.setHSL(hsl.h, 1, 0.5, THREE.SRGBColorSpace);
+  const hue = pure.getRGB(new THREE.Color(), THREE.SRGBColorSpace);
+  const c = [hue.r, hue.g, hue.b];
+
+  const { width: w, height: h } = canvas;
+  const out = document.createElement('canvas');
+  out.width = w;
+  out.height = h;
+  const g = out.getContext('2d')!;
+  const image = canvas.getContext('2d')!.getImageData(0, 0, w, h);
+  const d = image.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] === 0) continue;
+    const l = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
+    for (let k = 0; k < 3; k++) {
+      const v = l < 0.5 ? c[k] * 2 * l : c[k] + (1 - c[k]) * (2 * l - 1);
+      d[i + k] = Math.round(v * 255);
+    }
+  }
+  g.putImageData(image, 0, 0);
+  return out;
 }
 
 // ---- プレースホルダー ----
