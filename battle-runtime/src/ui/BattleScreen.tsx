@@ -2,7 +2,7 @@
  * 戦闘画面。BattleApp（three.js のマップ・ユニット・入力）を置き、その上に UI を重ねる。
  * battle-editor とゲーム本体（nordencult）の戦闘のシーンで共有する。
  *
- * - 地形・戦闘記録・行動メニュー・ターン表示は norden-ui の細いベゼル（ThinFrame）で囲む。
+ * - 地形・戦闘記録は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）、行動メニュー・ターン表示は ThinFrame で囲む。
  * - 画面の下に操作の案内・予約の中身・実行した結果のステータス行を出す（notice を渡すとそちらを出す）。
  * - 親の要素いっぱいに広がる。children はその上に重ねる（エディタの道具・ゲームの見出しなど）。
  */

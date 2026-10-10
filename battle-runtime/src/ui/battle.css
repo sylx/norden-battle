@@ -427,61 +427,11 @@
   font-size: 16px;
 }
 
-/* --- 画面のウィンドウ（地形・戦闘記録。ThinFrame の上辺に題名の札を載せる） --- */
+/* --- 画面のウィンドウ（地形・戦闘記録。枠と題名の札は norden-ui の ThinFrameWithTitle） --- */
 .battle-screen .battle-window {
   position: absolute;
   /* 情報札（1）より手前・行動メニュー（3）より奥 */
   z-index: 2;
-  isolation: isolate;
-  padding: 22px var(--bezel-pad-x) var(--bezel-pad-y);
-  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.55));
-}
-
-/* 上辺に載せる題名の札 */
-.battle-screen .battle-window .window-title {
-  position: absolute;
-  left: 50%;
-  top: 3px;
-  z-index: 1;
-  transform: translate(-50%, -50%);
-  margin: 0;
-  padding: 3px 22px;
-  border: 1px solid var(--accent);
-  border-left: none;
-  border-right: none;
-  background: linear-gradient(#5a3e26, #2e2014);
-  box-shadow:
-    0 0 0 2px rgba(28, 20, 14, 0.95),
-    0 2px 6px rgba(0, 0, 0, 0.6);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: 0.3em;
-  text-indent: 0.3em;
-  white-space: nowrap;
-  color: #fff4d0;
-}
-
-/* 札の両端の菱形 */
-.battle-screen .battle-window .window-title::before,
-.battle-screen .battle-window .window-title::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  width: 8px;
-  height: 8px;
-  margin-top: -5px;
-  background: var(--accent);
-  border: 1px solid #2e2014;
-  transform: rotate(45deg);
-}
-
-.battle-screen .battle-window .window-title::before {
-  left: -5px;
-}
-
-.battle-screen .battle-window .window-title::after {
-  right: -5px;
 }
 
 /* --- カーソルの HEX の地形（TerrainWindow.tsx。画面の左下、ステータス行の上） --- */

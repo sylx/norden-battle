@@ -3,8 +3,8 @@
 戦闘のルールと戦闘画面。three.js の戦闘画面（`BattleApp`。マップ・ユニット・入力・演出）と、
 その上に重ねる React の UI（`BattleScreen`）。battle-editor とゲーム本体（nordencult の戦闘のシーン）で共有する。
 
-UI の部品は [norden-ui](https://github.com/sylx/norden-ui) を使う（地形・戦闘記録・行動メニュー・ターン表示の枠は
-`ThinFrame` の細いベゼル、ターン終了は `Button`）。norden-ui はリポジトリの隣（`../../norden-ui`）のソースを
+UI の部品は [norden-ui](https://github.com/sylx/norden-ui) を使う（地形・戦闘記録の枠は題名の札付きの `ThinFrameWithTitle`、
+行動メニュー・ターン表示の枠は `ThinFrame` の細いベゼル、ターン終了は `Button`）。norden-ui はリポジトリの隣（`../../norden-ui`）のソースを
 そのまま読み込むので、使う側の Vite・TypeScript の設定に別名を入れる（battle-editor の vite.config.ts・tsconfig.json を参照）。
 
 ```tsx

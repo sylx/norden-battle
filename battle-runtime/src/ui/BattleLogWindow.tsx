@@ -2,14 +2,14 @@
  * 戦闘記録のウィンドウ（画面の右下、ターン表示の上）。攻撃・迎撃を実行するたびに 1 件ずつ足す。
  * 行動メニューより奥に表示する（battle.css の z-index）。
  *
- * - norden-ui の細いベゼル（ThinFrame）の枠の上辺に題名の札を載せる。
+ * - 枠は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）。
  * - ターンが変わって最初の記録の前に、飾り罫の区切り（第 n ターン）を入れる。
  * - 新しい記録は下に足し、いちばん下までスクロールする（上を読んでいる間は動かさない）。
  * - 題名の横のボタンで畳める。マップを読み込み直すと空にする。
  * - 記録の一覧と畳むボタン以外（題名の札・枠）をつかんでドラッグで動かせる。画面の外へは出さない。
  */
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { ThinFrame } from 'norden-ui';
+import { ThinFrameWithTitle } from 'norden-ui';
 import type { Offset } from '@norden/map-runtime/core/hex';
 import { TEAM_DEFS, UNIT_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import type { BattleApp, ExecuteReport } from '../app';
@@ -125,17 +125,15 @@ export default function BattleLogWindow({ app }: { app: BattleApp }) {
   };
 
   return (
-    <section
+    <ThinFrameWithTitle
       ref={rootRef}
+      title="戦闘記録"
       className={`battle-window battle-log${collapsed ? ' collapsed' : ''}${moving ? ' moving' : ''}`}
-      aria-label="戦闘記録"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
     >
-      <ThinFrame />
-      <h2 className="window-title">戦闘記録</h2>
       <button
         type="button"
         className="log-toggle"
@@ -159,7 +157,7 @@ export default function BattleLogWindow({ app }: { app: BattleApp }) {
           </Fragment>
         ))}
       </ol>
-    </section>
+    </ThinFrameWithTitle>
   );
 }
 

@@ -4,10 +4,10 @@
  * - 地形の名前と色、人工物、座標、標高、入るのに使う行動力、街道を出す。
  * - 移動先・攻撃の相手を選んでいる間は、その HEX への移動・攻撃の予測を下に足す。
  * - カーソルがマップの外にあるときは隠す。
- * - norden-ui の細いベゼル（ThinFrame）の枠に題名の札を載せる。表示するだけなので、マウスは下のマップへ通す。
+ * - 枠は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）。表示するだけなので、マウスは下のマップへ通す。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { ThinFrame } from 'norden-ui';
+import { ThinFrameWithTitle } from 'norden-ui';
 import { FEATURE_DEFS } from '@norden/map-runtime/core/features';
 import type { HexCell } from '@norden/map-runtime/core/mapData';
 import { TERRAIN_DEFS } from '@norden/map-runtime/core/terrainTypes';
@@ -29,9 +29,7 @@ export default function TerrainWindow({ app }: { app: BattleApp }) {
   const [r, g, b] = terrain.color.map((v) => Math.round(v * 255));
   const cost = cellMoveCost(cell);
   return (
-    <section className="battle-window terrain-info" aria-label="地形">
-      <ThinFrame />
-      <h2 className="window-title">地形</h2>
+    <ThinFrameWithTitle title="地形" className="battle-window terrain-info">
       <div className="terrain-head">
         <i className="terrain-swatch" style={{ background: `rgb(${r}, ${g}, ${b})` }} />
         <span className="terrain-name">{terrain.name}</span>
@@ -48,7 +46,7 @@ export default function TerrainWindow({ app }: { app: BattleApp }) {
         ]}
       />
       {extra.length > 0 && <Rows rows={extra} className="terrain-extra" />}
-    </section>
+    </ThinFrameWithTitle>
   );
 }
 
