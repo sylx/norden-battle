@@ -939,7 +939,9 @@ export class BattleApp {
     const up = at(plan.unit);
     const label = result.supporters > 0 ? `一斉 -${result.damage}` : `-${result.damage}`;
     if (tp) this.popups.show(tp, report.attack.targetDestroyed ? `${label} 壊滅` : label, 'damage');
-    if (up && result.direct) this.popups.show(up, report.attack.unitDestroyed ? `-${result.counter} 壊滅` : `-${result.counter}`, 'counter');
+    // 突撃は当たる時点で相手と重なっているので、反撃の数字は駆け抜ける絵に付いていかせて、相手の数字から離す
+    const counterText = report.attack.unitDestroyed ? `-${result.counter} 壊滅` : `-${result.counter}`;
+    if (up && result.direct) this.popups.show(up, counterText, 'counter', !!attack.landing);
   }
 
   /** 実行を終える。行動力を使い、兵数が 0 になったユニットを消し、生き残っていれば選び直す */

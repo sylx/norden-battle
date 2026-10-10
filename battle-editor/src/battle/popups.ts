@@ -10,7 +10,7 @@ const RISE = 48;
 
 interface Popup {
   el: HTMLDivElement;
-  /** 頭の位置（足元 + 絵の高さ。カメラ正対なので画面上はカメラの上方向） */
+  /** 足元（頭の位置は足元 + 絵の高さ。カメラ正対なので画面上はカメラの上方向）。ユニットに付いていくときは絵の位置そのもの */
   foot: THREE.Vector3;
   height: number;
   start: number;
@@ -26,13 +26,16 @@ export class Popups {
     container.appendChild(this.root);
   }
 
-  /** p のユニットの頭上に text を出す（className で色などを変える） */
-  show(p: UnitPlacement, text: string, className: string): void {
+  /**
+   * p のユニットの頭上に text を出す（className で色などを変える）。
+   * follow なら、出した後もユニットの絵の動きに付いていく（突撃で相手を駆け抜けるときなど）。そうでなければ出したところに留まる
+   */
+  show(p: UnitPlacement, text: string, className: string, follow = false): void {
     const el = document.createElement('div');
     el.className = `popup ${className}`;
     el.textContent = text;
     this.root.appendChild(el);
-    this.items.push({ el, foot: p.foot.clone(), height: p.height, start: performance.now() });
+    this.items.push({ el, foot: follow ? p.foot : p.foot.clone(), height: p.height, start: performance.now() });
   }
 
   /** 毎フレーム、描画の後に呼ぶ */
