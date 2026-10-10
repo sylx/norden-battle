@@ -36,6 +36,8 @@ export interface TerrainDef {
   isWater: boolean;
   /** HEX に入るのに使う行動力（null は通れない）。街道沿いに入るときは半分 */
   moveCost: number | null;
+  /** 地形効果: その HEX にいるユニットが受けるダメージを減らす割合（0..1） */
+  defense: number;
   /** エディタのオーバーレイ表示色 */
   overlay: string;
 }
@@ -53,6 +55,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     bushDensity: 0,
     isWater: true,
     moveCost: null,
+    defense: 0,
     overlay: '#1f4fa8',
   },
   water: {
@@ -65,6 +68,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     bushDensity: 0,
     isWater: true,
     moveCost: 4,
+    defense: 0,
     overlay: '#3f8fe0',
   },
   plains: {
@@ -77,6 +81,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     bushDensity: 0,
     isWater: false,
     moveCost: 1,
+    defense: 0,
     overlay: '#a6d65a',
   },
   forest: {
@@ -89,6 +94,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     bushDensity: 0.45,
     isWater: false,
     moveCost: 2,
+    defense: 0.2,
     overlay: '#2f7a2f',
   },
   hills: {
@@ -101,6 +107,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     bushDensity: 0,
     isWater: false,
     moveCost: 2,
+    defense: 0,
     overlay: '#c9a94a',
   },
   mountain: {
@@ -113,6 +120,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     bushDensity: 0,
     isWater: false,
     moveCost: 3,
+    defense: 0,
     overlay: '#8a6a4a',
   },
   swamp: {
@@ -125,6 +133,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     bushDensity: 0,
     isWater: false,
     moveCost: 3,
+    defense: 0,
     overlay: '#5a7a6a',
   },
   wasteland: {
@@ -137,6 +146,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     bushDensity: 0,
     isWater: false,
     moveCost: 2,
+    defense: 0,
     overlay: '#d8b878',
   },
   desert: {
@@ -149,6 +159,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     bushDensity: 0.02,
     isWater: false,
     moveCost: 2,
+    defense: 0,
     overlay: '#f0d27a',
   },
   snow: {
@@ -161,6 +172,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     bushDensity: 0,
     isWater: false,
     moveCost: 2,
+    defense: 0,
     overlay: '#eef4fa',
   },
 };

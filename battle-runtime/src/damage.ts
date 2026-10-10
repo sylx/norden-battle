@@ -6,12 +6,14 @@
  *   武力     = 武力 × STRENGTH_ATTACK − 相手の武力 × STRENGTH_GUARD（兵数に関わらず一定のダメージ・軽減。魔術師は武力の代わりに知力）
  *   士気     = 1 + (士気 − 50) × MORALE_RATE（50 より高ければ増え、低ければ減る）
  *   包囲     = 相手が包囲されていれば ENCIRCLED_RATE
+ *   地形     = 1 − 相手のいる HEX の地形効果（森 20%・砦 30%・城 50% など。人工物があればその値）
+ *   高所     = 弓兵が相手より高い HEX にいれば 1 + 標高レベルの差 × HIGH_GROUND_RATE
  *   ランダム = 1 + roll × RANDOM_SPREAD（roll は −1〜1）
  *
  *   迎撃     = 相手が迎撃の構えの近接ユニットなら INTERCEPT_GUARD
  *   一斉攻撃 = 一斉攻撃なら VOLLEY_RATE[加わる味方の数]（多いほど 1 隊あたりの増え方も大きくなる）
  *
- *   ダメージ = (兵の力 × 統率 + 武力) × 士気 × 包囲 × 迎撃 × 一斉攻撃 × ランダム（0〜相手の兵数）
+ *   ダメージ = (兵の力 × 統率 + 武力) × 士気 × 包囲 × 地形 × 高所 × 迎撃 × 一斉攻撃 × ランダム（0〜相手の兵数）
  *
  * 魔法（魔術師の攻撃。サンダーフォール・迎撃の自動攻撃）は、相手の武力による軽減と、相手の迎撃の構えの影響を受けない。
  * 魔術師の反撃は通常攻撃として計算するので魔法ではない。
@@ -55,6 +57,10 @@ const STRENGTH_GUARD = 0.3;
 const MORALE_RATE = 0.004;
 /** 包囲された相手へのダメージの倍率 */
 const ENCIRCLED_RATE = 1.2;
+/** 高所の兵種が相手より高い HEX から攻撃したときの、標高レベルの差 1 あたりのダメージの増え方 */
+const HIGH_GROUND_RATE = 0.1;
+/** 高所からの攻撃でダメージが増える兵種 */
+const HIGH_GROUND_TYPES: readonly UnitType[] = ['archer'];
 /** ランダムの幅（± の割合） */
 export const RANDOM_SPREAD = 0.2;
 /** 反撃の、通常攻撃のダメージに対する割合 */
@@ -79,11 +85,25 @@ export interface Fighter extends Pick<UnitStatus, 'soldiers' | 'morale' | 'leade
   supporters: number;
   /** 攻撃が魔法になる兵種か（魔術師。反撃を除く） */
   magic: boolean;
+  /** いる HEX の地形効果（受けるダメージを減らす割合） */
+  defense: number;
+  /** いる HEX の標高レベル */
+  elevation: number;
 }
 
 /** 味方が supporters 隊加わったときの一斉攻撃のダメージの倍率 */
 export function volleyRate(supporters: number): number {
   return VOLLEY_RATE[Math.min(supporters, VOLLEY_RATE.length - 1)];
+}
+
+/** att が def より高い HEX にいてダメージが増える標高レベルの差（増えなければ 0） */
+export function highGroundLevels(att: Fighter, def: Fighter): number {
+  return HIGH_GROUND_TYPES.includes(att.type) ? Math.max(0, att.elevation - def.elevation) : 0;
+}
+
+/** 標高レベルの差が levels のときの高所からの攻撃のダメージの倍率 */
+export function highGroundRate(levels: number): number {
+  return 1 + levels * HIGH_GROUND_RATE;
 }
 
 /** −1〜1 の乱数（ランダム係数の roll） */
@@ -103,10 +123,12 @@ export function calcDamage(att: Fighter, def: Fighter, action: AttackKind, roll:
   const strength = att.strength * STRENGTH_ATTACK - (magic ? 0 : def.strength * STRENGTH_GUARD);
   const morale = 1 + (att.morale - 50) * MORALE_RATE;
   const encircled = def.encircled ? ENCIRCLED_RATE : 1;
+  const terrain = 1 - def.defense;
+  const highGround = highGroundRate(highGroundLevels(att, def));
   const guard = def.guarding && !magic ? INTERCEPT_GUARD : 1;
   const volley = action === 'volley' ? volleyRate(att.supporters) : 1;
   const random = 1 + roll * RANDOM_SPREAD;
-  const raw = Math.max(0, troops * leadership + strength) * morale * encircled * guard * volley * random;
+  const raw = Math.max(0, troops * leadership + strength) * morale * encircled * terrain * highGround * guard * volley * random;
   return Math.min(def.soldiers, Math.round(raw));
 }
 

@@ -503,6 +503,7 @@
 
 .battle-screen .terrain-info dt {
   color: var(--text-dim);
+  width: 5em;
 }
 
 .battle-screen .terrain-info dd {
@@ -786,6 +787,17 @@
   line-height: 14px;
   letter-spacing: 0.1em;
   color: #ff9a7a;
+}
+
+/* 地形効果・高所など、地形でダメージが増減した */
+.battle-screen .battle-log .log-terrain {
+  padding: 0 4px;
+  border: 1px solid rgba(184, 224, 138, 0.6);
+  border-radius: 2px;
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.1em;
+  color: #b8e08a;
 }
 
 .battle-screen .battle-log .log-destroyed {

@@ -30,6 +30,10 @@ export interface AttackLogEntry {
   direct: boolean;
   /** 相手が包囲されていたか */
   encircled: boolean;
+  /** 相手のいた HEX の地形効果（受けるダメージを減らす割合。なければ 0） */
+  defense: number;
+  /** 高所から攻撃してダメージが増えた標高レベルの差（増えなければ 0） */
+  highGround: number;
   morale: MoraleChange;
   /** 攻撃の後の兵数 */
   attackerLeft: number;
@@ -171,6 +175,8 @@ function Entry({ entry: e }: { entry: AttackLogEntry }) {
         <Unit unit={e.target} />
         <span className="log-verb">に</span>
         {e.encircled && <span className="log-encircled">包囲</span>}
+        {e.defense > 0 && <span className="log-terrain">地形-{Math.round(e.defense * 100)}%</span>}
+        {e.highGround > 0 && <span className="log-terrain">高所+{e.highGround}</span>}
         <span className="log-action">{e.actionName}</span>
       </div>
       <div className="log-result">
@@ -243,6 +249,8 @@ function logEntries(app: BattleApp, { unit, attack, intercepts }: ExecuteReport)
         counter: 0,
         direct: false,
         encircled: result.encircled,
+        defense: result.defense,
+        highGround: result.highGround,
         morale: result.morale,
         attackerLeft: app.statuses.get(i.unit)?.soldiers ?? 0,
         targetLeft: i.targetLeft,
@@ -264,6 +272,8 @@ function logEntries(app: BattleApp, { unit, attack, intercepts }: ExecuteReport)
       counter: result.counter,
       direct: result.direct,
       encircled: result.encircled,
+      defense: result.defense,
+      highGround: result.highGround,
       morale: result.morale,
       attackerLeft: attack.unitLeft,
       targetLeft: attack.targetLeft,
