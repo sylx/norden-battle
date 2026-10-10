@@ -12,6 +12,12 @@
  *   動き出せるが、ZOC から ZOC へは移れない）。
  * - 突撃（騎兵）は相手を突き抜けて向こうの HEX へ飛び出る。飛び出る先は予約のときに決め、矢印もそこまで伸ばす。
  * - 決定でユニットがルートに沿って歩き、攻撃し、（騎兵なら）続きを歩く（その間は操作を受け付けない）。
+ *   攻撃の演出: カメラが両者へ寄り（cameraFocus.ts）、攻撃して、カメラが元へ戻る。
+ *   歩兵の通常攻撃は踏み込んで光の剣で斬る（slashFx.ts）。騎兵の通常攻撃・突撃は光るランスで貫く（lanceFx.ts）。
+ *   弓兵の通常攻撃は無数の光の矢を放物線で降らせる（arrowFx.ts）。弓兵の迎撃も同じ演出で、弓兵と撃たれるユニットへ寄る。
+ *   魔術師のサンダーフォールは相手の頭上に雷を落とす（thunderFx.ts）。魔術師の迎撃も同じ演出。
+ *   一斉攻撃は、加わる味方も含めた全員へ寄り、それぞれの兵種の演出（斬撃・ランス）を少しずつずらして出す。
+ *   突撃で駆け抜けるときは、飛び出る先の HEX まで画面に収める。
  *   兵数が 0 になったユニットは消える。
  * - 迎撃（騎兵はできない）は選んだらすぐに実行する。予約した移動があればそこまで歩き、迎撃の構えで待機して行動を終える（行動力は 0 になる）。
  *   構えは次にそのユニットが行動するまで続く（ターンをまたいでも続く）。
@@ -33,7 +39,7 @@ import type { Facing, UnitData } from '@norden/map-runtime/core/units';
 import { MapView } from '@norden/map-runtime/render/mapView';
 import { SceneContext } from '@norden/map-runtime/render/scene';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
-import type { MenuAction } from './actions';
+import type { ActionId, MenuAction } from './actions';
 import {
   attackForecast,
   attackRange,
@@ -47,12 +53,17 @@ import {
   type AttackForecast,
   type AttackResult,
 } from './combat';
+import { ARROW_HIT_SEC, ARROW_RELEASE_SEC, ArrowEffects } from './arrowFx';
+import { CameraFocus, type FocusTiming } from './cameraFocus';
 import { randomRoll } from './damage';
 import { InterceptEffects } from './interceptFx';
+import { LANCE_HIT_SEC, LanceEffects } from './lanceFx';
 import { applyMorale } from './morale';
 import { ActionMenuModel } from './menuModel';
 import { inEnemyZoc, movePath, moveRange, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
+import { SLASH_HIT_SEC, SlashEffects } from './slashFx';
+import { THUNDER_HIT_SEC, ThunderEffects } from './thunderFx';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
 
@@ -80,6 +91,39 @@ const CHARGE_SEC = 0.8;
 const HIT_SHAKE = 0.05;
 /** 遠隔攻撃でその場で跳ねる高さ（hexSize 比） */
 const RANGED_HOP = 0.05;
+/** 攻撃の演出で、カメラが両者へ寄る時間、攻撃した後に寄ったままにする時間、元へ戻る時間（秒） */
+const FX_ZOOM_IN_SEC = 0.45;
+const FX_HOLD_SEC = 0.45;
+const FX_ZOOM_OUT_SEC = 0.5;
+/**
+ * 攻撃の演出のときの攻撃のアニメーションの時間（秒。半分の時点で当たる）。
+ * 斬撃（歩兵）、ランスで踏み込んで貫く（騎兵の通常攻撃）、ランスを構えて駆け抜ける（突撃）、矢を射て届くまで（弓兵）、
+ * 雷を落とす（魔術師）
+ */
+const SLASH_STRIKE_SEC = 0.7;
+const LANCE_STRIKE_SEC = 0.7;
+const LANCE_CHARGE_SEC = 1.0;
+const ARROW_STRIKE_SEC = 1.5;
+const THUNDER_STRIKE_SEC = 1.0;
+/** 魔術師が雷を呼んで跳ねる時間（秒。雷が落ちる時点で終わる） */
+const THUNDER_CAST_SEC = 0.35;
+
+/**
+ * 攻撃の演出の種類。slash: 光の剣で斬る（歩兵の通常攻撃）、lance: 光るランスで貫く（騎兵の通常攻撃・突撃）、
+ * arrows: 光の矢の雨（弓兵の通常攻撃）、thunder: 頭上に落ちる雷（魔術師のサンダーフォール）
+ */
+type StrikeFxKind = 'slash' | 'lance' | 'arrows' | 'thunder';
+
+/** 一斉攻撃で、加わるユニットごとにエフェクトをずらす時間（秒） */
+const VOLLEY_FX_STAGGER_SEC = 0.06;
+
+/** 攻撃の演出の種類ごとの、エフェクトを出してから当たるまでの時間（秒）と、当たったときのカメラの揺れ（hexSize 比） */
+const STRIKE_FX: Record<StrikeFxKind, { hitSec: number; cameraShake: number }> = {
+  slash: { hitSec: SLASH_HIT_SEC, cameraShake: 0.04 },
+  lance: { hitSec: LANCE_HIT_SEC, cameraShake: 0.06 },
+  arrows: { hitSec: ARROW_HIT_SEC, cameraShake: 0.03 },
+  thunder: { hitSec: THUNDER_HIT_SEC, cameraShake: 0.08 },
+};
 
 /** 予約した攻撃 */
 export interface PlannedAttack {
@@ -196,6 +240,27 @@ interface Execution {
   hit: boolean;
   /** 一斉攻撃で一緒に攻撃する味方（strike の段階を始めるときに決める） */
   supporters: UnitData[];
+  /** strike の段階の演出（カメラを寄せる）。演出の無い攻撃は null */
+  fx: StrikeFx | null;
+}
+
+/** 実行中の攻撃の演出 */
+interface StrikeFx {
+  /** 攻撃するユニット（迎撃では迎撃したユニット）の演出の種類 */
+  kind: StrikeFxKind;
+  /** 攻撃のアニメーションの時間（秒。カメラが寄る・戻る時間を除く） */
+  strikeSec: number;
+  /** エフェクトを出すユニットごとの演出（先頭が攻撃するユニット。一斉攻撃は加わる味方の分も続く） */
+  shots: FxShot[];
+}
+
+interface FxShot {
+  unit: UnitData;
+  kind: StrikeFxKind;
+  /** 当たりの時点に対するずれ（秒） */
+  offset: number;
+  /** エフェクトを出したか */
+  spawned: boolean;
 }
 
 export class BattleApp {
@@ -209,6 +274,16 @@ export class BattleApp {
   readonly popups: Popups;
   /** 迎撃の構えのユニットの足元の光の輪 */
   readonly interceptFx = new InterceptEffects();
+  /** 光の剣の斬撃（歩兵の通常攻撃） */
+  readonly slashFx = new SlashEffects();
+  /** 光るランスの突き（騎兵の通常攻撃・突撃） */
+  readonly lanceFx = new LanceEffects();
+  /** 光の矢の雨（弓兵の通常攻撃） */
+  readonly arrowFx = new ArrowEffects();
+  /** 頭上に落ちる雷（魔術師のサンダーフォール） */
+  readonly thunderFx = new ThunderEffects();
+  /** 攻撃の演出でカメラを寄せる */
+  readonly cameraFocus: CameraFocus;
   /** 戦闘中のユニットの状態 */
   statuses = new Map<UnitData, UnitStatus>();
   /** 選択中のユニットの HEX */
@@ -243,7 +318,8 @@ export class BattleApp {
     this.view = new MapView(this.ctx);
     this.tags = new UnitTags(container);
     this.popups = new Popups(container);
-    this.ctx.overlay.add(this.interceptFx.group);
+    this.cameraFocus = new CameraFocus(this.ctx);
+    this.ctx.overlay.add(this.interceptFx.group, this.slashFx.group, this.lanceFx.group, this.arrowFx.group, this.thunderFx.group);
     this.menu.onAction = (unit, action) => {
       if (action.id === 'confirm') return this.execute(false);
       if (action.id === 'intercept') return this.execute(true);
@@ -306,6 +382,11 @@ export class BattleApp {
     const map = new HexMap(data);
     this.exec = null;
     this.popups.clear();
+    this.slashFx.clear();
+    this.lanceFx.clear();
+    this.arrowFx.clear();
+    this.thunderFx.clear();
+    this.cameraFocus.stop();
     this.statuses = makeStatuses(map.allUnits());
     this.tags.setStatuses(this.statuses);
     this.view.setMap(map);
@@ -553,7 +634,7 @@ export class BattleApp {
     const walk = (legs: MoveStep[]): Phase => ({ kind: 'walk', path: legs.length > 0 ? movePath(legs) : [], commit: true });
     const phases: Phase[] = [walk(plan.legs.slice(0, split)), ...(plan.attack ? [{ kind: 'strike' as const }, walk(plan.legs.slice(split))] : [])];
     this.menu.open(null);
-    this.exec = { plan, report, phases, phase: phases[0], start: 0, duration: 0, line: null, facing: undefined, hit: false, supporters: [] };
+    this.exec = { plan, report, phases, phase: phases[0], start: 0, duration: 0, line: null, facing: undefined, hit: false, supporters: [], fx: null };
     this.nextPhase();
   }
 
@@ -575,11 +656,28 @@ export class BattleApp {
     }
     exec.start = performance.now();
     exec.hit = false;
+    exec.fx = null;
     if (phase.kind !== 'walk') {
       exec.phase = phase;
-      exec.duration = phase.kind === 'strike' && exec.plan.attack!.landing ? CHARGE_SEC : STRIKE_SEC;
       const attack = exec.plan.attack;
       exec.supporters = phase.kind === 'strike' && attack?.action.id === 'volley' ? volleySupporters(map, exec.plan.unit, attack.target) : [];
+      const kind = phase.kind === 'strike' ? BattleApp.strikeFx(exec.plan.unit, attack!.action.id) : BattleApp.interceptFx(phase.shooter);
+      if (kind) {
+        const strikeSec = { slash: SLASH_STRIKE_SEC, lance: attack?.landing ? LANCE_CHARGE_SEC : LANCE_STRIKE_SEC, arrows: ARROW_STRIKE_SEC, thunder: THUNDER_STRIKE_SEC }[kind];
+        // 一斉攻撃は、加わる味方もそれぞれの兵種の演出を、当たりの時点を中心に少しずつずらして出す
+        const units = phase.kind === 'strike' ? [exec.plan.unit, ...exec.supporters] : [phase.shooter];
+        const shots = units.flatMap((unit, i): FxShot[] => {
+          const k = i === 0 ? kind : BattleApp.strikeFx(unit, 'volley');
+          return k ? [{ unit, kind: k, offset: (i - (units.length - 1) / 2) * VOLLEY_FX_STAGGER_SEC, spawned: false }] : [];
+        });
+        exec.fx = { kind, strikeSec, shots };
+        exec.duration = FX_ZOOM_IN_SEC + strikeSec + FX_HOLD_SEC + FX_ZOOM_OUT_SEC;
+        const timing = { in: FX_ZOOM_IN_SEC, hold: strikeSec + FX_HOLD_SEC, out: FX_ZOOM_OUT_SEC };
+        if (phase.kind === 'strike') this.focusOn([exec.plan.unit, attack!.target, ...exec.supporters], attack!.landing, timing);
+        else this.focusOn([phase.shooter, exec.plan.unit], null, timing);
+      } else {
+        exec.duration = phase.kind === 'strike' && attack!.landing ? CHARGE_SEC : STRIKE_SEC;
+      }
       return;
     }
     const { path } = phase;
@@ -633,24 +731,32 @@ export class BattleApp {
     this.view.rebuildUnits();
   }
 
-  /** 迎撃のアニメーションを進める。迎撃したユニットはその場で跳ね、半分の時点で当てて兵数を減らす */
+  /**
+   * 迎撃のアニメーションを進める。迎撃したユニットはその場で跳ね、半分の時点で当てて兵数を減らす。
+   * 弓兵・魔術師の迎撃は攻撃と同じ演出（カメラを寄せて光の矢を降らせる・雷を落とす）
+   */
   private stepIntercept(exec: Execution, phase: Extract<Phase, { kind: 'intercept' }>, now: number): void {
     const map = this.map!;
     const s = map.layout.size;
-    const t = Math.min((now - exec.start) / 1000 / exec.duration, 1);
+    const elapsed = (now - exec.start) / 1000;
+    const fx = exec.fx;
+    const t = BattleApp.strikeT(exec, elapsed);
     const a = map.layout.offsetToWorld(phase.shooter.col, phase.shooter.row);
     const b = map.layout.offsetToWorld(phase.at.col, phase.at.row);
-    const hop = Math.sin(Math.min(t * 2, 1) * Math.PI) * RANGED_HOP * s;
-    this.view.units.moveTo(phase.shooter, new THREE.Vector3(a.x, this.view.groundAt(a.x, a.z) + hop, a.z), b.x >= a.x ? 'right' : 'left');
+    const facing: Facing = b.x >= a.x ? 'right' : 'left';
+    const hop = (fx ? fxMotion(fx, t) : strikeCurve(t)) * RANGED_HOP * s;
+    this.view.units.moveTo(phase.shooter, new THREE.Vector3(a.x, this.view.groundAt(a.x, a.z) + hop, a.z), facing);
+    if (fx) this.spawnFxOnTime(fx, elapsed, exec.plan.unit, phase.at);
     if (t >= 0.5 && !exec.hit) {
       exec.hit = true;
       this.applyIntercept(exec, phase);
+      if (fx) this.fxShake(fx);
     }
     if (exec.hit) {
       const shake = Math.sin(t * 60) * HIT_SHAKE * s * (1 - t) * 2;
       this.view.units.moveTo(exec.plan.unit, new THREE.Vector3(b.x + shake, this.view.groundAt(b.x, b.z), b.z));
     }
-    if (t < 1) return;
+    if (elapsed < exec.duration) return;
     // 壊滅したらそこで打ち切る。弓兵に撃たれたら（騎兵を除く）そこで足止め
     if (exec.report.lost) exec.phases = [];
     else if (COMBAT_DEFS[phase.shooter.type].interceptHalts && !COMBAT_DEFS[exec.plan.unit.type].unhaltable) this.halt(exec, phase);
@@ -706,16 +812,89 @@ export class BattleApp {
     if (p) this.popups.show(p, report.lost ? `迎撃 -${result.damage} 壊滅` : `迎撃 -${result.damage}`, 'damage');
   }
 
+  /** 予約した攻撃の演出の種類（演出の無い攻撃は null） */
+  static strikeFx(unit: UnitData, action: ActionId): StrikeFxKind | null {
+    // 一斉攻撃は、加わる兵種それぞれの通常攻撃の演出
+    const id = action === 'volley' ? 'attack' : action;
+    if (unit.type === 'infantry' && id === 'attack') return 'slash';
+    if (unit.type === 'cavalry' && (id === 'attack' || id === 'charge')) return 'lance';
+    if (unit.type === 'archer' && id === 'attack') return 'arrows';
+    if (unit.type === 'mage' && id === 'thunderfall') return 'thunder';
+    return null;
+  }
+
+  /** 迎撃の自動攻撃の演出の種類（演出の無い兵種は null）。それぞれの兵種の攻撃と同じ演出（弓兵は矢の雨、魔術師は雷） */
+  static interceptFx(shooter: UnitData): StrikeFxKind | null {
+    if (shooter.type === 'archer') return 'arrows';
+    if (shooter.type === 'mage') return 'thunder';
+    return null;
+  }
+
+  /** 攻撃・迎撃のアニメーションの進み具合（0〜1。半分の時点で当たる）。演出のある攻撃はカメラが寄る時間を除く */
+  private static strikeT(exec: Execution, elapsed: number): number {
+    const fx = exec.fx;
+    return fx ? THREE.MathUtils.clamp((elapsed - FX_ZOOM_IN_SEC) / fx.strikeSec, 0, 1) : Math.min(elapsed / exec.duration, 1);
+  }
+
+  /** 演出のエフェクトを、それぞれ当たりの時点（からずらした時点）に合わせて出す（まだ出していなければ）。target は at にいる */
+  private spawnFxOnTime(fx: StrikeFx, elapsed: number, target: UnitData, at: Offset): void {
+    const layout = this.map!.layout;
+    const time = (elapsed - FX_ZOOM_IN_SEC) / fx.strikeSec;
+    const b = layout.offsetToWorld(at.col, at.row);
+    for (const shot of fx.shots) {
+      if (shot.spawned || time < 0.5 + (shot.offset - STRIKE_FX[shot.kind].hitSec) / fx.strikeSec) continue;
+      shot.spawned = true;
+      const a = layout.offsetToWorld(shot.unit.col, shot.unit.row);
+      this.spawnStrikeFx(shot.kind, shot.unit, target, b.x >= a.x ? 'right' : 'left');
+    }
+  }
+
+  /** 演出で当たったときのカメラの揺れ（一斉攻撃は加わるユニットの演出のうち一番大きいもの） */
+  private fxShake(fx: StrikeFx): void {
+    this.cameraFocus.shake(Math.max(...fx.shots.map((shot) => STRIKE_FX[shot.kind].cameraShake)) * this.map!.layout.size);
+  }
+
+  /**
+   * 攻撃の演出で、units（先頭が攻撃するユニット）の絵が画面に収まるところまでカメラを寄せる。
+   * landing（突撃で飛び出る先）があれば、そこに置いた攻撃するユニットの絵も収める
+   */
+  private focusOn(units: readonly UnitData[], landing: Offset | null, timing: FocusTiming): void {
+    const map = this.map!;
+    const placements = this.view.units.placements().filter((p) => units.includes(p.unit));
+    const self = placements.find((p) => p.unit === units[0]);
+    if (landing && self) {
+      const c = map.layout.offsetToWorld(landing.col, landing.row);
+      placements.push({ ...self, foot: new THREE.Vector3(c.x, this.view.groundAt(c.x, c.z), c.z) });
+    }
+    this.cameraFocus.play(placements, timing);
+  }
+
+  /** 攻撃の演出のエフェクトを出す */
+  private spawnStrikeFx(kind: StrikeFxKind, unit: UnitData, target: UnitData, facing: Facing): void {
+    const placements = this.view.units.placements();
+    const up = placements.find((p) => p.unit === unit);
+    const tp = placements.find((p) => p.unit === target);
+    if (!tp) return;
+    if (kind === 'slash') this.slashFx.spawn(tp, facing);
+    else if (kind === 'thunder') this.thunderFx.spawn(tp);
+    else if (up && kind === 'lance') this.lanceFx.spawn(up, tp, this.ctx.camera);
+    else if (up) this.arrowFx.spawn(up, tp, this.ctx.camera);
+  }
+
   /**
    * 攻撃のアニメーションを進める。直接攻撃は相手へ踏み込み、半分の時点で当てて兵数を減らす。
    * 突撃で飛び出せるときは、相手を突き抜けて向こうの HEX まで駆け抜け、着いたらそこへ移動を確定する。
+   * 演出のある攻撃では、カメラが寄るのを待ってから攻撃し（踏み込みは、踏み込んだまま当てて戻る。弓兵は矢を放つ間に跳ねる）、
+   * カメラが戻るのを待つ。エフェクトは、斬撃の刃が相手の中心を通る・ランスが相手を貫く・矢の大半が届く時点が当たりの時点になるように出す。
    */
   private stepStrike(exec: Execution, now: number): void {
     const map = this.map!;
     const s = map.layout.size;
     const { plan } = exec;
     const attack = plan.attack!;
-    const t = Math.min((now - exec.start) / 1000 / exec.duration, 1);
+    const elapsed = (now - exec.start) / 1000;
+    const fx = exec.fx;
+    const t = BattleApp.strikeT(exec, elapsed);
     const a = map.layout.offsetToWorld(plan.unit.col, plan.unit.row);
     const b = map.layout.offsetToWorld(attack.target.col, attack.target.row);
     const facing: Facing = b.x >= a.x ? 'right' : 'left';
@@ -728,21 +907,24 @@ export class BattleApp {
       const z = a.z + (c.z - a.z) * e;
       this.view.units.moveTo(plan.unit, new THREE.Vector3(x, this.view.groundAt(x, z), z), facing);
     } else {
-      this.lunge(plan.unit, attack.target, t);
+      const k = fx ? fxMotion(fx, t) : strikeCurve(t);
+      this.lunge(plan.unit, attack.target, k);
     }
     // 一斉攻撃は、取り囲んでいる味方も一緒に踏み込む
-    for (const u of exec.supporters) this.lunge(u, attack.target, t);
+    for (const u of exec.supporters) this.lunge(u, attack.target, fx ? holdCurve(t) : strikeCurve(t));
 
+    if (fx) this.spawnFxOnTime(fx, elapsed, attack.target, attack.target);
     if (t >= 0.5 && !exec.hit) {
       exec.hit = true;
       this.applyAttack(exec);
+      if (fx) this.fxShake(fx);
     }
     if (exec.hit) {
       // 当たった相手を揺らす
       const shake = Math.sin(t * 60) * HIT_SHAKE * s * (1 - t) * 2;
       this.view.units.moveTo(attack.target, new THREE.Vector3(b.x + shake, this.view.groundAt(b.x, b.z), b.z));
     }
-    if (t < 1) return;
+    if (elapsed < exec.duration) return;
     // 攻撃で壊滅したら飛び出し・続きの移動はしない
     if (exec.report.attack?.unitDestroyed) exec.phases = [];
     else if (landing && map.moveUnit(plan.unit, landing.col, landing.row)) plan.status.moved = true;
@@ -750,13 +932,12 @@ export class BattleApp {
     this.nextPhase();
   }
 
-  /** unit が target を攻撃する動き。直接攻撃は相手へ踏み込んで戻る。遠隔攻撃はその場で小さく跳ねる（t は 0〜1） */
-  private lunge(unit: UnitData, target: Offset, t: number): void {
+  /** unit が target を攻撃する動き。直接攻撃は相手へ踏み込む。遠隔攻撃はその場で小さく跳ねる（k は踏み込み・跳ねる量の 0〜1） */
+  private lunge(unit: UnitData, target: Offset, k: number): void {
     const map = this.map!;
     const a = map.layout.offsetToWorld(unit.col, unit.row);
     const b = map.layout.offsetToWorld(target.col, target.row);
     const ranged = COMBAT_DEFS[unit.type].ranged;
-    const k = Math.sin(Math.min(t * 2, 1) * Math.PI);
     const lunge = ranged ? 0 : k * STRIKE_LUNGE;
     const x = a.x + (b.x - a.x) * lunge;
     const z = a.z + (b.z - a.z) * lunge;
@@ -799,7 +980,9 @@ export class BattleApp {
     const up = at(plan.unit);
     const label = result.supporters > 0 ? `一斉 -${result.damage}` : `-${result.damage}`;
     if (tp) this.popups.show(tp, report.attack.targetDestroyed ? `${label} 壊滅` : label, 'damage');
-    if (up && result.direct) this.popups.show(up, report.attack.unitDestroyed ? `-${result.counter} 壊滅` : `-${result.counter}`, 'counter');
+    // 突撃は当たる時点で相手と重なっているので、反撃の数字は駆け抜ける絵に付いていかせて、相手の数字から離す
+    const counterText = report.attack.unitDestroyed ? `-${result.counter} 壊滅` : `-${result.counter}`;
+    if (up && result.direct) this.popups.show(up, counterText, 'counter', !!attack.landing);
   }
 
   /** 実行を終える。行動力を使い、兵数が 0 になったユニットを消し、生き残っていれば選び直す */
@@ -906,6 +1089,15 @@ export class BattleApp {
     if (exec?.phase.kind === 'walk') this.stepWalk(exec, exec.phase, performance.now());
     else if (exec?.phase.kind === 'strike') this.stepStrike(exec, performance.now());
     else if (exec?.phase.kind === 'intercept') this.stepIntercept(exec, exec.phase, performance.now());
+    // 攻撃の演出の間は、移動のルートと攻撃の矢印を隠す（演出が終われば、残りのルートをまた出す）
+    const v = this.view;
+    const arrowsShown = !this.exec?.fx;
+    for (const arrow of [v.pathArrow, v.afterPathArrow, v.attackArrow, v.supportArrow]) arrow.group.visible = arrowsShown;
+    this.cameraFocus.update(performance.now());
+    this.slashFx.update(this.ctx.camera);
+    this.lanceFx.update(this.ctx.camera);
+    this.arrowFx.update(this.ctx.camera);
+    this.thunderFx.update(this.ctx.camera);
     // 輪は描画の前に足元へ合わせる（移動のアニメーションで動かした絵に同じフレームで付いていく）
     this.interceptFx.update(this.view.units.placements(), this.statuses, this.map?.layout.size ?? 1, this.view.display.units);
     this.view.render();
@@ -914,4 +1106,33 @@ export class BattleApp {
     this.menu.update(this.menuAnchor(placements), this.ctx.camera, this.container.clientWidth, this.container.clientHeight);
     this.popups.update(this.ctx.camera);
   }
+}
+
+/** 攻撃の踏み込み・跳ねる量（t は攻撃のアニメーションの 0〜1）。前半で踏み込んで戻る */
+function strikeCurve(t: number): number {
+  return Math.sin(Math.min(t * 2, 1) * Math.PI);
+}
+
+/** 演出のある攻撃の踏み込みの量（t は 0〜1）。素早く踏み込み、踏み込んだまま当てて（半分の時点）、ゆっくり戻る */
+function holdCurve(t: number): number {
+  if (t < 0.3) return 1 - (1 - t / 0.3) ** 2;
+  if (t < 0.65) return 1;
+  const u = (t - 0.65) / 0.35;
+  return 1 - u * u * (3 - 2 * u);
+}
+
+/**
+ * 演出のある攻撃の、攻撃するユニットの踏み込み・跳ねる量（t は攻撃のアニメーションの 0〜1）。
+ * 直接攻撃は踏み込んだまま当てて戻る。弓兵は矢を放ち始めてから放ち終えるまで、魔術師は雷を呼んでから落ちるまでに 1 回跳ねる
+ */
+function fxMotion(fx: StrikeFx, t: number): number {
+  if (fx.kind === 'arrows') return hopCurve(t, fx.strikeSec, ARROW_HIT_SEC, ARROW_RELEASE_SEC);
+  if (fx.kind === 'thunder') return hopCurve(t, fx.strikeSec, THUNDER_CAST_SEC, THUNDER_CAST_SEC);
+  return holdCurve(t);
+}
+
+/** 当たりの時点（t = 0.5）の beforeHit 秒前から duration 秒の間に 1 回跳ねる量（strikeSec は攻撃のアニメーションの時間） */
+function hopCurve(t: number, strikeSec: number, beforeHit: number, duration: number): number {
+  const u = (t - 0.5 + beforeHit / strikeSec) / (duration / strikeSec);
+  return u > 0 && u < 1 ? Math.sin(u * Math.PI) : 0;
 }

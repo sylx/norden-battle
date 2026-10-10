@@ -407,14 +407,14 @@
   position: absolute;
   left: 0;
   top: 0;
-  font-size: 20px;
+  font-size: 40px;
   font-weight: 800;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   text-shadow:
-    0 0 3px #000,
-    0 1px 2px #000,
-    0 0 6px rgba(0, 0, 0, 0.8);
+    0 0 4px #000,
+    0 2px 3px #000,
+    0 0 10px rgba(0, 0, 0, 0.8);
   will-change: transform, opacity;
 }
 
@@ -424,7 +424,7 @@
 
 .battle-screen .popup.counter {
   color: #ffb070;
-  font-size: 16px;
+  font-size: 32px;
 }
 
 /* --- 画面のウィンドウ（地形・戦闘記録。枠と題名の札は norden-ui の ThinFrameWithTitle） --- */
