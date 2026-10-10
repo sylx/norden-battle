@@ -11,11 +11,13 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "isolatedModules": true,
-    "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "noEmit": true,
-    /* norden-ui はリポジトリの隣のソース。react の型はこちらのものにそろえる（battle-runtime/tsconfig.json と同じ） */
+    /*
+     * norden-ui はリポジトリの隣（nordencult では同じ親の下のサブモジュール）にあるソースをそのまま使う。
+     * react の型は norden-ui 側の node_modules ではなく、こちらのものにそろえる（norden-ui は npm install しなくてよい）
+     */
     "paths": {
       "norden-ui": ["../../norden-ui/src/index.ts"],
       "react": ["../node_modules/@types/react/index.d.ts"],

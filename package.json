@@ -5,6 +5,7 @@
   "workspaces": [
     "asset-runtime",
     "map-runtime",
+    "battle-runtime",
     "map-editor",
     "battle-editor",
     "object-editor"

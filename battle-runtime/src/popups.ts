@@ -63,4 +63,9 @@ export class Popups {
     for (const p of this.items) p.el.remove();
     this.items = [];
   }
+
+  dispose(): void {
+    this.clear();
+    this.root.remove();
+  }
 }

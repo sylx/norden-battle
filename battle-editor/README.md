@@ -1,9 +1,10 @@
 # Norden Battle Editor
 
-戦闘画面の UI・演出を試し、演出のパラメータを調整するためのツール。three.js + TypeScript + Vite。
+戦闘画面の UI・演出を試し、演出のパラメータを調整するためのツール。three.js + React + TypeScript + Vite。
 
-マップの描画は map-editor と同じ [map-runtime](../map-runtime/) の `MapView` を使い、
-地形生成などのパラメータは map-editor の初期値のまま。
+戦闘画面は [battle-runtime](../battle-runtime/) の `BattleScreen`（ゲーム本体と同じもの）で、ここではその上にエディタの道具
+（ツールバー・マップ・描画負荷）を重ねるだけ。マップの描画は map-editor と同じ [map-runtime](../map-runtime/) の `MapView` を使い、
+地形生成などのパラメータは map-editor の初期値のまま。UI の部品は [norden-ui](https://github.com/sylx/norden-ui)（リポジトリの隣の `../../norden-ui`）。
 
 ```sh
 npm install
@@ -16,7 +17,8 @@ URL パラメータ: `?map=pointy-test.json`（assets/maps/ のファイルを�
 ## GitHub Pages
 
 main に push すると [.github/workflows/battle-editor-pages.yml](../.github/workflows/battle-editor-pages.yml) がビルドして
-GitHub Pages に公開する（battle-editor・map-runtime・assets/maps・assets/units などに変更があったときだけ。Actions の画面から手動でも実行できる）。
+GitHub Pages に公開する（battle-editor・battle-runtime・map-runtime・assets/maps・assets/units などに変更があったときだけ。Actions の画面から手動でも実行できる）。
+norden-ui はビルドのときに main の最新を隣に取ってくる（norden-ui だけを更新したときは手動で実行する）。
 初回だけリポジトリの Settings → Pages → Source を「GitHub Actions」にしておく。
 Pages 上のマップはビルド時点の assets/maps/ の内容。
 
@@ -30,10 +32,9 @@ battle-editor からマップは書き換えない。
 
 ```
 src/
-  toolbar.ts         画面の上のツールバー。道具のウィンドウ（マップ・描画負荷）を開く
-  battle/
-    app.ts           戦闘画面（MapView・ポインタ操作）。UI・演出はここに積み上げる
-    ui.ts            画面の部品とつなぐ（マップの読み込み・描画負荷・ステータス行・戦闘ログ・地形）
-    terrainInfo.ts   カーソルの HEX の地形のウィンドウ（ゲームの画面で使う）
-    battleLog.ts     戦闘ログのウィンドウ
+  main.tsx         入口
+  EditorApp.tsx    BattleScreen にツールバーと道具のウィンドウ（マップ・描画負荷）を重ねる。JSON のドロップ
+  style.css        ツールバーと道具のウィンドウ
 ```
+
+戦闘のルール・戦闘画面の UI（地形・戦闘記録・行動メニュー）は [battle-runtime](../battle-runtime/) にある。

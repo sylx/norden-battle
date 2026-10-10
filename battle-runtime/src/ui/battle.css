@@ -1,0 +1,923 @@
+/*
+ * 戦闘画面（BattleScreen.tsx）。すべて .battle-screen の中に閉じ込める（ゲーム本体の画面と混ざらないように）。
+ * パネルの枠は norden-ui の ThinFrame（細いベゼルと暗い地）で、ここでは中身の余白と並びだけを決める。
+ */
+.battle-screen {
+  --panel-bg: rgba(38, 28, 20, 0.92);
+  --panel-border: #8a6a3a;
+  --text: #f1e6cc;
+  --text-dim: #bfae8a;
+  --accent: #e2b75a;
+  /* ThinFrame の枠の内側に中身を収める余白 */
+  --bezel-pad-x: 14px;
+  --bezel-pad-y: 12px;
+  /* 区切りの飾り罫（戦闘記録のターンの区切り）。右向きの 1 枚を入れる（左側は反転して使う） */
+  --frame-rule-image: none;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* 中の z-index をこの中に閉じ込める（children はこの上に重なる） */
+  isolation: isolate;
+  font-family: 'Hiragino Sans', 'Noto Sans JP', 'Yu Gothic UI', system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.battle-screen *,
+.battle-screen *::before,
+.battle-screen *::after {
+  box-sizing: border-box;
+}
+
+.battle-screen .battle-viewport {
+  position: absolute;
+  inset: 0;
+}
+
+.battle-screen .battle-viewport canvas {
+  display: block;
+}
+
+/* --- ユニットの情報札（unitTags.ts。大きさは TAG_W・TAG_H・FACE_SIZE と合わせる） --- */
+.battle-screen .unit-tags {
+  position: absolute;
+  inset: 0;
+  /* 札どうしの z-index（unitTags.ts で付ける）をこの中に閉じ込め、行動メニューより奥に置く */
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.battle-screen .unit-tag-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.battle-screen .unit-tag-lines line {
+  stroke-width: 1.5;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+}
+
+.battle-screen .unit-tag-lines line.active {
+  stroke-width: 2.5;
+  opacity: 1;
+}
+
+.battle-screen .unit-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 124px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px 2px 2px;
+  background: linear-gradient(rgba(44, 33, 22, 0.9), rgba(26, 19, 13, 0.9));
+  border: 1px solid var(--team);
+  border-left-width: 3px;
+  border-radius: 20px 4px 4px 20px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  will-change: transform;
+}
+
+.battle-screen .unit-tag.active {
+  border-color: #fff4d0;
+  border-left-color: var(--team);
+  box-shadow:
+    0 0 0 2px var(--team),
+    0 2px 10px rgba(0, 0, 0, 0.7);
+}
+
+.battle-screen .unit-tag .face {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--team);
+  background-color: #3a2c1e;
+  background-repeat: no-repeat;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  /* 枠の内側（32px）に顔を合わせる */
+  background-origin: padding-box;
+}
+
+.battle-screen .unit-tag .bars {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.battle-screen .unit-tag .bar {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  line-height: 11px;
+}
+
+.battle-screen .unit-tag .label {
+  font-size: 9px;
+  color: var(--text-dim);
+}
+
+.battle-screen .unit-tag .value {
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.battle-screen .unit-tag .track {
+  grid-column: 1 / -1;
+  height: 5px;
+  margin-top: 1px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.battle-screen .unit-tag .fill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.battle-screen .unit-tag .soldiers .fill {
+  background: var(--team);
+}
+
+.battle-screen .unit-tag .morale .fill {
+  background: linear-gradient(90deg, #b8862e, #f0cd6e);
+}
+
+.battle-screen .unit-tag.low-morale .morale .fill {
+  background: linear-gradient(90deg, #8a3a22, #d0643a);
+}
+
+.battle-screen .unit-tag.low-morale .morale .value {
+  color: #ff9a7a;
+}
+
+.battle-screen .unit-tag[hidden] {
+  display: none;
+}
+
+/* --- 行動メニュー（ActionMenu.tsx） --- */
+.battle-screen .action-menu {
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* 情報札（.unit-tags）・戦闘記録より手前 */
+  z-index: 3;
+  /* 最初の位置が決まるまでは隠す（ActionMenu.tsx で毎フレーム出し入れする） */
+  visibility: hidden;
+  user-select: none;
+  will-change: transform;
+}
+
+.battle-screen .action-menu .menu-panel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  isolation: isolate;
+  min-width: 140px;
+  padding: var(--bezel-pad-y) var(--bezel-pad-x);
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.55));
+}
+
+.battle-screen .action-menu .menu-panel.main {
+  position: relative;
+}
+
+.battle-screen .action-menu .menu-panel.sub {
+  min-width: 128px;
+}
+
+.battle-screen .action-menu .menu-head {
+  padding: 0 4px 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(138, 106, 58, 0.6);
+}
+
+.battle-screen .action-menu .menu-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* 軍の色の菱形 */
+.battle-screen .action-menu .menu-title::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: var(--team);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  transform: rotate(45deg);
+}
+
+.battle-screen .action-menu .unit-tag.in-menu {
+  position: static;
+  width: auto;
+  min-width: 140px;
+  margin-top: 6px;
+  box-shadow: none;
+  will-change: auto;
+}
+
+.battle-screen .action-menu .menu-ap {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.battle-screen .action-menu .menu-ap .value {
+  margin-left: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-screen .action-menu .menu-ap .pips {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  padding-left: 8px;
+  align-self: center;
+}
+
+.battle-screen .action-menu .menu-ap .pips i {
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+  border: 1px solid var(--accent);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.battle-screen .action-menu .menu-ap .pips i.on {
+  background: var(--accent);
+}
+
+.battle-screen .action-menu .menu-ap .pips i.half {
+  background: linear-gradient(135deg, var(--accent) 50%, rgba(0, 0, 0, 0.4) 50%);
+}
+
+/* 予約で使う分 */
+.battle-screen .action-menu .menu-ap .pips i.spent {
+  border-style: dashed;
+  background: rgba(226, 183, 90, 0.25);
+}
+
+/* 指揮官の統率・武力（0..100） */
+.battle-screen .action-menu .menu-commander {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 5px;
+}
+
+.battle-screen .action-menu .menu-commander .stat {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  line-height: 13px;
+}
+
+.battle-screen .action-menu .menu-commander .label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.battle-screen .action-menu .menu-commander .value {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.battle-screen .action-menu .menu-commander .track {
+  grid-column: 1 / -1;
+  height: 3px;
+  margin-top: 2px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.battle-screen .action-menu .menu-commander .fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #8a6a3a, #e2b75a);
+}
+
+.battle-screen .action-menu .menu-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.battle-screen .action-menu .menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 6px 0 10px;
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.battle-screen .action-menu .menu-item .name {
+  flex: 1;
+  letter-spacing: 0.1em;
+}
+
+.battle-screen .action-menu .menu-item:hover,
+.battle-screen .action-menu .menu-item.open {
+  background: linear-gradient(90deg, rgba(226, 183, 90, 0.35), rgba(226, 183, 90, 0.08));
+  color: #fff4d0;
+}
+
+.battle-screen .action-menu .menu-item.confirm {
+  margin-top: 4px;
+  border-top: 1px solid rgba(138, 106, 58, 0.6);
+  color: #fff4d0;
+  font-weight: 600;
+}
+
+.battle-screen .action-menu .menu-item.cancel {
+  color: var(--text-dim);
+}
+
+.battle-screen .action-menu .menu-item.disabled {
+  cursor: default;
+  color: rgba(191, 174, 138, 0.45);
+  background: none;
+}
+
+.battle-screen .action-menu .menu-item .cost {
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  color: #2a1e12;
+  background: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-screen .action-menu .menu-item.disabled .cost {
+  background: rgba(191, 174, 138, 0.3);
+}
+
+.battle-screen .action-menu .menu-item .arrow {
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+
+/* --- 頭上に出す数字（popups.ts） --- */
+.battle-screen .popups {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.battle-screen .popup {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 20px;
+  font-weight: 800;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 0 3px #000,
+    0 1px 2px #000,
+    0 0 6px rgba(0, 0, 0, 0.8);
+  will-change: transform, opacity;
+}
+
+.battle-screen .popup.damage {
+  color: #ff6a50;
+}
+
+.battle-screen .popup.counter {
+  color: #ffb070;
+  font-size: 16px;
+}
+
+/* --- 画面のウィンドウ（地形・戦闘記録。ThinFrame の上辺に題名の札を載せる） --- */
+.battle-screen .battle-window {
+  position: absolute;
+  /* 情報札（1）より手前・行動メニュー（3）より奥 */
+  z-index: 2;
+  isolation: isolate;
+  padding: 22px var(--bezel-pad-x) var(--bezel-pad-y);
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.55));
+}
+
+/* 上辺に載せる題名の札 */
+.battle-screen .battle-window .window-title {
+  position: absolute;
+  left: 50%;
+  top: 3px;
+  z-index: 1;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 3px 22px;
+  border: 1px solid var(--accent);
+  border-left: none;
+  border-right: none;
+  background: linear-gradient(#5a3e26, #2e2014);
+  box-shadow:
+    0 0 0 2px rgba(28, 20, 14, 0.95),
+    0 2px 6px rgba(0, 0, 0, 0.6);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  white-space: nowrap;
+  color: #fff4d0;
+}
+
+/* 札の両端の菱形 */
+.battle-screen .battle-window .window-title::before,
+.battle-screen .battle-window .window-title::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -5px;
+  background: var(--accent);
+  border: 1px solid #2e2014;
+  transform: rotate(45deg);
+}
+
+.battle-screen .battle-window .window-title::before {
+  left: -5px;
+}
+
+.battle-screen .battle-window .window-title::after {
+  right: -5px;
+}
+
+/* --- カーソルの HEX の地形（TerrainWindow.tsx。画面の左下、ステータス行の上） --- */
+.battle-screen .terrain-info {
+  left: 12px;
+  bottom: 50px;
+  width: min(260px, calc(100% - 24px));
+  /* 表示するだけなので、マウスは下のマップへ通す */
+  pointer-events: none;
+}
+
+.battle-screen .terrain-info .terrain-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px 6px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid rgba(138, 106, 58, 0.6);
+}
+
+/* 地面の色の菱形 */
+.battle-screen .terrain-info .terrain-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin: 0 3px;
+  border: 1px solid var(--accent);
+  transform: rotate(45deg);
+}
+
+.battle-screen .terrain-info .terrain-name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #fff4d0;
+  white-space: nowrap;
+}
+
+.battle-screen .terrain-info .terrain-feature {
+  padding: 0 6px;
+  border: 1px solid rgba(226, 183, 90, 0.6);
+  border-radius: 2px;
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.battle-screen .terrain-info .terrain-coord {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-screen .terrain-info dl .row {
+  display: contents;
+}
+
+.battle-screen .terrain-info dl {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 2px 8px;
+  margin: 0;
+  padding: 0 2px;
+  font-size: 12px;
+}
+
+.battle-screen .terrain-info dt {
+  color: var(--text-dim);
+}
+
+.battle-screen .terrain-info dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-screen .terrain-info dd b {
+  color: var(--accent);
+}
+
+/* 移動・攻撃の予測（移動先・攻撃の相手を選んでいる間） */
+.battle-screen .terrain-info .terrain-extra {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dotted rgba(138, 106, 58, 0.7);
+}
+
+.battle-screen .terrain-info .blocked,
+.battle-screen .terrain-info .err {
+  color: #ff8a7a;
+}
+
+.battle-screen .terrain-info .none {
+  color: rgba(191, 174, 138, 0.6);
+}
+
+/* --- 戦闘記録（BattleLogWindow.tsx。画面の右下、ターン表示の上） --- */
+.battle-screen .battle-log {
+  right: 12px;
+  /* ステータス行とターン表示の上 */
+  bottom: 112px;
+  width: min(340px, calc(100% - 24px));
+  /* 一覧と畳むボタン以外をつかんで動かす（BattleLogWindow.tsx） */
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.battle-screen .battle-log.moving {
+  cursor: grabbing;
+  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.7));
+}
+
+.battle-screen .battle-log .log-toggle {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgba(226, 183, 90, 0.5);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+
+.battle-screen .battle-log .log-toggle::before {
+  content: '';
+  display: block;
+  width: 0;
+  height: 0;
+  margin: 0 auto;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--accent);
+}
+
+.battle-screen .battle-log.collapsed .log-toggle::before {
+  border-top: none;
+  border-bottom: 5px solid var(--accent);
+}
+
+.battle-screen .battle-log .log-toggle:hover {
+  background: rgba(226, 183, 90, 0.2);
+}
+
+.battle-screen .battle-log .log-count {
+  position: absolute;
+  top: 13px;
+  left: 18px;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-screen .battle-log.collapsed {
+  padding-bottom: 6px;
+}
+
+.battle-screen .battle-log.collapsed .log-list {
+  display: none;
+}
+
+.battle-screen .battle-log .log-list {
+  cursor: auto;
+  user-select: text;
+  touch-action: pan-y;
+  list-style: none;
+  margin: 0;
+  padding: 0 4px 0 2px;
+  max-height: min(220px, 34vh);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(226, 183, 90, 0.45) transparent;
+}
+
+.battle-screen .battle-log .log-empty {
+  padding: 10px 0 6px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* ターンの区切り: 両側に飾り罫、真ん中に「第 n ターン」 */
+.battle-screen .battle-log .log-turn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 2px;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  white-space: nowrap;
+  color: var(--accent);
+}
+
+.battle-screen .battle-log .log-turn::before,
+.battle-screen .battle-log .log-turn::after {
+  content: '';
+  flex: 1;
+  height: 9px;
+  /* 仮の飾り: 外へ向かって消えていく細い線（--frame-rule-image を入れたら消す） */
+  background:
+    var(--frame-rule-image) no-repeat right center / auto 100%,
+    linear-gradient(90deg, transparent, rgba(226, 183, 90, 0.8)) center / 100% 1px no-repeat;
+}
+
+/* 文字の両側の菱形 */
+.battle-screen .battle-log .log-turn span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.battle-screen .battle-log .log-turn span::before,
+.battle-screen .battle-log .log-turn span::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  background: var(--accent);
+  transform: rotate(45deg);
+}
+
+.battle-screen .battle-log .log-turn::after {
+  transform: scaleX(-1);
+}
+
+.battle-screen .battle-log .log-turn:first-child {
+  margin-top: 0;
+}
+
+.battle-screen .battle-log .log-entry {
+  padding: 5px 2px 6px;
+  border-bottom: 1px dotted rgba(138, 106, 58, 0.5);
+  border-radius: 2px;
+}
+
+.battle-screen .battle-log .log-entry:last-child {
+  border-bottom: none;
+}
+
+.battle-screen .battle-log .log-entry.fresh {
+  animation: log-fresh 1.2s ease-out;
+}
+
+@keyframes log-fresh {
+  from {
+    background: rgba(226, 183, 90, 0.3);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.battle-screen .battle-log .log-who {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 5px;
+}
+
+.battle-screen .battle-log .log-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 軍の色の菱形 */
+.battle-screen .battle-log .log-unit::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  background: var(--team);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  transform: rotate(45deg);
+}
+
+.battle-screen .battle-log .log-verb {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.battle-screen .battle-log .log-action {
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid rgba(226, 183, 90, 0.6);
+  border-radius: 2px;
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.battle-screen .battle-log .log-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 3px;
+  padding-left: 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-screen .battle-log .log-loss {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.battle-screen .battle-log .log-loss b {
+  font-size: 13px;
+}
+
+.battle-screen .battle-log .log-loss.damage b {
+  color: #ff6a50;
+}
+
+.battle-screen .battle-log .log-loss.counter b {
+  color: #ffb070;
+}
+
+.battle-screen .battle-log .log-morale {
+  margin-left: 2px;
+  font-size: 10px;
+}
+
+.battle-screen .battle-log .log-morale.up {
+  color: #b8e08a;
+}
+
+.battle-screen .battle-log .log-morale.down {
+  color: #ff9a7a;
+}
+
+.battle-screen .battle-log .log-entry.intercept .log-action {
+  border-color: rgba(120, 180, 255, 0.7);
+  color: #9cc8ff;
+}
+
+.battle-screen .battle-log .log-encircled {
+  padding: 0 4px;
+  border: 1px solid rgba(255, 106, 80, 0.7);
+  border-radius: 2px;
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.1em;
+  color: #ff9a7a;
+}
+
+.battle-screen .battle-log .log-destroyed {
+  padding: 0 4px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #fff4d0;
+  background: #8a2a1a;
+}
+
+.battle-screen .battle-log .log-none {
+  color: rgba(191, 174, 138, 0.6);
+}
+
+.battle-screen .battle-log .log-note {
+  margin-top: 2px;
+  padding-left: 12px;
+  font-size: 11px;
+  color: #b8e08a;
+}
+
+.battle-screen .battle-log .log-note::before {
+  content: '▸ ';
+}
+
+.battle-screen .battle-log .log-note.halted {
+  color: #ff9a7a;
+}
+
+
+/* --- ターン表示とターン終了ボタン（画面の右下、ステータス行の上） --- */
+.battle-screen .battle-turn-bar {
+  position: absolute;
+  right: 12px;
+  bottom: 44px;
+  z-index: 2;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 18px;
+}
+
+.battle-screen .battle-turn-bar .turn {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.battle-screen .battle-turn-bar .turn output {
+  margin-left: 2px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- ステータス行（操作の案内・予約の中身・実行した結果） --- */
+.battle-screen .battle-status {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  z-index: 2;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 10px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.battle-screen .battle-status .err {
+  color: #ff8a7a;
+}
+

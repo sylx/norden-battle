@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths:
       - battle-editor/**
+      - battle-runtime/**
       - map-runtime/**
       - assets/maps/**
       - assets/units/**
@@ -28,8 +29,20 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # nordencult と同じ並び（norden-battle/ の隣に norden-ui/）にして、norden-ui のソースをそのまま使う
+    defaults:
+      run:
+        working-directory: norden-battle
     steps:
       - uses: actions/checkout@v5
+        with:
+          path: norden-battle
+
+      # UI の部品（battle-runtime が使う）。依存は react だけで、norden-battle のものを使うので npm install しない
+      - uses: actions/checkout@v5
+        with:
+          repository: sylx/norden-ui
+          path: norden-ui
 
       # LFS のうちユニット画像だけを取る（3D 素材の元ファイルは不要なので落とさない）
       - name: Pull unit images (Git LFS)
@@ -39,6 +52,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: norden-battle/package-lock.json
 
       - run: npm ci
 
@@ -50,7 +64,7 @@ jobs:
 
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: battle-editor/dist
+          path: norden-battle/battle-editor/dist
 
   deploy:
     needs: build

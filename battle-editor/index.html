@@ -6,65 +6,7 @@
     <title>Norden Battle Editor</title>
   </head>
   <body>
-    <div id="viewport"></div>
-
-    <nav id="toolbar">
-      <h1>Norden Battle Editor</h1>
-      <button class="tool" data-window="win-map" aria-expanded="false">マップ</button>
-      <button class="tool" data-window="win-perf" aria-expanded="false">描画負荷</button>
-      <span id="map-title" class="sub">-</span>
-    </nav>
-
-    <section id="win-map" class="tool-window" hidden>
-      <header>
-        <h2>マップ</h2>
-        <button class="close" title="閉じる">×</button>
-      </header>
-      <label class="row">
-        <span>保存済み</span>
-        <select id="map-select"></select>
-      </label>
-      <div class="buttons">
-        <button id="btn-map-list">一覧を更新</button>
-        <button id="btn-open">JSON を開く</button>
-      </div>
-      <input id="file-input" type="file" accept=".json,application/json" hidden />
-      <p class="hint">map-editor で保存したマップ（assets/maps/）を読み込みます。JSON ファイルをドロップしても開けます</p>
-    </section>
-
-    <section id="win-perf" class="tool-window" hidden>
-      <header>
-        <h2>描画負荷</h2>
-        <button class="close" title="閉じる">×</button>
-      </header>
-      <label class="row">
-        <span>FPS</span>
-        <output id="fps">-</output>
-      </label>
-      <label class="row">
-        <span>解像度</span>
-        <select id="pixel-ratio"></select>
-      </label>
-      <label class="row">
-        <span>森</span>
-        <select id="forest-mode">
-          <option value="impostor">板絵（軽い）</option>
-          <option value="mesh">3D モデル</option>
-        </select>
-      </label>
-      <label class="check"><input id="chk-prepass" type="checkbox" /> 森の深度プリパス（3D のとき）</label>
-      <label class="check"><input id="chk-dynamic-shadows" type="checkbox" /> 影を毎フレーム更新</label>
-      <p class="hint">重いときは解像度を下げてください。深度プリパス・影はオフ/オンで負荷を比べる用です</p>
-      <p id="gpu-name" class="hint"></p>
-    </section>
-
-    <div id="turn-bar">
-      <span class="turn">ターン <output id="turn-number">1</output></span>
-      <button id="btn-end-turn">ターン終了</button>
-    </div>
-
-    <div id="status"></div>
-    <div id="drop-hint">ここにドロップして開く</div>
-    <script type="module" src="/src/main.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -5,16 +5,6 @@
   --text-dim: #bfae8a;
   --accent: #e2b75a;
   --input-bg: #1e1610;
-  /* 飾り罫の枠（frame.ts の .framed）。画像にするときは --frame-corner-image に左上向きの 1 枚を入れる（ほかの隅は反転して使う） */
-  --frame-corner: 18px;
-  /* 飾りをパネルの外へはみ出させる量 */
-  --frame-outset: 3px;
-  /* 飾りにかからないよう中身を内側に寄せる余白 */
-  --frame-pad-x: 12px;
-  --frame-pad-y: 10px;
-  --frame-corner-image: none;
-  /* 区切りの飾り罫（戦闘ログのターンの区切り）。右向きの 1 枚を入れる（左側は反転して使う） */
-  --frame-rule-image: none;
   font-family: 'Hiragino Sans', 'Noto Sans JP', 'Yu Gothic UI', system-ui, sans-serif;
   font-size: 13px;
   color: var(--text);
@@ -25,24 +15,16 @@
 }
 
 html,
-body {
+body,
+#root {
   margin: 0;
   height: 100%;
   overflow: hidden;
   background: #1a140e;
 }
 
-#viewport {
-  position: fixed;
-  inset: 0;
-}
-
-#viewport canvas {
-  display: block;
-}
-
-/* --- ツールバーと道具のウィンドウ（toolbar.ts。エディタの道具で、ゲームの画面には出さない） --- */
-#toolbar {
+/* --- ツールバーと道具のウィンドウ（EditorApp.tsx。エディタの道具で、ゲームの画面には出さない） --- */
+.editor-toolbar {
   position: fixed;
   top: 12px;
   left: 12px;
@@ -58,7 +40,7 @@ body {
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
 }
 
-#toolbar h1 {
+.editor-toolbar h1 {
   flex: none;
   margin: 0 6px 0 0;
   font-size: 14px;
@@ -67,18 +49,18 @@ body {
   white-space: nowrap;
 }
 
-#toolbar .tool {
+.editor-toolbar .tool {
   flex: none;
   padding: 3px 12px;
 }
 
-#toolbar .tool.active {
+.editor-toolbar .tool.active {
   color: #fff4d0;
   border-color: var(--accent);
   background: linear-gradient(#7a5226, #4e3216);
 }
 
-#toolbar .sub {
+.editor-toolbar .sub {
   min-width: 0;
   margin: 0 6px;
   overflow: hidden;
@@ -87,7 +69,7 @@ body {
   color: var(--text-dim);
 }
 
-/* 位置（left・top）は toolbar.ts で開くボタンの下に合わせる */
+/* 位置（left・top）は EditorApp.tsx で開くボタンの下に合わせる */
 .tool-window {
   position: fixed;
   top: 56px;
@@ -133,38 +115,39 @@ body {
   line-height: 1;
 }
 
-label.row {
+.tool-window label.row {
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 4px 0;
 }
 
-label.row span {
+.tool-window label.row span {
   width: 64px;
   color: var(--text-dim);
 }
 
-label.row select,
-label.row input {
+.tool-window label.row select,
+.tool-window label.row input {
   flex: 1;
   min-width: 0;
 }
 
-label.check {
+.tool-window label.check {
   display: flex;
   align-items: center;
   gap: 4px;
   margin: 4px 0;
 }
 
-input[type='checkbox'] {
+.tool-window input[type='checkbox'] {
   accent-color: var(--accent);
 }
 
-input,
-select,
-button {
+.tool-window input,
+.tool-window select,
+.editor-toolbar button,
+.tool-window button {
   font: inherit;
   color: var(--text);
   background: var(--input-bg);
@@ -173,102 +156,37 @@ button {
   padding: 3px 6px;
 }
 
-.buttons {
+.tool-window .buttons {
   display: flex;
   gap: 6px;
   margin-top: 6px;
 }
 
-button {
+.editor-toolbar button,
+.tool-window button {
   flex: 1;
   cursor: pointer;
   background: linear-gradient(#5a3e26, #3e2a1a);
   border-color: var(--panel-border);
 }
 
-button:hover {
+.editor-toolbar button:hover,
+.tool-window button:hover {
   background: linear-gradient(#6e4c2e, #4a3220);
 }
 
-.hint {
+.tool-window .hint {
   color: var(--text-dim);
   font-size: 11px;
   margin: 6px 0 0;
 }
 
-/* ターン表示とターン終了ボタン（画面の右下、ステータス行の上） */
-#turn-bar {
-  position: fixed;
-  right: 12px;
-  bottom: 44px;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 10px 8px 14px;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
-}
-
-#turn-bar .turn {
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-
-#turn-bar .turn output {
-  margin-left: 2px;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-
-#btn-end-turn {
-  flex: none;
-  padding: 6px 16px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: #fff4d0;
-  background: linear-gradient(#7a5226, #4e3216);
-  border-color: var(--accent);
-}
-
-#btn-end-turn:hover {
-  background: linear-gradient(#8e6230, #5c3c1c);
-}
-
-#status {
-  position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: 10px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 0 10px;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 4px;
-  color: var(--text-dim);
-  font-size: 12px;
-  pointer-events: none;
-}
-
-#status .err {
-  color: #ff8a7a;
-}
-
-#status .ok {
-  color: #b8e08a;
-}
-
-#drop-hint {
+/* JSON ファイルをドロップしている間 */
+.drop-hint {
   position: fixed;
   inset: 0;
-  display: none;
+  z-index: 40;
+  display: flex;
   align-items: center;
   justify-content: center;
   font-size: 22px;
@@ -276,913 +194,4 @@ button:hover {
   background: rgba(0, 0, 0, 0.45);
   border: 3px dashed var(--accent);
   pointer-events: none;
-}
-
-body.dragging #drop-hint {
-  display: flex;
-}
-
-
-/* --- 飾り罫の枠（frame.ts。大きさ・画像は :root の --frame-*） --- */
-.framed > .corner {
-  position: absolute;
-  width: var(--frame-corner);
-  height: var(--frame-corner);
-  pointer-events: none;
-  background: var(--frame-corner-image) no-repeat center / contain;
-}
-
-/* 仮の飾り: 金の L 字と小さな菱形（--frame-corner-image を入れたら消す） */
-.framed > .corner::before,
-.framed > .corner::after {
-  content: '';
-  position: absolute;
-}
-
-.framed > .corner::before {
-  inset: 0;
-  border-top: 2px solid var(--accent);
-  border-left: 2px solid var(--accent);
-}
-
-.framed > .corner::after {
-  left: 4px;
-  top: 4px;
-  width: 4px;
-  height: 4px;
-  background: var(--accent);
-  transform: rotate(45deg);
-}
-
-.framed > .corner.tl {
-  left: calc(-1 * var(--frame-outset));
-  top: calc(-1 * var(--frame-outset));
-}
-
-.framed > .corner.tr {
-  right: calc(-1 * var(--frame-outset));
-  top: calc(-1 * var(--frame-outset));
-  transform: scaleX(-1);
-}
-
-.framed > .corner.bl {
-  left: calc(-1 * var(--frame-outset));
-  bottom: calc(-1 * var(--frame-outset));
-  transform: scaleY(-1);
-}
-
-.framed > .corner.br {
-  right: calc(-1 * var(--frame-outset));
-  bottom: calc(-1 * var(--frame-outset));
-  transform: scale(-1, -1);
-}
-
-/* --- ユニットの情報札（unitTags.ts。大きさは TAG_W・TAG_H・FACE_SIZE と合わせる） --- */
-.unit-tags {
-  position: absolute;
-  inset: 0;
-  /* 札どうしの z-index（unitTags.ts で付ける）をこの中に閉じ込め、行動メニューより奥に置く */
-  z-index: 1;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.unit-tag-lines {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.unit-tag-lines line {
-  stroke-width: 1.5;
-  opacity: 0.85;
-  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
-}
-
-.unit-tag-lines line.active {
-  stroke-width: 2.5;
-  opacity: 1;
-}
-
-.unit-tag {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 124px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 6px 2px 2px;
-  background: linear-gradient(rgba(44, 33, 22, 0.9), rgba(26, 19, 13, 0.9));
-  border: 1px solid var(--team);
-  border-left-width: 3px;
-  border-radius: 20px 4px 4px 20px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-  will-change: transform;
-}
-
-.unit-tag.active {
-  border-color: #fff4d0;
-  border-left-color: var(--team);
-  box-shadow:
-    0 0 0 2px var(--team),
-    0 2px 10px rgba(0, 0, 0, 0.7);
-}
-
-.unit-tag .face {
-  flex: none;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 1px solid var(--team);
-  background-color: #3a2c1e;
-  background-repeat: no-repeat;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
-  /* 枠の内側（32px）に顔を合わせる */
-  background-origin: padding-box;
-}
-
-.unit-tag .bars {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.unit-tag .bar {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: baseline;
-  line-height: 11px;
-}
-
-.unit-tag .label {
-  font-size: 9px;
-  color: var(--text-dim);
-}
-
-.unit-tag .value {
-  font-size: 11px;
-  font-weight: 600;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-
-.unit-tag .track {
-  grid-column: 1 / -1;
-  height: 5px;
-  margin-top: 1px;
-  background: rgba(0, 0, 0, 0.55);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.unit-tag .fill {
-  height: 100%;
-  border-radius: 3px;
-}
-
-.unit-tag .soldiers .fill {
-  background: var(--team);
-}
-
-.unit-tag .morale .fill {
-  background: linear-gradient(90deg, #b8862e, #f0cd6e);
-}
-
-.unit-tag.low-morale .morale .fill {
-  background: linear-gradient(90deg, #8a3a22, #d0643a);
-}
-
-.unit-tag.low-morale .morale .value {
-  color: #ff9a7a;
-}
-
-.unit-tag[hidden] {
-  display: none;
-}
-
-/* --- 行動メニュー（actionMenu.ts） --- */
-.action-menu {
-  position: absolute;
-  left: 0;
-  top: 0;
-  /* 情報札（.unit-tags）・戦闘ログより手前 */
-  z-index: 3;
-  user-select: none;
-  will-change: transform;
-}
-
-.action-menu[hidden],
-.action-menu .menu-panel[hidden] {
-  display: none;
-}
-
-.action-menu .menu-panel {
-  position: absolute;
-  left: 0;
-  top: 0;
-  min-width: 132px;
-  padding: var(--frame-pad-y) var(--frame-pad-x);
-  background: linear-gradient(rgba(48, 36, 24, 0.95), rgba(28, 20, 14, 0.95));
-  border: 1px solid var(--panel-border);
-  border-radius: 3px;
-  box-shadow:
-    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
-    0 4px 14px rgba(0, 0, 0, 0.6);
-}
-
-.action-menu .menu-panel.main {
-  position: relative;
-  border-top: 3px solid var(--team);
-}
-
-.action-menu .menu-panel.sub {
-  min-width: 120px;
-}
-
-.action-menu .menu-head {
-  padding: 0 4px 6px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid rgba(138, 106, 58, 0.6);
-}
-
-.action-menu .menu-title {
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.action-menu .unit-tag.in-menu {
-  position: static;
-  width: auto;
-  min-width: 140px;
-  margin-top: 6px;
-  box-shadow: none;
-  will-change: auto;
-}
-
-.action-menu .menu-ap {
-  display: flex;
-  align-items: baseline;
-  gap: 2px;
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.action-menu .menu-ap .value {
-  margin-left: 4px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-
-.action-menu .menu-ap .pips {
-  display: flex;
-  gap: 2px;
-  margin-left: auto;
-  padding-left: 8px;
-  align-self: center;
-}
-
-.action-menu .menu-ap .pips i {
-  width: 7px;
-  height: 7px;
-  transform: rotate(45deg);
-  border: 1px solid var(--accent);
-  background: rgba(0, 0, 0, 0.4);
-}
-
-.action-menu .menu-ap .pips i.on {
-  background: var(--accent);
-}
-
-.action-menu .menu-ap .pips i.half {
-  background: linear-gradient(135deg, var(--accent) 50%, rgba(0, 0, 0, 0.4) 50%);
-}
-
-/* 予約で使う分 */
-.action-menu .menu-ap .pips i.spent {
-  border-style: dashed;
-  background: rgba(226, 183, 90, 0.25);
-}
-
-/* 指揮官の統率・武力（0..100） */
-.action-menu .menu-commander {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 5px;
-}
-
-.action-menu .menu-commander .stat {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: baseline;
-  line-height: 13px;
-}
-
-.action-menu .menu-commander .label {
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.action-menu .menu-commander .value {
-  font-size: 12px;
-  font-weight: 600;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-
-.action-menu .menu-commander .track {
-  grid-column: 1 / -1;
-  height: 3px;
-  margin-top: 2px;
-  background: rgba(0, 0, 0, 0.55);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.action-menu .menu-commander .fill {
-  height: 100%;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #8a6a3a, #e2b75a);
-}
-
-.action-menu .menu-items {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.action-menu .menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  padding: 0 6px 0 10px;
-  border-radius: 2px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.action-menu .menu-item .name {
-  flex: 1;
-  letter-spacing: 0.1em;
-}
-
-.action-menu .menu-item:hover,
-.action-menu .menu-item.open {
-  background: linear-gradient(90deg, rgba(226, 183, 90, 0.35), rgba(226, 183, 90, 0.08));
-  color: #fff4d0;
-}
-
-.action-menu .menu-item.confirm {
-  margin-top: 4px;
-  border-top: 1px solid rgba(138, 106, 58, 0.6);
-  color: #fff4d0;
-  font-weight: 600;
-}
-
-.action-menu .menu-item.cancel {
-  color: var(--text-dim);
-}
-
-.action-menu .menu-item.disabled {
-  cursor: default;
-  color: rgba(191, 174, 138, 0.45);
-  background: none;
-}
-
-.action-menu .menu-item .cost {
-  min-width: 18px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  font-size: 10px;
-  line-height: 16px;
-  text-align: center;
-  color: #2a1e12;
-  background: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-
-.action-menu .menu-item.disabled .cost {
-  background: rgba(191, 174, 138, 0.3);
-}
-
-.action-menu .menu-item .arrow {
-  width: 0;
-  height: 0;
-  border-left: 5px solid currentColor;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-}
-
-/* --- 頭上に出す数字（popups.ts） --- */
-.popups {
-  position: absolute;
-  inset: 0;
-  z-index: 4;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.popup {
-  position: absolute;
-  left: 0;
-  top: 0;
-  font-size: 20px;
-  font-weight: 800;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  text-shadow:
-    0 0 3px #000,
-    0 1px 2px #000,
-    0 0 6px rgba(0, 0, 0, 0.8);
-  will-change: transform, opacity;
-}
-
-.popup.damage {
-  color: #ff6a50;
-}
-
-.popup.counter {
-  color: #ffb070;
-  font-size: 16px;
-}
-
-/* --- ゲームの画面のウィンドウ（戦闘ログ・地形。飾り罫の枠に題名の札を載せる） --- */
-.game-window {
-  position: fixed;
-  /*
-   * #viewport の中に置き、情報札（1）より手前・行動メニュー（3）より奥にする。
-   * ツールバーなど #viewport の後ろに並ぶ画面の部品よりも奥になる
-   */
-  z-index: 2;
-  padding: 20px var(--frame-pad-x) var(--frame-pad-y);
-  background: linear-gradient(rgba(48, 36, 24, 0.95), rgba(28, 20, 14, 0.95));
-  border: 1px solid var(--panel-border);
-  border-radius: 3px;
-  box-shadow:
-    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
-    0 4px 14px rgba(0, 0, 0, 0.6);
-}
-
-.game-window[hidden] {
-  display: none;
-}
-
-/* 内側の細い罫（外の罫と合わせて二重罫） */
-.game-window::before {
-  content: '';
-  position: absolute;
-  inset: 5px;
-  border: 1px solid rgba(226, 183, 90, 0.35);
-  border-radius: 1px;
-  pointer-events: none;
-}
-
-/* 上辺に載せる題名の札 */
-.game-window .window-title {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  z-index: 1;
-  transform: translate(-50%, -50%);
-  margin: 0;
-  padding: 3px 22px;
-  border: 1px solid var(--accent);
-  border-left: none;
-  border-right: none;
-  background: linear-gradient(#5a3e26, #2e2014);
-  box-shadow:
-    0 0 0 2px rgba(28, 20, 14, 0.95),
-    0 2px 6px rgba(0, 0, 0, 0.6);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.3em;
-  text-indent: 0.3em;
-  white-space: nowrap;
-  color: #fff4d0;
-}
-
-/* 札の両端の菱形 */
-.game-window .window-title::before,
-.game-window .window-title::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  width: 8px;
-  height: 8px;
-  margin-top: -5px;
-  background: var(--accent);
-  border: 1px solid #2e2014;
-  transform: rotate(45deg);
-}
-
-.game-window .window-title::before {
-  left: -5px;
-}
-
-.game-window .window-title::after {
-  right: -5px;
-}
-
-/* --- カーソルの HEX の地形（terrainInfo.ts。画面の左下、ステータス行の上） --- */
-.terrain-info {
-  left: 12px;
-  bottom: 50px;
-  width: min(240px, calc(100vw - 24px));
-  /* 表示するだけなので、マウスは下のマップへ通す */
-  pointer-events: none;
-}
-
-.terrain-info .terrain-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 2px 6px;
-  margin-bottom: 5px;
-  border-bottom: 1px solid rgba(138, 106, 58, 0.6);
-}
-
-/* 地面の色の菱形 */
-.terrain-info .terrain-swatch {
-  flex: none;
-  width: 10px;
-  height: 10px;
-  margin: 0 3px;
-  border: 1px solid var(--accent);
-  transform: rotate(45deg);
-}
-
-.terrain-info .terrain-name {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: #fff4d0;
-  white-space: nowrap;
-}
-
-.terrain-info .terrain-feature {
-  padding: 0 6px;
-  border: 1px solid rgba(226, 183, 90, 0.6);
-  border-radius: 2px;
-  font-size: 10px;
-  line-height: 16px;
-  letter-spacing: 0.1em;
-  color: var(--accent);
-  white-space: nowrap;
-}
-
-.terrain-info .terrain-feature[hidden] {
-  display: none;
-}
-
-.terrain-info .terrain-coord {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.terrain-info dl {
-  display: grid;
-  grid-template-columns: 44px 1fr;
-  gap: 2px 8px;
-  margin: 0;
-  padding: 0 2px;
-  font-size: 12px;
-}
-
-.terrain-info dt {
-  color: var(--text-dim);
-}
-
-.terrain-info dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.terrain-info dd b {
-  color: var(--accent);
-}
-
-/* 移動・攻撃の予測（移動先・攻撃の相手を選んでいる間） */
-.terrain-info .terrain-extra {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dotted rgba(138, 106, 58, 0.7);
-}
-
-.terrain-info .terrain-extra[hidden] {
-  display: none;
-}
-
-.terrain-info .blocked,
-.terrain-info .err {
-  color: #ff8a7a;
-}
-
-.terrain-info .none {
-  color: rgba(191, 174, 138, 0.6);
-}
-
-/* --- 戦闘ログ（battleLog.ts。画面の右下、ターン表示の上） --- */
-.battle-log {
-  right: 12px;
-  /* ステータス行（bottom 10px・高さ 26px）とターン表示の上 */
-  bottom: 104px;
-  width: min(320px, calc(100vw - 24px));
-  /* 一覧と畳むボタン以外をつかんで動かす（battleLog.ts） */
-  cursor: grab;
-  user-select: none;
-  touch-action: none;
-}
-
-.battle-log.moving {
-  cursor: grabbing;
-  box-shadow:
-    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
-    0 8px 22px rgba(0, 0, 0, 0.7);
-}
-
-.battle-log .log-toggle {
-  position: absolute;
-  top: 8px;
-  right: 10px;
-  z-index: 1;
-  flex: none;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 1px solid rgba(226, 183, 90, 0.5);
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.3);
-  cursor: pointer;
-}
-
-.battle-log .log-toggle::before {
-  content: '';
-  display: block;
-  width: 0;
-  height: 0;
-  margin: 0 auto;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-top: 5px solid var(--accent);
-}
-
-.battle-log.collapsed .log-toggle::before {
-  border-top: none;
-  border-bottom: 5px solid var(--accent);
-}
-
-.battle-log .log-toggle:hover {
-  background: rgba(226, 183, 90, 0.2);
-}
-
-.battle-log .log-count {
-  position: absolute;
-  top: 9px;
-  left: 14px;
-  font-size: 10px;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.battle-log.collapsed {
-  padding-bottom: 6px;
-}
-
-.battle-log.collapsed .log-list {
-  display: none;
-}
-
-.battle-log .log-list {
-  cursor: auto;
-  user-select: text;
-  touch-action: pan-y;
-  list-style: none;
-  margin: 0;
-  padding: 0 4px 0 2px;
-  max-height: min(220px, 34vh);
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(226, 183, 90, 0.45) transparent;
-}
-
-.battle-log .log-empty {
-  padding: 10px 0 6px;
-  text-align: center;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-/* ターンの区切り: 両側に飾り罫、真ん中に「第 n ターン」 */
-.battle-log .log-turn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0 2px;
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  white-space: nowrap;
-  color: var(--accent);
-}
-
-.battle-log .log-turn::before,
-.battle-log .log-turn::after {
-  content: '';
-  flex: 1;
-  height: 9px;
-  /* 仮の飾り: 外へ向かって消えていく細い線（--frame-rule-image を入れたら消す） */
-  background:
-    var(--frame-rule-image) no-repeat right center / auto 100%,
-    linear-gradient(90deg, transparent, rgba(226, 183, 90, 0.8)) center / 100% 1px no-repeat;
-}
-
-/* 文字の両側の菱形 */
-.battle-log .log-turn span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.battle-log .log-turn span::before,
-.battle-log .log-turn span::after {
-  content: '';
-  width: 5px;
-  height: 5px;
-  background: var(--accent);
-  transform: rotate(45deg);
-}
-
-.battle-log .log-turn::after {
-  transform: scaleX(-1);
-}
-
-.battle-log .log-turn:first-child {
-  margin-top: 0;
-}
-
-.battle-log .log-entry {
-  padding: 5px 2px 6px;
-  border-bottom: 1px dotted rgba(138, 106, 58, 0.5);
-  border-radius: 2px;
-}
-
-.battle-log .log-entry:last-child {
-  border-bottom: none;
-}
-
-.battle-log .log-entry.fresh {
-  animation: log-fresh 1.2s ease-out;
-}
-
-@keyframes log-fresh {
-  from {
-    background: rgba(226, 183, 90, 0.3);
-  }
-  to {
-    background: transparent;
-  }
-}
-
-.battle-log .log-who {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 2px 5px;
-}
-
-.battle-log .log-unit {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-/* 軍の色の菱形 */
-.battle-log .log-unit::before {
-  content: '';
-  width: 7px;
-  height: 7px;
-  background: var(--team);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
-  transform: rotate(45deg);
-}
-
-.battle-log .log-verb {
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.battle-log .log-action {
-  margin-left: auto;
-  padding: 0 6px;
-  border: 1px solid rgba(226, 183, 90, 0.6);
-  border-radius: 2px;
-  font-size: 10px;
-  line-height: 16px;
-  letter-spacing: 0.1em;
-  color: var(--accent);
-  white-space: nowrap;
-}
-
-.battle-log .log-result {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 12px;
-  margin-top: 3px;
-  padding-left: 12px;
-  font-size: 11px;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.battle-log .log-loss {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.battle-log .log-loss b {
-  font-size: 13px;
-}
-
-.battle-log .log-loss.damage b {
-  color: #ff6a50;
-}
-
-.battle-log .log-loss.counter b {
-  color: #ffb070;
-}
-
-.battle-log .log-morale {
-  margin-left: 2px;
-  font-size: 10px;
-}
-
-.battle-log .log-morale.up {
-  color: #b8e08a;
-}
-
-.battle-log .log-morale.down {
-  color: #ff9a7a;
-}
-
-.battle-log .log-entry.intercept .log-action {
-  border-color: rgba(120, 180, 255, 0.7);
-  color: #9cc8ff;
-}
-
-.battle-log .log-encircled {
-  padding: 0 4px;
-  border: 1px solid rgba(255, 106, 80, 0.7);
-  border-radius: 2px;
-  font-size: 10px;
-  line-height: 14px;
-  letter-spacing: 0.1em;
-  color: #ff9a7a;
-}
-
-.battle-log .log-destroyed {
-  padding: 0 4px;
-  border-radius: 2px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: #fff4d0;
-  background: #8a2a1a;
-}
-
-.battle-log .log-none {
-  color: rgba(191, 174, 138, 0.6);
-}
-
-.battle-log .log-note {
-  margin-top: 2px;
-  padding-left: 12px;
-  font-size: 11px;
-  color: #b8e08a;
-}
-
-.battle-log .log-note::before {
-  content: '▸ ';
-}
-
-.battle-log .log-note.halted {
-  color: #ff9a7a;
 }

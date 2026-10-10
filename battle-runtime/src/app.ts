@@ -34,7 +34,6 @@ import { MapView } from '@norden/map-runtime/render/mapView';
 import { SceneContext } from '@norden/map-runtime/render/scene';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import type { MenuAction } from './actions';
-import { ActionMenu } from './actionMenu';
 import {
   attackForecast,
   attackRange,
@@ -51,6 +50,7 @@ import {
 import { randomRoll } from './damage';
 import { InterceptEffects } from './interceptFx';
 import { applyMorale } from './morale';
+import { ActionMenuModel } from './menuModel';
 import { inEnemyZoc, movePath, moveRange, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
 import { UnitTags } from './unitTags';
@@ -140,6 +140,29 @@ export interface InterceptReport {
   halted: boolean;
 }
 
+/** BattleApp が知らせること（on で受け取る）。値は受け取る関数の引数 */
+export interface BattleEvents {
+  /** マップを読み込んだとき */
+  load: [];
+  /** カーソルの HEX が変わったとき */
+  hover: [cell: HexCell | null];
+  /** 行動メニューで行動を選んだとき（決定・取消を除く） */
+  action: [unit: UnitData, action: MenuAction];
+  /** 予約が増えた・減ったとき */
+  planChange: [plan: Plan];
+  /** 移動先・攻撃の相手を選ぶ状態をやめたとき */
+  targetCancel: [];
+  /** 選べない攻撃の相手を選んだとき（選び直しになる） */
+  targetReject: [reason: string];
+  /** ターンが変わったとき */
+  turn: [turn: number];
+  /** 決定で予約を実行し終えたとき */
+  execute: [report: ExecuteReport];
+}
+
+/** マップのユニットに戦闘中の状態を配る（既定は表示確認用の仮の値） */
+export type StatusFactory = (units: readonly UnitData[]) => Map<UnitData, UnitStatus>;
+
 /** 移動先・攻撃の相手を選んでいる状態 */
 type Targeting =
   | { kind: 'move'; cells: Map<number, MoveStep> }
@@ -180,8 +203,8 @@ export class BattleApp {
   readonly view: MapView;
   /** ユニットの頭上の情報札（顔・兵士数・士気） */
   readonly tags: UnitTags;
-  /** 選択中のユニットの行動メニュー */
-  readonly menu: ActionMenu;
+  /** 選択中のユニットの行動メニュー（中身と位置。描画は ui/ActionMenu.tsx） */
+  readonly menu = new ActionMenuModel();
   /** 兵数の減少などを頭上に出す */
   readonly popups: Popups;
   /** 迎撃の構えのユニットの足元の光の輪 */
@@ -196,21 +219,15 @@ export class BattleApp {
   /** 何ターン目か（1 から） */
   turn = 1;
 
-  /** カーソルの HEX が変わったとき */
-  onHover: (cell: HexCell | null) => void = () => {};
-  /** 行動メニューで行動を選んだとき（決定・取消を除く） */
-  onAction: (unit: UnitData, action: MenuAction) => void = () => {};
-  /** 予約が増えた・減ったとき */
-  onPlanChange: (plan: Plan) => void = () => {};
-  /** 移動先・攻撃の相手を選ぶ状態をやめたとき */
-  onTargetCancel: () => void = () => {};
-  /** 選べない攻撃の相手を選んだとき（選び直しになる） */
-  onTargetReject: (reason: string) => void = () => {};
-  /** ターンが変わったとき */
-  onTurn: (turn: number) => void = () => {};
-  /** 決定で予約を実行し終えたとき */
-  onExecute: (report: ExecuteReport) => void = () => {};
-
+  private readonly listeners = new Map<keyof BattleEvents, Set<(...args: never[]) => void>>();
+  private readonly container: HTMLElement;
+  private readonly onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape' || this.exec) return;
+    if (this.targeting) this.cancelTargeting();
+    else if (this.menu.closeSub()) return;
+    else if (this.plan && BattleApp.planned(this.plan)) this.undo();
+    else this.setSelected(null);
+  };
   private targeting: Targeting | null = null;
   private exec: Execution | null = null;
 
@@ -219,11 +236,12 @@ export class BattleApp {
   private pointerDirty = false;
   private downPos: { x: number; y: number } | null = null;
 
+  /** container にキャンバス・情報札・頭上の数字を置く（行動メニューやウィンドウは置かない。ui/BattleScreen.tsx） */
   constructor(container: HTMLElement) {
+    this.container = container;
     this.ctx = new SceneContext(container);
     this.view = new MapView(this.ctx);
     this.tags = new UnitTags(container);
-    this.menu = new ActionMenu(container);
     this.popups = new Popups(container);
     this.ctx.overlay.add(this.interceptFx.group);
     this.menu.onAction = (unit, action) => {
@@ -232,7 +250,7 @@ export class BattleApp {
       if (action.id === 'cancel') return this.clearPlan();
       if (action.id === 'move') this.startMove();
       else if (isAttack(action.id)) this.startAttack(action);
-      this.onAction(unit, action);
+      this.emit('action', unit, action);
     };
     const el = this.ctx.renderer.domElement;
     el.addEventListener('pointermove', (e) => this.setPointer(e));
@@ -248,30 +266,53 @@ export class BattleApp {
       this.setPointer(e);
       this.click(this.pick());
     });
-    window.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' || this.exec) return;
-      if (this.targeting) this.cancelTargeting();
-      else if (this.menu.closeSub()) return;
-      else if (this.plan && BattleApp.planned(this.plan)) this.undo();
-      else this.setSelected(null);
-    });
+    window.addEventListener('keydown', this.onKeyDown);
     this.ctx.renderer.setAnimationLoop(() => this.frame());
+  }
+
+  /** type のことを fn で受け取る。戻り値で受け取るのをやめる */
+  on<K extends keyof BattleEvents>(type: K, fn: (...args: BattleEvents[K]) => void): () => void {
+    let set = this.listeners.get(type);
+    if (!set) this.listeners.set(type, (set = new Set()));
+    const f = fn as (...args: never[]) => void;
+    set.add(f);
+    return () => set.delete(f);
+  }
+
+  private emit<K extends keyof BattleEvents>(type: K, ...args: BattleEvents[K]): void {
+    for (const fn of this.listeners.get(type) ?? []) (fn as (...args: BattleEvents[K]) => void)(...args);
+  }
+
+  /** 描画を止め、キャンバス・情報札などを取り除いて GPU の資源を手放す（画面を離れるとき） */
+  dispose(): void {
+    window.removeEventListener('keydown', this.onKeyDown);
+    this.ctx.renderer.setAnimationLoop(null);
+    this.listeners.clear();
+    this.exec = null;
+    this.menu.open(null);
+    this.popups.dispose();
+    this.tags.dispose();
+    this.interceptFx.dispose();
+    this.view.dispose();
+    this.ctx.dispose();
   }
 
   get map(): HexMap | null {
     return this.view.map;
   }
 
-  loadMap(data: MapData): void {
+  /** マップを読み込む。ユニットの戦闘中の状態は makeStatuses で配る */
+  loadMap(data: MapData, makeStatuses: StatusFactory = demoStatuses): void {
     const map = new HexMap(data);
     this.exec = null;
     this.popups.clear();
-    this.statuses = demoStatuses(map.allUnits());
+    this.statuses = makeStatuses(map.allUnits());
     this.tags.setStatuses(this.statuses);
     this.view.setMap(map);
     this.setSelected(null);
     this.turn = 1;
-    this.onTurn(this.turn);
+    this.emit('load');
+    this.emit('turn', this.turn);
   }
 
   /** ターンを終える。選択と予約を捨て、全ユニットの行動力を最大まで戻して移動済み・攻撃済みを消す（実行中は何もしない） */
@@ -285,7 +326,7 @@ export class BattleApp {
       status.justAttacked = false;
     }
     this.turn++;
-    this.onTurn(this.turn);
+    this.emit('turn', this.turn);
     return true;
   }
 
@@ -375,7 +416,7 @@ export class BattleApp {
       else if (t.kind === 'attack' && t.cells.has(key)) {
         const target = t.cells.get(key)!;
         const reason = this.rejectReason(t.action, target);
-        if (reason) this.onTargetReject(reason);
+        if (reason) this.emit('targetReject', reason);
         else this.setAttack(t.action, target);
       }
       // ほかのユニットは選び直し、それ以外（範囲外・自分）はメニューに戻る
@@ -425,7 +466,7 @@ export class BattleApp {
   private cancelTargeting(): void {
     if (!this.targeting) return;
     this.endTargeting();
-    this.onTargetCancel();
+    this.emit('targetCancel');
   }
 
   private endTargeting(): void {
@@ -475,7 +516,7 @@ export class BattleApp {
     this.view.setPath(path(plan.legs.slice(0, split)), path(plan.legs.slice(split)));
     this.showAttackArrow(plan);
     this.openMenu();
-    this.onPlanChange(plan);
+    this.emit('planChange', plan);
   }
 
   /** 攻撃の矢印。一斉攻撃は、加わる味方からも細い矢印を出す */
@@ -783,7 +824,7 @@ export class BattleApp {
     this.view.rebuildUnits();
     // 動いた先で選び直す（残りの行動力でメニューを開く）
     this.setSelected(lost ? null : { col: report.unit.col, row: report.unit.row });
-    this.onExecute(report);
+    this.emit('execute', report);
   }
 
   private openMenu(): void {
@@ -822,7 +863,7 @@ export class BattleApp {
   private setHover(o: Offset | null): void {
     this.hovered = o;
     this.view.setHover(o);
-    this.onHover(this.cellAndUnit(o)[0]);
+    this.emit('hover', this.cellAndUnit(o)[0]);
   }
 
   /** ユニットを選択する（予約は捨てる） */
@@ -870,7 +911,7 @@ export class BattleApp {
     this.view.render();
     const placements = this.view.units.placements();
     this.tags.update(placements, this.ctx.camera, this.view.display.units, this.hovered, this.selected);
-    this.menu.update(this.menuAnchor(placements), this.ctx.camera);
+    this.menu.update(this.menuAnchor(placements), this.ctx.camera, this.container.clientWidth, this.container.clientHeight);
     this.popups.update(this.ctx.camera);
   }
 }

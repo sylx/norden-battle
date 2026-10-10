@@ -4,7 +4,7 @@
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { SkillId } from './actions';
-import faceSheetUrl from '../../../assets/units/character_face.webp?url';
+import faceSheetUrl from '../../assets/units/character_face.webp?url';
 
 export interface UnitStatus {
   soldiers: number;

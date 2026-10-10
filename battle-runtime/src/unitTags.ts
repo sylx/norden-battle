@@ -15,7 +15,7 @@ import { TEAM_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { FACE_GRID, FACE_SHEET_URL, MAX_MORALE, type UnitStatus } from './unitStatus';
 
-/** 札の大きさ（CSS ピクセル。style.css の .unit-tag と合わせる） */
+/** 札の大きさ（CSS ピクセル。ui/battle.css の .unit-tag と合わせる） */
 const TAG_W = 124;
 const TAG_H = 40;
 /** 顔の円の直径（枠を除く） */
@@ -91,6 +91,11 @@ export class UnitTags {
     this.svg.classList.add('unit-tag-lines');
     this.root.appendChild(this.svg);
     container.appendChild(this.root);
+  }
+
+  dispose(): void {
+    this.tags.clear();
+    this.root.remove();
   }
 
   /** 表示するユニットの状態を入れ替える（マップを読み込んだとき） */

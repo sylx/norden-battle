@@ -35,6 +35,14 @@ export class InterceptEffects {
     this.group.name = 'intercept-fx';
   }
 
+  dispose(): void {
+    this.group.removeFromParent();
+    this.group.clear();
+    this.rings.clear();
+    this.geometry.dispose();
+    for (const m of this.materials) m.dispose();
+  }
+
   /** 毎フレーム、描画の前に呼ぶ。迎撃の構えのユニットの足元に輪を置き、構えていないユニットの輪を外す */
   update(placements: readonly UnitPlacement[], statuses: ReadonlyMap<UnitData, UnitStatus>, hexSize: number, visible: boolean): void {
     this.group.visible = visible;

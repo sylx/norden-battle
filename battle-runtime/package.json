@@ -1,0 +1,32 @@
+{
+  "name": "@norden/battle-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "戦闘のルール・BattleApp（three.js の戦闘画面）と、その上に重ねる React の UI（BattleScreen）。battle-editor とゲーム本体（nordencult）で共有",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@norden/map-runtime": "*"
+  },
+  "peerDependencies": {
+    "react": ">=19.0.0",
+    "react-dom": ">=19.0.0",
+    "three": ">=0.180.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.186.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "three": "^0.186.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}
