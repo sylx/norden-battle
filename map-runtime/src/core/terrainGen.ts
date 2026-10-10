@@ -41,6 +41,8 @@ export interface TerrainParams {
   treeDensity: number;
   /** 木の配置候補点の間隔（hexSize 比） */
   treeSpacing: number;
+  /** 木のうち針葉樹になる割合（0 = 広葉樹のみ、1 = 針葉樹のみ） */
+  coniferRatio: number;
 }
 
 export const DEFAULT_TERRAIN_PARAMS: TerrainParams = {
@@ -56,6 +58,7 @@ export const DEFAULT_TERRAIN_PARAMS: TerrainParams = {
   colorSharpness: 2.5,
   treeDensity: 1,
   treeSpacing: 0.2,
+  coniferRatio: 0.75,
 };
 
 export const TreeKind = { Conifer: 0, Broadleaf: 1, Bush: 2 } as const;
@@ -419,7 +422,10 @@ export function placeVegetation(map: HexMap, data: TerrainData, params: TerrainP
       let scale = 0.75 + 0.5 * hash2(i, j, seed + 3);
       if (kind !== TreeKind.Bush) {
         const mountainW = field.terrainWeights[MOUNTAIN];
-        const coniferBias = 0.35 + mountainW * 0.6 + 0.3 * field.noise.simplex(((x + ox) / s) * 0.6, ((z + oz) / s) * 0.6 + 50);
+        // 山ほど針葉樹を増やし、場所ごとに割合を揺らす。割合が 0 / 1 に近いほど揺らぎを弱め、純林にできるようにする
+        const r = params.coniferRatio;
+        const sway = Math.min(1, 4 * r * (1 - r));
+        const coniferBias = r + sway * (mountainW * 0.6 + 0.3 * field.noise.simplex(((x + ox) / s) * 0.6, ((z + oz) / s) * 0.6 + 50));
         kind = hash2(i, j, seed + 5) < coniferBias ? TreeKind.Conifer : TreeKind.Broadleaf;
         // 森の奥ほど大きく、縁や草原の孤立木は小さめ
         scale *= 0.8 + 0.3 * forestW;

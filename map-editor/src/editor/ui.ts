@@ -653,6 +653,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   fLook.add(p, 'colorSharpness', 1, 8, 0.1).name('色境界の鋭さ').onFinishChange(regen);
   fLook.add(p, 'treeDensity', 0, 2, 0.05).name('木の密度').onFinishChange(regen);
   fLook.add(p, 'treeSpacing', 0.1, 0.5, 0.01).name('木の間隔').onFinishChange(regen);
+  fLook.add(p, 'coniferRatio', 0, 1, 0.05).name('針葉樹の割合').onFinishChange(regen);
   const u = app.overlay.uniforms;
   fLook.add(u.uGrain, 'value', 0, 1, 0.01).name('地表の粒状感');
   fLook.add(windUniforms.uWind, 'value', 0, 3, 0.05).name('風の強さ');
