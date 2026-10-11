@@ -1,6 +1,6 @@
 /**
  * 戦闘中のユニットの状態（兵士数・士気・行動力・指揮官）。マップのデータには保存しない。
- * まだ戦闘の処理が無いので、マップを読み込んだときに表示確認用の仮の値を配る。
+ * ゲームから渡されないときは、表示確認用の仮の値を配る（demoStatuses・deployment.ts の demoTroops）。
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { SkillId } from './actions';
@@ -95,30 +95,34 @@ export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStat
     }
     const i = perTeam.get(u.team)!;
     perTeam.set(u.team, i + 1);
-    const max = MAX_SOLDIERS[u.type];
-    const face = (teamOffset + i) % FACE_COUNT;
-    out.set(u, {
-      maxSoldiers: max,
-      soldiers: Math.round((max * (0.3 + 0.7 * hash(u.col, u.row, 1))) / 10) * 10,
-      morale: Math.round(20 + 80 * hash(u.col, u.row, 2)),
-      ap: MAX_AP[u.type],
-      maxAp: MAX_AP[u.type],
-      face,
-      skills: FACE_SKILLS[face] ?? [],
-      leadership: FACE_ABILITIES[face]?.[0] ?? 50,
-      strength: FACE_ABILITIES[face]?.[1] ?? 50,
-      intelligence: FACE_ABILITIES[face]?.[2] ?? 50,
-      moved: false,
-      attacked: false,
-      justAttacked: false,
-      intercepting: false,
-    });
+    out.set(u, demoStatus(u.type, (teamOffset + i) % FACE_COUNT, hash(u.col, u.row, 1), hash(u.col, u.row, 2)));
   }
   return out;
 }
 
+/** 表示確認用の仮の状態 1 つ分。兵士数・士気は 0..1 の r1・r2 でばらつかせ、行動力は満タン */
+export function demoStatus(type: UnitType, face: number, r1: number, r2: number): UnitStatus {
+  const max = MAX_SOLDIERS[type];
+  return {
+    maxSoldiers: max,
+    soldiers: Math.round((max * (0.3 + 0.7 * r1)) / 10) * 10,
+    morale: Math.round(20 + 80 * r2),
+    ap: MAX_AP[type],
+    maxAp: MAX_AP[type],
+    face,
+    skills: FACE_SKILLS[face] ?? [],
+    leadership: FACE_ABILITIES[face]?.[0] ?? 50,
+    strength: FACE_ABILITIES[face]?.[1] ?? 50,
+    intelligence: FACE_ABILITIES[face]?.[2] ?? 50,
+    moved: false,
+    attacked: false,
+    justAttacked: false,
+    intercepting: false,
+  };
+}
+
 /** 0..1 の決まった乱数 */
-function hash(col: number, row: number, salt: number): number {
+export function hash(col: number, row: number, salt: number): number {
   let h = Math.imul(col * 374761393 + row * 668265263 + salt * 2147483647, 1274126177);
   h = Math.imul(h ^ (h >>> 13), 1103515245);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;

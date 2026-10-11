@@ -5,9 +5,12 @@
  * - ウィンドウは一度に 1 つだけ開き、押したボタンの下に出す。
  * - 同じボタンか、ウィンドウの × で閉じる。マップを触っても閉じない（描画負荷を見ながら動かせるように）。
  * - マップ: map-editor が assets/maps/ に保存したものを読み込む（ここからは書き換えない）。JSON を開く・ドロップすることもできる。
+ *   街道マップ（battleAreas のあるマップ）は戦闘の範囲（防衛する都市）を選んで切り出し、その初期配置地点で配備から始める
+ *   （既定は初期配置地点のある最初の範囲）。「最初から」で配備からやり直す。
  * - 描画負荷: FPS・解像度・森の描き方・深度プリパス・影の更新。
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { cropBattleArea } from '@norden/map-runtime/core/battleArea';
 import { MapParseError, parseMapData, type MapData } from '@norden/map-runtime/core/mapData';
 import { listMapFiles, loadMapFile, type MapFileInfo } from '@norden/map-runtime/mapFiles';
 import type { ForestMode } from '@norden/map-runtime/render/foliage';
@@ -24,8 +27,12 @@ const TOOLS: Record<Tool, string> = { map: 'マップ', perf: '描画負荷' };
 
 export default function EditorApp() {
   const [app, setApp] = useState<BattleApp | null>(null);
-  const [map, setMap] = useState<MapData | null>(null);
-  const [title, setTitle] = useState('-');
+  /** 読み込んだマップ（切り出す前） */
+  const [source, setSource] = useState<{ data: MapData; label: string } | null>(null);
+  /** 切り出す戦闘の範囲（防衛する都市の ID。null は切り出さない） */
+  const [area, setArea] = useState<string | null>(null);
+  /** 「最初から」で増やす（同じマップでも作り直して読み込み直す） */
+  const [restart, setRestart] = useState(0);
   const [notice, setNotice] = useState<ReactNode>(null);
   const [files, setFiles] = useState<MapFileInfo[]>([]);
   /** assets/maps/ から開いたファイル名。ローカルから開いたときは null */
@@ -52,11 +59,26 @@ export default function EditorApp() {
   };
 
   const load = (data: MapData, file: string | null, label = file) => {
-    setMap(data);
+    const areas = Object.keys(data.battleAreas ?? {});
+    setSource({ data, label: label ?? '-' });
+    setArea(areas.find((city) => data.deployments?.[city]) ?? null);
     setCurrentFile(file);
     setNotice(null);
-    setTitle(`${label ?? '-'} — ${data.name} — ${data.grid.orientation} ${data.grid.cols}×${data.grid.rows}`);
   };
+
+  // 戦闘の範囲を切り出したマップ（切り出せなければその理由）
+  const { map, cropError } = useMemo((): { map: MapData | null; cropError?: string } => {
+    if (!source) return { map: null };
+    try {
+      return { map: area ? cropBattleArea(source.data, area) : { ...source.data } };
+    } catch (e) {
+      return { map: null, cropError: e instanceof Error ? e.message : String(e) };
+    }
+  }, [source, area, restart]);
+
+  const title = source
+    ? `${source.label} — ${source.data.name}${area ? ` — ${area} の範囲` : ''} — ${source.data.grid.orientation} ${map?.grid.cols ?? source.data.grid.cols}×${map?.grid.rows ?? source.data.grid.rows}`
+    : '-';
 
   const loadStored = async (file: string) => {
     try {
@@ -110,7 +132,12 @@ export default function EditorApp() {
   }, []);
 
   return (
-    <BattleScreen map={map} notice={notice} onApp={setApp} className="editor-screen">
+    <BattleScreen
+      map={map}
+      notice={notice ?? (cropError && <span className="err">戦闘の範囲を切り出せません: {cropError}</span>)}
+      onApp={setApp}
+      className="editor-screen"
+    >
       <Toolbar
         tool={tool}
         onTool={setTool}
@@ -120,6 +147,10 @@ export default function EditorApp() {
             <MapTool
               files={files}
               currentFile={currentFile}
+              source={source?.data ?? null}
+              area={area}
+              onArea={setArea}
+              onRestart={() => setRestart((n) => n + 1)}
               onSelect={(file) => void loadStored(file)}
               onRefresh={() => void refreshList()}
               onOpen={(f) => void f.text().then((text) => loadJsonText(text, f.name))}
@@ -201,18 +232,28 @@ function Toolbar({
 function MapTool({
   files,
   currentFile,
+  source,
+  area,
+  onArea,
+  onRestart,
   onSelect,
   onRefresh,
   onOpen,
 }: {
   files: MapFileInfo[];
   currentFile: string | null;
+  /** 読み込んだマップ（切り出す前） */
+  source: MapData | null;
+  area: string | null;
+  onArea: (city: string | null) => void;
+  onRestart: () => void;
   onSelect: (file: string) => void;
   onRefresh: () => void;
   onOpen: (file: File) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const value = currentFile && files.some((f) => f.file === currentFile) ? currentFile : '';
+  const areas = Object.keys(source?.battleAreas ?? {});
   return (
     <>
       <label className="row">
@@ -226,9 +267,25 @@ function MapTool({
           ))}
         </select>
       </label>
+      {areas.length > 0 && (
+        <label className="row">
+          <span>戦闘の範囲</span>
+          <select value={area ?? ''} onChange={(e) => onArea(e.target.value || null)}>
+            <option value="">全体（切り出さない）</option>
+            {areas.map((city) => (
+              <option key={city} value={city}>
+                {city} の範囲{source?.deployments?.[city] ? '（初期配置地点あり）' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="buttons">
         <button onClick={onRefresh}>一覧を更新</button>
         <button onClick={() => inputRef.current?.click()}>JSON を開く</button>
+        <button onClick={onRestart} disabled={!source} title="同じマップを読み込み直して、配備からやり直す">
+          最初から
+        </button>
       </div>
       <input
         ref={inputRef}
@@ -242,6 +299,7 @@ function MapTool({
         }}
       />
       <p className="hint">map-editor で保存したマップ（assets/maps/）を読み込みます。JSON ファイルをドロップしても開けます</p>
+      <p className="hint">街道マップは戦闘の範囲を切り出し、その初期配置地点に部隊を置く配備から始めます</p>
     </>
   );
 }

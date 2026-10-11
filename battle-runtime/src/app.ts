@@ -26,16 +26,21 @@
  *   撃たれた敵は壊滅しなければ続きを歩く。ただし弓兵に撃たれた敵（騎兵を除く）はそこで足止めされ、残りの予約を捨てて
  *   行動を終える（行動力は 0 になる）。味方のいる HEX で止められたときは、通ってきた道を空いている HEX まで戻る。
  *
- * ターン終了で全ユニットの行動力が最大まで戻る。敵の ZOC の中のユニットは、そのターンにまだ移動も攻撃もしていなければ動き出せる。
+ * 戦闘画面に入った直後は配備フェーズ（deployment.ts）。マップに初期配置地点（deploy）があれば、防衛側 → 攻撃側の順に
+ * 部隊を選んで配置地点に置く。初期配置地点が無いマップは、マップに置いてあるユニットのまま戦闘を始める。
+ *
+ * ターンは軍ごとの交互（防衛側の赤軍 → 攻撃側の青軍。TURN_ORDER）。いまの番の軍のユニットだけを選んで行動させられる。
+ * ターン終了で次の軍の番になり、その軍の全ユニットの行動力が最大まで戻る（全軍が 1 回ずつ行動したらターンの数が進む）。
+ * 敵の ZOC の中のユニットは、その番にまだ移動も攻撃もしていなければ動き出せる。
  *
  * メニューの「取消」で予約をすべて取り消す。
- * Esc: 移動先・攻撃の相手を選ぶのをやめる → 2 階層目を閉じる → 予約を 1 つ戻す → 選択を外す。
+ * Esc: 移動先・攻撃の相手を選ぶのをやめる → 2 階層目を閉じる → 予約を 1 つ戻す → 選択を外す（配備フェーズでは部隊を選ぶのをやめる）。
  */
 import * as THREE from 'three';
 import type { Offset } from '@norden/map-runtime/core/hex';
 import { Polyline, smoothPath } from '@norden/map-runtime/core/polyline';
 import { HexMap, type HexCell, type MapData } from '@norden/map-runtime/core/mapData';
-import type { Facing, UnitData } from '@norden/map-runtime/core/units';
+import { TEAM_DEFS, type Facing, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
 import { MapView } from '@norden/map-runtime/render/mapView';
 import { SceneContext } from '@norden/map-runtime/render/scene';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
@@ -56,6 +61,7 @@ import {
 import { ARROW_HIT_SEC, ARROW_RELEASE_SEC, ArrowEffects } from './arrowFx';
 import { CameraFocus, type FocusTiming } from './cameraFocus';
 import { randomRoll } from './damage';
+import { demoTroops, Deployment, SIDE_TEAM, type DeployState, type TroopFactory } from './deployment';
 import { InterceptEffects } from './interceptFx';
 import { LANCE_HIT_SEC, LanceEffects } from './lanceFx';
 import { applyMorale } from './morale';
@@ -125,6 +131,12 @@ const STRIKE_FX: Record<StrikeFxKind, { hitSec: number; cameraShake: number }> =
   thunder: { hitSec: THUNDER_HIT_SEC, cameraShake: 0.08 },
 };
 
+/** 軍が行動する順（防衛側が先）。部隊のいない軍は飛ばす */
+export const TURN_ORDER: readonly TeamId[] = [SIDE_TEAM.defender, SIDE_TEAM.attacker, 'green'];
+
+/** deploy: 配備フェーズ、battle: 戦闘 */
+export type BattlePhase = 'deploy' | 'battle';
+
 /** 予約した攻撃 */
 export interface PlannedAttack {
   action: MenuAction;
@@ -188,6 +200,10 @@ export interface InterceptReport {
 export interface BattleEvents {
   /** マップを読み込んだとき */
   load: [];
+  /** 配備フェーズ・戦闘が始まったとき */
+  phase: [phase: BattlePhase];
+  /** 配備の様子が変わったとき（配備する陣営が変わった・部隊を置いた・選んだ） */
+  deploy: [state: DeployState];
   /** カーソルの HEX が変わったとき */
   hover: [cell: HexCell | null];
   /** 行動メニューで行動を選んだとき（決定・取消を除く） */
@@ -198,8 +214,8 @@ export interface BattleEvents {
   targetCancel: [];
   /** 選べない攻撃の相手を選んだとき（選び直しになる） */
   targetReject: [reason: string];
-  /** ターンが変わったとき */
-  turn: [turn: number];
+  /** 行動する軍が変わったとき（戦闘が始まったときも） */
+  turn: [turn: number, team: TeamId];
   /** 決定で予約を実行し終えたとき */
   execute: [report: ExecuteReport];
 }
@@ -291,14 +307,19 @@ export class BattleApp {
   hovered: Offset | null = null;
   /** 選択中のユニットの予約（選択していなければ null） */
   plan: Plan | null = null;
-  /** 何ターン目か（1 から） */
+  /** 何ターン目か（1 から。全軍が 1 回ずつ行動したら進む） */
   turn = 1;
+  /** いま行動している軍 */
+  activeTeam: TeamId = TURN_ORDER[0];
+  /** 配備フェーズの間の配備（戦闘が始まったら null） */
+  deployment: Deployment | null = null;
 
   private readonly listeners = new Map<keyof BattleEvents, Set<(...args: never[]) => void>>();
   private readonly container: HTMLElement;
   private readonly onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== 'Escape' || this.exec) return;
-    if (this.targeting) this.cancelTargeting();
+    if (this.deployment) this.pickTroop(null);
+    else if (this.targeting) this.cancelTargeting();
     else if (this.menu.closeSub()) return;
     else if (this.plan && BattleApp.planned(this.plan)) this.undo();
     else this.setSelected(null);
@@ -377,8 +398,11 @@ export class BattleApp {
     return this.view.map;
   }
 
-  /** マップを読み込む。ユニットの戦闘中の状態は makeStatuses で配る */
-  loadMap(data: MapData, makeStatuses: StatusFactory = demoStatuses): void {
+  /**
+   * マップを読み込む。マップに置いてあるユニットの戦闘中の状態は makeStatuses で配る。
+   * 初期配置地点（deploy）があれば、makeTroops で配った部隊を置く配備フェーズから始める
+   */
+  loadMap(data: MapData, makeStatuses: StatusFactory = demoStatuses, makeTroops: TroopFactory = demoTroops): void {
     const map = new HexMap(data);
     this.exec = null;
     this.popups.clear();
@@ -388,27 +412,114 @@ export class BattleApp {
     this.thunderFx.clear();
     this.cameraFocus.stop();
     this.statuses = makeStatuses(map.allUnits());
+    const troops = data.deploy ? makeTroops(data.deploy) : [];
+    this.deployment = data.deploy ? new Deployment(map, data.deploy, troops, this.statuses) : null;
+    if (!this.deployment?.side) this.deployment = null;
     this.tags.setStatuses(this.statuses);
     this.view.setMap(map);
     this.setSelected(null);
     this.turn = 1;
+    this.activeTeam = TURN_ORDER[0];
     this.emit('load');
-    this.emit('turn', this.turn);
+    if (this.deployment) {
+      this.emit('phase', 'deploy');
+      this.deployChanged();
+    } else {
+      this.startBattle();
+    }
   }
 
-  /** ターンを終える。選択と予約を捨て、全ユニットの行動力を最大まで戻して移動済み・攻撃済みを消す（実行中は何もしない） */
-  endTurn(): boolean {
-    if (this.exec || !this.map) return false;
+  /** 配備の様子（配備フェーズでなければ null） */
+  get deployState(): DeployState | null {
+    return this.deployment?.state() ?? null;
+  }
+
+  /** 配備フェーズで部隊を選ぶ（null・選んでいる部隊で選ぶのをやめる） */
+  pickTroop(id: string | null): void {
+    this.deployment?.pick(id);
+    this.deployChanged();
+  }
+
+  /** 配備フェーズで、配備した部隊を外す */
+  unplaceTroop(id: string): void {
+    this.deployment?.unplace(id);
+    this.deployChanged();
+  }
+
+  /** 配備フェーズで、未配備の部隊を空いている配置地点へ順に置く */
+  autoDeploy(): void {
+    this.deployment?.auto();
+    this.deployChanged();
+  }
+
+  /** 配備を終えて次の陣営の配備へ進む。最後の陣営なら戦闘を始める。進めたら true（1 部隊も置いていなければ false） */
+  finishDeploy(): boolean {
+    const d = this.deployment;
+    if (!d?.finish()) return false;
+    if (d.side) this.deployChanged();
+    else this.startBattle();
+    return true;
+  }
+
+  /** 配備した部隊を描き直し、配置地点を塗って、選んでいる部隊を強調する */
+  private deployChanged(): void {
+    const d = this.deployment;
+    const state = d?.state();
+    if (!d || !state) return;
+    this.tags.setStatuses(this.statuses);
+    this.view.rebuildUnits();
+    this.view.setRange(d.slots(), TEAM_DEFS[state.team].color);
+    this.view.setFocus(d.pickedAt());
+    this.emit('deploy', state);
+  }
+
+  /** 配備を終えて戦闘を始める（最初の軍の番にする） */
+  private startBattle(): void {
+    this.deployment = null;
+    this.view.setRange(null);
     this.setSelected(null);
-    for (const status of this.statuses.values()) {
+    this.turn = 1;
+    this.activeTeam = this.nextTeam(null);
+    this.refreshTeam(this.activeTeam);
+    this.emit('phase', 'battle');
+    this.emit('turn', this.turn, this.activeTeam);
+  }
+
+  /**
+   * いまの軍の番を終えて次の軍の番にする。選択と予約を捨て、次の軍の全ユニットの行動力を最大まで戻して
+   * 移動済み・攻撃済みを消す。全軍が 1 回ずつ行動したらターンの数を進める（実行中・配備フェーズは何もしない）
+   */
+  endTurn(): boolean {
+    if (this.exec || !this.map || this.deployment) return false;
+    this.setSelected(null);
+    const next = this.nextTeam(this.activeTeam);
+    if (TURN_ORDER.indexOf(next) <= TURN_ORDER.indexOf(this.activeTeam)) this.turn++;
+    this.activeTeam = next;
+    this.refreshTeam(next);
+    this.emit('turn', this.turn, this.activeTeam);
+    return true;
+  }
+
+  /** TURN_ORDER で after の次の、部隊のいる軍（after = null なら最初の軍。どの軍にも部隊がいなければ after のまま） */
+  private nextTeam(after: TeamId | null): TeamId {
+    const teams = new Set(this.map?.allUnits().map((u) => u.team));
+    const start = after === null ? -1 : TURN_ORDER.indexOf(after);
+    for (let i = 1; i <= TURN_ORDER.length; i++) {
+      const team = TURN_ORDER[(start + i) % TURN_ORDER.length];
+      if (teams.has(team)) return team;
+    }
+    return after ?? TURN_ORDER[0];
+  }
+
+  /** team の全ユニットの行動力を最大まで戻し、移動済み・攻撃済みを消す（番の初め） */
+  private refreshTeam(team: TeamId): void {
+    for (const [unit, status] of this.statuses) {
+      if (unit.team !== team) continue;
       status.ap = status.maxAp;
       status.moved = false;
       status.attacked = false;
       status.justAttacked = false;
     }
-    this.turn++;
-    this.emit('turn', this.turn);
-    return true;
   }
 
   /** 移動先を選ぶ状態のとき、o へ移動するときの最短経路（移動できなければ null） */
@@ -487,8 +598,14 @@ export class BattleApp {
   }
 
   private click(o: Offset | null): void {
+    if (this.deployment) {
+      this.deployment.click(o);
+      return this.deployChanged();
+    }
     const map = this.map;
-    const unit = o && map?.unitAt(o.col, o.row);
+    // 選べるのは、いま行動している軍のユニットだけ
+    const unit = (o && map?.unitAt(o.col, o.row)) || null;
+    const own = unit?.team === this.activeTeam ? unit : null;
     const isSelf = !!unit && unit === this.plan?.unit;
     const t = this.targeting;
     if (t && map) {
@@ -500,15 +617,15 @@ export class BattleApp {
         if (reason) this.emit('targetReject', reason);
         else this.setAttack(t.action, target);
       }
-      // ほかのユニットは選び直し、それ以外（範囲外・自分）はメニューに戻る
-      else if (unit && !isSelf) this.setSelected(o);
+      // ほかの味方は選び直し、それ以外（範囲外・自分・敵）はメニューに戻る
+      else if (own && !isSelf) this.setSelected(o);
       else this.cancelTargeting();
       return;
     }
     // 選択中のユニットをもう一度クリックしたときはそのまま（予約を捨てない）
     if (isSelf) return;
-    // ユニットのいる HEX ならそのユニットを選択し、いない HEX なら選択を外す
-    this.setSelected(unit ? o : null);
+    // 味方のいる HEX ならそのユニットを選択し、それ以外（敵・ユニットのいない HEX）なら選択を外す
+    this.setSelected(own ? o : null);
   }
 
   /** 移動できる HEX を出して、移動先を選ぶ状態にする */

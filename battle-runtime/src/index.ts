@@ -4,11 +4,15 @@ export type { BattleScreenProps } from './ui/BattleScreen';
 export type { AttackLogEntry } from './ui/BattleLogWindow';
 
 // 戦闘画面の本体（three.js のマップ・ユニット・入力）
-export { BattleApp } from './app';
-export type { BattleEvents, ExecuteReport, InterceptReport, Plan, PlannedAttack, StatusFactory } from './app';
+export { BattleApp, TURN_ORDER } from './app';
+export type { BattleEvents, BattlePhase, ExecuteReport, InterceptReport, Plan, PlannedAttack, StatusFactory } from './app';
 export type { ActionMenuModel, MenuFrame, MenuState } from './menuModel';
 
+// 配備フェーズ
+export { demoTroops, SIDE_NAMES, SIDE_TEAM } from './deployment';
+export type { DeployState, Troop, TroopFactory } from './deployment';
+
 // ユニットの戦闘中の状態
-export { demoStatuses, MAX_MORALE } from './unitStatus';
+export { demoStatus, demoStatuses, MAX_MORALE } from './unitStatus';
 export type { UnitStatus } from './unitStatus';
 export type { ActionId, MenuAction, SkillId } from './actions';

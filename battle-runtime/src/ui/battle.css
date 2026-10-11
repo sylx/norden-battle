@@ -856,6 +856,147 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* いま行動している軍（軍の色の菱形と名前） */
+.battle-screen .battle-turn-bar .turn-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.battle-screen .battle-turn-bar .turn-team::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  background: var(--team);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  transform: rotate(45deg);
+}
+
+/* --- 配備のウィンドウ（DeployWindow.tsx。画面の右下、ステータス行の上） --- */
+.battle-screen .deploy-window {
+  right: 12px;
+  bottom: 50px;
+  width: min(330px, calc(100% - 24px));
+  max-height: calc(100% - 130px);
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+.battle-screen .deploy-window .deploy-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px 0 2px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(226, 183, 90, 0.45) transparent;
+}
+
+.battle-screen .deploy-window .deploy-troop {
+  display: grid;
+  grid-template-columns: 3.6em auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.battle-screen .deploy-window .deploy-troop:hover {
+  background: rgba(226, 183, 90, 0.12);
+}
+
+.battle-screen .deploy-window .deploy-troop.picked {
+  background: rgba(226, 183, 90, 0.2);
+  border-color: var(--accent);
+}
+
+/* 未配備の部隊は少し沈ませる */
+.battle-screen .deploy-window .deploy-troop:not(.placed) .unit-tag {
+  opacity: 0.75;
+}
+
+.battle-screen .deploy-window .troop-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.battle-screen .deploy-window .troop-name::before {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  background: var(--team);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  transform: rotate(45deg);
+}
+
+.battle-screen .deploy-window .unit-tag.in-list {
+  position: static;
+  box-shadow: none;
+  will-change: auto;
+}
+
+.battle-screen .deploy-window .troop-at {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.battle-screen .deploy-window .deploy-troop.placed .troop-at {
+  color: var(--text);
+}
+
+.battle-screen .deploy-window .troop-remove {
+  grid-column: 4;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.battle-screen .deploy-window .troop-remove:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.battle-screen .deploy-window .deploy-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(138, 106, 58, 0.6);
+}
+
+.battle-screen .deploy-window .deploy-count {
+  flex: 1;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.battle-screen .deploy-window .deploy-count output {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- ステータス行（操作の案内・予約の中身・実行した結果） --- */
 .battle-screen .battle-status {
   position: absolute;

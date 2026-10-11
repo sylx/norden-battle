@@ -2,12 +2,13 @@
  * 画面の下のステータス行に出す案内（操作の説明・予約の中身・実行した結果）。
  */
 import type { ReactNode } from 'react';
-import { TEAM_DEFS, UNIT_DEFS, type UnitData } from '@norden/map-runtime/core/units';
+import { TEAM_DEFS, UNIT_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
 import type { MenuAction } from '../actions';
 import { BattleApp, type ExecuteReport, type Plan } from '../app';
 import { isAttack } from '../combat';
+import { SIDE_NAMES, type DeployState } from '../deployment';
 
-export const IDLE_STATUS = 'クリック: ユニットを選択 / Esc: 予約を 1 つ戻す・選択を外す';
+export const IDLE_STATUS = 'クリック: 味方のユニットを選択 / Esc: 予約を 1 つ戻す・選択を外す';
 const BACK = 'Esc・範囲外クリック: メニューに戻る';
 
 export const LOADED_STATUS = `左ドラッグ: 移動 / ホイール: ズーム / ${IDLE_STATUS}`;
@@ -56,8 +57,27 @@ export function rejectStatus(reason: string): ReactNode {
   );
 }
 
-export function turnStatus(turn: number): string {
-  return `ターン ${turn} — 全ユニットの行動力が回復しました / ${IDLE_STATUS}`;
+export function turnStatus(turn: number, team: TeamId): string {
+  const name = TEAM_DEFS[team].name;
+  return `ターン ${turn} ${name}の番 — ${name}の全ユニットの行動力が回復しました / ${IDLE_STATUS}`;
+}
+
+/** 配備を終えて戦闘が始まったとき（配備フェーズの無いマップは読み込んだとき） */
+export function battleStartStatus(team: TeamId): string {
+  return `戦闘開始 — ${TEAM_DEFS[team].name}の番 / ${LOADED_STATUS}`;
+}
+
+/** 配備の様子が変わったとき */
+export function deployStatus({ side, team, troops, picked, placed }: DeployState): string {
+  const who = `${TEAM_DEFS[team].name}（${SIDE_NAMES[side]}）の配備`;
+  const troop = troops.find((t) => t.id === picked);
+  if (troop) {
+    const name = UNIT_DEFS[troop.type].name;
+    return placed.has(troop.id)
+      ? `${who}: ${name}の移し先を選んでください（軍の色の HEX。部隊の上なら入れ替え）/ Esc・範囲外クリック: 選ぶのをやめる`
+      : `${who}: ${name}を置く HEX を選んでください（軍の色の HEX。部隊の上なら入れ替え）/ Esc・範囲外クリック: 選ぶのをやめる`;
+  }
+  return `${who}: 一覧で部隊を選び、軍の色の HEX に置いてください / 置いた部隊をクリック: 選び直して動かす / 左ドラッグ: 移動 / ホイール: ズーム`;
 }
 
 /** 決定で予約を実行し終えたとき */

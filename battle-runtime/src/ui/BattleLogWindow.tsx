@@ -3,7 +3,7 @@
  * 行動メニューより奥に表示する（battle.css の z-index）。
  *
  * - 枠は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）。
- * - ターンが変わって最初の記録の前に、飾り罫の区切り（第 n ターン）を入れる。
+ * - ターン・行動する軍が変わって最初の記録の前に、飾り罫の区切り（第 n ターン 赤軍）を入れる。
  * - 新しい記録は下に足し、いちばん下までスクロールする（上を読んでいる間は動かさない）。
  * - 題名の横のボタンで畳める。マップを読み込み直すと空にする。
  * - 記録の一覧と畳むボタン以外（題名の札・枠）をつかんでドラッグで動かせる。画面の外へは出さない。
@@ -11,7 +11,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ThinFrameWithTitle } from 'norden-ui';
 import type { Offset } from '@norden/map-runtime/core/hex';
-import { TEAM_DEFS, UNIT_DEFS, type UnitData } from '@norden/map-runtime/core/units';
+import { TEAM_DEFS, UNIT_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
 import type { BattleApp, ExecuteReport } from '../app';
 import type { MoraleChange } from '../morale';
 
@@ -20,6 +20,8 @@ export interface AttackLogEntry {
   /** intercept: 迎撃の構えの間接ユニットの自動攻撃 */
   kind?: 'intercept';
   turn: number;
+  /** 記録した番の軍（迎撃は相手の番に起きる） */
+  team: TeamId;
   attacker: UnitData;
   target: UnitData;
   /** 行動の名前（攻撃・斉射・突撃など） */
@@ -152,9 +154,11 @@ export default function BattleLogWindow({ app }: { app: BattleApp }) {
       <ol ref={listRef} className="log-list">
         {entries.length === 0 ? <li className="log-empty">まだ戦闘はありません</li> : entries.map((e, i) => (
           <Fragment key={i}>
-            {e.turn !== entries[i - 1]?.turn && (
+            {(e.turn !== entries[i - 1]?.turn || e.team !== entries[i - 1]?.team) && (
               <li className="log-turn">
-                <span>第 {e.turn} ターン</span>
+                <span>
+                  第 {e.turn} ターン {TEAM_DEFS[e.team].name}
+                </span>
               </li>
             )}
             <Entry entry={e} />
@@ -242,6 +246,7 @@ function logEntries(app: BattleApp, { unit, attack, intercepts }: ExecuteReport)
       out.push({
         kind: 'intercept',
         turn: app.turn,
+        team: app.activeTeam,
         attacker: i.unit,
         target: unit,
         actionName: '迎撃',
@@ -264,6 +269,7 @@ function logEntries(app: BattleApp, { unit, attack, intercepts }: ExecuteReport)
     const { result } = attack;
     out.push({
       turn: app.turn,
+      team: app.activeTeam,
       attacker: unit,
       target: attack.target,
       // 一斉攻撃は加わった隊の数（自分を含む）も出す

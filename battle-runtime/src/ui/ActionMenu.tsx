@@ -7,14 +7,13 @@
  * - 2 階層目は 1 階層目の項目の横に開く。マウスは項目に乗せる、タッチはタップで開く。
  * - パネルは norden-ui の細いベゼル（ThinFrame）で囲む。
  */
-import { useEffect, useLayoutEffect, useRef, useSyncExternalStore, type CSSProperties } from 'react';
+import { useEffect, useRef, useSyncExternalStore, type CSSProperties } from 'react';
 import { ThinFrame } from 'norden-ui';
 import { TEAM_DEFS, UNIT_DEFS } from '@norden/map-runtime/core/units';
 import type { MenuAction, MenuEntry } from '../actions';
 import { COMBAT_DEFS } from '../combat';
 import type { ActionMenuModel, MenuFrame } from '../menuModel';
-import { renderStatus, STATUS_HTML } from '../unitTags';
-import type { UnitStatus } from '../unitStatus';
+import StatusCard from './StatusCard';
 
 /** ユニットの絵とメニューの間隔（CSS ピクセル） */
 const GAP = 14;
@@ -55,7 +54,7 @@ export default function ActionMenu({ model }: { model: ActionMenuModel }) {
             <div className="menu-title">
               {team.name} {UNIT_DEFS[unit.type].name}
             </div>
-            <StatusCard status={status} />
+            <StatusCard status={status} className="in-menu" />
             <div className="menu-ap">
               <span className="label">行動力</span>
               <span className="value">{ctx.ap}</span>
@@ -146,18 +145,6 @@ function Item({
       {content}
     </li>
   );
-}
-
-/** 情報札と同じ中身（顔・兵士数・士気。unitTags.ts の renderStatus を共用する） */
-function StatusCard({ status }: { status: UnitStatus }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (!el.firstChild) el.innerHTML = STATUS_HTML;
-    renderStatus(el, status);
-  });
-  return <div ref={ref} className="unit-tag in-menu" />;
 }
 
 /** 指揮官の能力の値とグラフ */
