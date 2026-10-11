@@ -1,6 +1,6 @@
 // 戦闘画面（React）
 export { default as BattleScreen } from './ui/BattleScreen';
-export type { BattleScreenProps } from './ui/BattleScreen';
+export type { BattleCutInTexts, BattleScreenProps } from './ui/BattleScreen';
 export type { AttackLogEntry } from './ui/BattleLogWindow';
 
 // 戦闘画面の本体（three.js のマップ・ユニット・入力）
