@@ -12,11 +12,26 @@
  * 魔術師は通常攻撃の代わりにサンダーフォール（行動力 4。最大行動力と同じなので移動した後は撃てない）。
  * 一斉攻撃は直接攻撃の兵種だけで、射程内に自分のほかの味方とも隣接している敵がいるときだけ並ぶ（hasVolleyTargets）。
  * 迎撃は選んだらすぐに実行し（予約した移動があればそこまで動く）、迎撃の構えで待機して行動を終える。攻撃の後と騎兵はできない。
+ * 待機（行動力 0）も選んだらすぐに実行し（予約した行動があれば実行してから）、残りの行動力を捨てて行動を終える。
+ * 行動力が残っていない（待機・迎撃で行動を終えた後など）ときは待機を選べない。
+ * 指揮官のスキルのうち鼓舞（行動力 2）は、選んだらすぐに実行し（予約した行動があれば実行してから）、自分の士気を 10〜20 回復する。
+ * ほかのスキルと退却はまだ処理が無い。
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { UnitStatus } from './unitStatus';
 
-export type ActionId = 'move' | 'attack' | 'volley' | 'charge' | 'thunderfall' | 'intercept' | 'retreat' | 'confirm' | 'cancel' | `skill:${SkillId}`;
+export type ActionId =
+  | 'move'
+  | 'attack'
+  | 'volley'
+  | 'charge'
+  | 'thunderfall'
+  | 'intercept'
+  | 'wait'
+  | 'retreat'
+  | 'confirm'
+  | 'cancel'
+  | `skill:${SkillId}`;
 
 /** 指揮官のスキル（特殊の項目） */
 export type SkillId = 'betray' | 'inspire' | 'fireAttack' | 'ambush';
@@ -70,6 +85,8 @@ const MENU: readonly (ActionDef | GroupDef)[] = [
   },
   // 騎兵はできない
   { id: 'intercept', name: '迎撃', cost: 2, types: ['infantry', 'archer', 'mage'] },
+  // 行動力が余ったときに行動を終える
+  { id: 'wait', name: '待機', cost: 0 },
   { name: '特殊', skills: true, children: [{ id: 'retreat', name: '退却' }] },
 ];
 
@@ -137,6 +154,8 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
       // 攻撃した（予約した・このターンに実行した）後は移動できない（騎兵は除く）
       if (def.id === 'move' && (ctx.attackPlanned || status.attacked) && !ctx.canMoveAfterAttack) return { name: def.name, enabled: false, reason: '攻撃の後は移動できない', action };
       if (def.id === 'intercept' && (ctx.attackPlanned || status.attacked)) return { name: def.name, enabled: false, reason: '攻撃の後は迎撃できない', action };
+      // 待機・迎撃などで行動を終えた後は、もう待機しても意味がない
+      if (def.id === 'wait' && status.ap <= 0) return { name: def.name, enabled: false, reason: '行動は終わっている', action };
       if (def.id === 'move' && zocLocked) return { name: def.name, enabled: false, reason: '敵の ZOC の中にいる', action };
       if (def.id === 'move' && !canMove) return { name: def.name, enabled: false, reason: '移動できる HEX がない', action };
       if (lacksAp(def.cost)) return { name: def.name, enabled: false, reason: '行動力が足りない', action };
@@ -159,14 +178,19 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
   return entries;
 }
 
+/** 処理のある特殊の行動（ほかのスキル・退却はまだ処理が無い） */
+const WORKING_SPECIALS: readonly ActionId[] = ['skill:inspire'];
+
 /**
- * まだ行動できるか（移動・攻撃・迎撃のどれかを選べるか）。どれも選べなければ行動済み（E の印）。
- * 指揮官のスキル・退却（特殊）はまだ処理が無いので数えない
+ * まだ行動できるか（移動・攻撃・迎撃・処理のある特殊の行動のどれかを選べるか）。どれも選べなければ行動済み（E の印）。
+ * 待機は数えない（行動力が残っていればいつでも選べる）
  */
 export function canAct(ctx: MenuContext): boolean {
   return buildActionMenu(ctx).some((entry, i) => {
     const def = MENU[i];
-    return entry.enabled && !!def && !('skills' in def && def.skills);
+    if (!entry.enabled || !def || entry.action?.id === 'wait') return false;
+    if ('skills' in def && def.skills) return !!entry.children?.some((c) => WORKING_SPECIALS.includes(c.id));
+    return true;
   });
 }
 

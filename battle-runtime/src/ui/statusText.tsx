@@ -88,7 +88,7 @@ export function deployStatus({ side, team, troops, picked, placed, limit }: Depl
 }
 
 /** 決定で予約を実行し終えたとき */
-export function executeStatus({ unit, from, moveCost, attack, intercepts, lost, halted, intercept }: ExecuteReport): string {
+export function executeStatus({ unit, from, moveCost, attack, intercepts, lost, halted, intercept, wait, inspire }: ExecuteReport): string {
   const parts: string[] = [];
   if (moveCost > 0) parts.push(`(${from.col}, ${from.row}) から移動（行動力 ${moveCost}）`);
   // 移動の途中で受けた迎撃（攻撃の前の移動・後の移動）
@@ -110,5 +110,7 @@ export function executeStatus({ unit, from, moveCost, attack, intercepts, lost, 
   interceptParts(true);
   if (halted && !lost) parts.push(`(${unit.col}, ${unit.row}) で足止めされた（行動終了）`);
   else if (intercept && !lost) parts.push('迎撃の構えで待機（行動終了）');
+  else if (wait && !lost) parts.push('待機（行動終了）');
+  if (inspire !== undefined) parts.push(`鼓舞: 士気 +${inspire}`);
   return `${unitLabel(unit)}: ${parts.join(' → ')}`;
 }

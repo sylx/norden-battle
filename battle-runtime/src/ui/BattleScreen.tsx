@@ -5,6 +5,7 @@
  * - 初期配置地点のあるマップは配備フェーズから始まる。その間は戦闘記録・ターン表示の代わりに配備のウィンドウを出す。
  * - 地形の右に、カーソルの下・選択中のユニットの騎士の情報を固定で出す（行動メニューは名前・行動力と項目だけ）。
  * - 地形・騎士・戦闘記録・配備は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）、行動メニュー・ターン表示は ThinFrame で囲む。
+ * - 画面の上の中央に戦況（軍ごとの兵数の合計の比の帯）を出す。
  * - ターン表示には、いま行動している軍を出す（防衛側の赤軍 → 攻撃側の青軍の交互）。
  * - 画面の下に操作の案内・予約の中身・実行した結果のステータス行を出す（notice を渡すとそちらを出す）。
  * - 親の要素いっぱいに広がる。children はその上に重ねる（エディタの道具・ゲームの見出しなど）。
@@ -30,6 +31,7 @@ import {
   rejectStatus,
   turnStatus,
 } from './statusText';
+import SituationPanel from './SituationPanel';
 import TerrainWindow from './TerrainWindow';
 import UnitInfoWindow from './UnitInfoWindow';
 import './battle.css';
@@ -100,6 +102,7 @@ export default function BattleScreen({ map, statuses, troops, notice, onApp, cla
       <div ref={viewportRef} className="battle-viewport" />
       {app && (
         <>
+          {map && <SituationPanel app={app} />}
           <TerrainWindow app={app} />
           <UnitInfoWindow app={app} />
           {phase === 'deploy' && <DeployWindow app={app} />}

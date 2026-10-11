@@ -401,6 +401,12 @@
   font-size: 32px;
 }
 
+/* 鼓舞などで士気が上がったとき */
+.battle-screen .popup.boost {
+  color: #8fe07a;
+  font-size: 30px;
+}
+
 /* --- 画面のウィンドウ（地形・戦闘記録。枠と題名の札は norden-ui の ThinFrameWithTitle） --- */
 .battle-screen .battle-window {
   position: absolute;
@@ -1116,6 +1122,125 @@
   font-weight: 600;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
+}
+
+/* --- 戦況（SituationPanel.tsx。画面の上の中央） --- */
+.battle-screen .battle-situation {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 2;
+  isolation: isolate;
+  width: min(440px, calc(100% - 24px));
+  translate: -50% 0;
+  padding: var(--bezel-pad-y) var(--bezel-pad-x);
+  user-select: none;
+}
+
+.battle-screen .battle-situation .situation-sides {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.battle-screen .battle-situation .situation-side {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 0 8px;
+}
+
+/* 右の軍は右に寄せる */
+.battle-screen .battle-situation .situation-side:last-child:not(:first-child) {
+  justify-items: end;
+  text-align: right;
+}
+
+.battle-screen .battle-situation .situation-side .name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 軍の色の菱形（色は文字ではなく印に付ける） */
+.battle-screen .battle-situation .situation-side .name::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: var(--team);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  transform: rotate(45deg);
+}
+
+.battle-screen .battle-situation .situation-side .name small {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.battle-screen .battle-situation .situation-side .total {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-screen .battle-situation .situation-side .total output {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.battle-screen .battle-situation .situation-side .percent {
+  margin-left: 5px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.battle-screen .battle-situation .situation-side .units {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* 兵数の比の帯。軍の間は 2px あけ、両端は丸める */
+.battle-screen .battle-situation .situation-bar {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  height: 10px;
+}
+
+.battle-screen .battle-situation .situation-bar i {
+  flex: 1 1 0;
+  min-width: 2px;
+  transition: flex-grow 0.6s ease;
+}
+
+.battle-screen .battle-situation .situation-bar i:first-of-type {
+  border-radius: 4px 0 0 4px;
+}
+
+.battle-screen .battle-situation .situation-bar i:last-of-type {
+  border-radius: 0 4px 4px 0;
+}
+
+.battle-screen .battle-situation .situation-bar i:only-of-type {
+  border-radius: 4px;
+}
+
+/* 互角の目印（真ん中） */
+.battle-screen .battle-situation .situation-even {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  translate: -50% 0;
+  background: var(--text);
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 /* --- ステータス行（操作の案内・予約の中身・実行した結果） --- */

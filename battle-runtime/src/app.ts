@@ -35,6 +35,10 @@
  * ターン終了で次の軍の番になり、その軍の全ユニットの行動力が最大まで戻る（全軍が 1 回ずつ行動したらターンの数が進む）。
  * 敵の ZOC の中のユニットは、その番にまだ移動も攻撃もしていなければ動き出せる。
  *
+ * - 待機は選んだらすぐに実行する。予約した行動があれば実行してから、残りの行動力を捨てて行動を終える（行動力は 0 になる）。
+ * - 鼓舞（指揮官のスキル。行動力 2）は選んだらすぐに実行する。予約した行動があれば実行してから、自分の士気を 10〜20 回復する。
+ *   予約した行動の途中で壊滅・足止めされたときは鼓舞しない。
+ *
  * メニューの「取消」で予約をすべて取り消す。
  * Esc: 移動先・攻撃の相手を選ぶのをやめる → 2 階層目を閉じる → 予約を 1 つ戻す → 選択を外す（配備フェーズでは部隊を選ぶのをやめる）。
  */
@@ -47,7 +51,7 @@ import { MapView } from '@norden/map-runtime/render/mapView';
 import { SceneContext } from '@norden/map-runtime/render/scene';
 import type { RangeCell } from '@norden/map-runtime/render/hexOverlay';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
-import { canAct, minAttackCost, type ActionId, type MenuAction, type MenuContext } from './actions';
+import { canAct, minAttackCost, SKILL_DEFS, type ActionId, type MenuAction, type MenuContext } from './actions';
 import {
   attackForecast,
   attackRange,
@@ -114,6 +118,9 @@ const LANCE_STRIKE_SEC = 0.7;
 const LANCE_CHARGE_SEC = 1.0;
 const ARROW_STRIKE_SEC = 1.5;
 const THUNDER_STRIKE_SEC = 1.0;
+/** 鼓舞で回復する士気（この範囲の整数） */
+const INSPIRE_MIN = 10;
+const INSPIRE_MAX = 20;
 /** 魔術師が雷を呼んで跳ねる時間（秒。雷が落ちる時点で終わる） */
 const THUNDER_CAST_SEC = 0.35;
 
@@ -184,7 +191,17 @@ export interface ExecuteReport {
   halted: boolean;
   /** 迎撃の構えをとったか（迎撃コマンド） */
   intercept: boolean;
+  /** 待機して行動を終えたか（待機コマンド） */
+  wait: boolean;
+  /** 鼓舞で回復した士気（鼓舞しなかったら無い） */
+  inspire?: number;
 }
+
+/**
+ * 予約を実行した後にすること。confirm: なし（決定）、intercept: 迎撃の構えをとる、wait: 待機して行動を終える、
+ * inspire: 鼓舞する
+ */
+type ExecuteEnd = 'confirm' | 'intercept' | 'wait' | 'inspire';
 
 /** 迎撃の自動攻撃 1 回分 */
 export interface InterceptReport {
@@ -249,6 +266,8 @@ type Phase =
 interface Execution {
   plan: Plan;
   report: ExecuteReport;
+  /** 予約を実行した後にすること */
+  end: ExecuteEnd;
   /** これから行う段階 */
   phases: Phase[];
   phase: Phase;
@@ -351,8 +370,10 @@ export class BattleApp {
     this.cameraFocus = new CameraFocus(this.ctx);
     this.ctx.overlay.add(this.interceptFx.group, this.slashFx.group, this.lanceFx.group, this.arrowFx.group, this.thunderFx.group);
     this.menu.onAction = (unit, action) => {
-      if (action.id === 'confirm') return this.execute(false);
-      if (action.id === 'intercept') return this.execute(true);
+      if (action.id === 'confirm') return this.execute('confirm');
+      if (action.id === 'intercept') return this.execute('intercept');
+      if (action.id === 'wait') return this.execute('wait');
+      if (action.id === 'skill:inspire') return this.execute('inspire');
       if (action.id === 'cancel') return this.clearPlan();
       if (action.id === 'move') this.startMove();
       else if (isAttack(action.id)) this.startAttack(action);
@@ -806,21 +827,22 @@ export class BattleApp {
   }
 
   /**
-   * 予約を実行する。攻撃の前の移動 → 攻撃 → 攻撃の後の移動（騎兵）の順に進める。
-   * intercept なら予約した移動の後に迎撃の構えをとる（攻撃は予約していない）。
+   * 予約を実行する。攻撃の前の移動 → 攻撃 → 攻撃の後の移動（騎兵）の順に進め、最後に end のこと（迎撃の構え・待機・鼓舞）をする。
+   * 決定（confirm）は予約が無ければ何もしない。迎撃は攻撃を予約していないときだけ選べる。
    */
-  private execute(intercept: boolean): void {
+  private execute(end: ExecuteEnd): void {
     const plan = this.plan;
-    if (!this.map || !plan || (!intercept && !BattleApp.planned(plan))) return;
+    if (!this.map || !plan || (end === 'confirm' && !BattleApp.planned(plan))) return;
     const report: ExecuteReport = {
       unit: plan.unit,
       from: { col: plan.unit.col, row: plan.unit.row },
       moveCost: BattleApp.moveCost(plan),
-      cost: BattleApp.planCost(plan),
+      cost: BattleApp.planCost(plan) + (end === 'inspire' ? SKILL_DEFS.inspire.cost : 0),
       intercepts: [],
       lost: false,
       halted: false,
-      intercept,
+      intercept: end === 'intercept',
+      wait: end === 'wait',
     };
     // 行動したら迎撃の構えは解ける
     plan.status.intercepting = false;
@@ -828,7 +850,7 @@ export class BattleApp {
     const walk = (legs: MoveStep[]): Phase => ({ kind: 'walk', path: legs.length > 0 ? movePath(legs) : [], commit: true });
     const phases: Phase[] = [walk(plan.legs.slice(0, split)), ...(plan.attack ? [{ kind: 'strike' as const }, walk(plan.legs.slice(split))] : [])];
     this.menu.open(null);
-    this.exec = { plan, report, phases, phase: phases[0], start: 0, duration: 0, line: null, facing: undefined, hit: false, supporters: [], fx: null };
+    this.exec = { plan, report, end, phases, phase: phases[0], start: 0, duration: 0, line: null, facing: undefined, hit: false, supporters: [], fx: null };
     this.nextPhase();
   }
 
@@ -846,7 +868,7 @@ export class BattleApp {
     }
     if (!phase) {
       this.exec = null;
-      return this.finish(exec.plan, exec.report);
+      return this.finish(exec.plan, exec.report, exec.end);
     }
     exec.start = performance.now();
     exec.hit = false;
@@ -1179,11 +1201,24 @@ export class BattleApp {
     if (up && result.direct) this.popups.show(up, counterText, 'counter', !!attack.landing);
   }
 
-  /** 実行を終える。行動力を使い、兵数が 0 になったユニットを消し、生き残っていれば選び直す */
-  private finish(plan: Plan, report: ExecuteReport): void {
+  /**
+   * 実行を終える。行動力を使い、end のこと（迎撃の構え・待機・鼓舞）をして、兵数が 0 になったユニットを消し、
+   * 生き残っていれば選び直す
+   */
+  private finish(plan: Plan, report: ExecuteReport, end: ExecuteEnd): void {
     const map = this.map!;
     const lost = report.lost || !!report.attack?.unitDestroyed;
     plan.status.ap -= report.cost;
+    // 待機したら、残りの行動力を捨てて行動を終える
+    if (end === 'wait') plan.status.ap = 0;
+    // 鼓舞: 自分の士気を回復する（壊滅・足止めされたらしない）
+    if (end === 'inspire' && !lost && !report.halted) {
+      const before = plan.status.morale;
+      applyMorale(plan.status, INSPIRE_MIN + Math.floor(Math.random() * (INSPIRE_MAX - INSPIRE_MIN + 1)));
+      report.inspire = plan.status.morale - before;
+      const p = this.view.units.placements().find((x) => x.unit === plan.unit);
+      if (p) this.popups.show(p, `鼓舞 士気+${report.inspire}`, 'boost');
+    }
     // 迎撃の構えをとったら、残りの行動力に関わらず行動を終える
     if (report.intercept && !lost && !report.halted) {
       plan.status.intercepting = true;
