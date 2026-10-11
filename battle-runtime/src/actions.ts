@@ -158,3 +158,22 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
   if (planned) entries.push(...[CONFIRM, CANCEL].map((action) => ({ name: action.name, enabled: true, action })));
   return entries;
 }
+
+/**
+ * まだ行動できるか（移動・攻撃・迎撃のどれかを選べるか）。どれも選べなければ行動済み（E の印）。
+ * 指揮官のスキル・退却（特殊）はまだ処理が無いので数えない
+ */
+export function canAct(ctx: MenuContext): boolean {
+  return buildActionMenu(ctx).some((entry, i) => {
+    const def = MENU[i];
+    return entry.enabled && !!def && !('skills' in def && def.skills);
+  });
+}
+
+/** 兵種の攻撃（一斉攻撃を除く）のうち、いちばん少ない行動力（攻撃できない兵種は null） */
+export function minAttackCost(type: UnitType): number | null {
+  const costs = MENU.flatMap((def) =>
+    'attack' in def && def.attack ? def.children.filter((c) => c.id !== 'volley' && (!c.types || c.types.includes(type))).map((c) => c.cost ?? 0) : [],
+  );
+  return costs.length > 0 ? Math.min(...costs) : null;
+}

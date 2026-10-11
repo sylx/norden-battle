@@ -3,7 +3,8 @@
  * battle-editor とゲーム本体（nordencult）の戦闘のシーンで共有する。
  *
  * - 初期配置地点のあるマップは配備フェーズから始まる。その間は戦闘記録・ターン表示の代わりに配備のウィンドウを出す。
- * - 地形・戦闘記録・配備は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）、行動メニュー・ターン表示は ThinFrame で囲む。
+ * - 地形の右に、カーソルの下・選択中のユニットの騎士の情報を固定で出す（行動メニューは名前・行動力と項目だけ）。
+ * - 地形・騎士・戦闘記録・配備は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）、行動メニュー・ターン表示は ThinFrame で囲む。
  * - ターン表示には、いま行動している軍を出す（防衛側の赤軍 → 攻撃側の青軍の交互）。
  * - 画面の下に操作の案内・予約の中身・実行した結果のステータス行を出す（notice を渡すとそちらを出す）。
  * - 親の要素いっぱいに広がる。children はその上に重ねる（エディタの道具・ゲームの見出しなど）。
@@ -23,12 +24,14 @@ import {
   deployStatus,
   executeStatus,
   IDLE_STATUS,
+  inspectStatus,
   LOADED_STATUS,
   planStatus,
   rejectStatus,
   turnStatus,
 } from './statusText';
 import TerrainWindow from './TerrainWindow';
+import UnitInfoWindow from './UnitInfoWindow';
 import './battle.css';
 
 export interface BattleScreenProps {
@@ -67,6 +70,9 @@ export default function BattleScreen({ map, statuses, troops, notice, onApp, cla
       }),
       app.on('deploy', (state) => setStatus(deployStatus(state))),
       app.on('turn', (turn, team) => setTurn({ turn, team })),
+      app.on('select', (unit) => {
+        if (unit && unit === app.inspected) setStatus(inspectStatus(unit));
+      }),
       app.on('action', (u, a) => setStatus(actionStatus(u, a))),
       app.on('planChange', (plan) => setStatus(planStatus(plan))),
       app.on('targetCancel', () => setStatus(IDLE_STATUS)),
@@ -95,6 +101,7 @@ export default function BattleScreen({ map, statuses, troops, notice, onApp, cla
       {app && (
         <>
           <TerrainWindow app={app} />
+          <UnitInfoWindow app={app} />
           {phase === 'deploy' && <DeployWindow app={app} />}
           {phase === 'battle' && <BattleLogWindow app={app} />}
           <ActionMenu model={app.menu} />

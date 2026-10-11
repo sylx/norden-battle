@@ -3,7 +3,7 @@
 戦闘のルールと戦闘画面。three.js の戦闘画面（`BattleApp`。マップ・ユニット・入力・演出）と、
 その上に重ねる React の UI（`BattleScreen`）。battle-editor とゲーム本体（nordencult の戦闘のシーン）で共有する。
 
-UI の部品は [norden-ui](https://github.com/sylx/norden-ui) を使う（地形・戦闘記録・配備の枠は題名の札付きの `ThinFrameWithTitle`、
+UI の部品は [norden-ui](https://github.com/sylx/norden-ui) を使う（地形・騎士・戦闘記録・配備の枠は題名の札付きの `ThinFrameWithTitle`、
 行動メニュー・ターン表示の枠は `ThinFrame` の細いベゼル、ターン終了は `Button`）。norden-ui はリポジトリの隣（`../../norden-ui`）のソースを
 そのまま読み込むので、使う側の Vite・TypeScript の設定に別名を入れる（battle-editor の vite.config.ts・tsconfig.json を参照）。
 
@@ -30,7 +30,10 @@ import { BattleScreen } from '@norden/battle-runtime';
 1. 配備フェーズ（マップに `deploy` があるとき）: 防衛側（赤軍）→ 攻撃側（青軍）の順に、配備のウィンドウの一覧から部隊を選び、
    軍の色で塗った配置地点をクリックして置く。置いた部隊はクリックで選び直して動かせる（部隊の上に置くと入れ替え）。
    「自動配置」で空いている配置地点へ順に置ける。「配備完了」で次の陣営へ。置かなかった部隊は戦闘に出ない。
+   1 つの陣営が置けるのは 6 部隊まで（`MAX_DEPLOY`）。
 2. 戦闘: 軍ごとの交互のターン（赤軍 → 青軍。`TURN_ORDER`）。いまの番の軍のユニットだけを選んで行動させられる。
+   相手方のユニットは暗く描き、クリックすると次の番に動ける範囲（青）と攻撃できる範囲（赤）を出す。
+   もう移動・攻撃・迎撃のどれもできないユニットは、絵を暗くして右上に E の印を付ける。
    「ターン終了」で次の軍の番になり、その軍の行動力が戻る。両軍が 1 回ずつ行動したらターンの数が進む。
    いまはどちらの軍も人が操作する（CPU の操作はまだ無い）。
 
@@ -59,7 +62,8 @@ src/
     BattleScreen.tsx     戦闘画面（BattleApp を置き、下の部品を重ねる）
     ActionMenu.tsx       行動メニュー（ユニットの横に毎フレーム追いかける）
     DeployWindow.tsx     配備のウィンドウ（部隊の一覧・自動配置・配備完了）
-    StatusCard.tsx       情報札と同じ中身（行動メニュー・配備のウィンドウで使う）
+    UnitInfoWindow.tsx   騎士のウィンドウ（地形の右に固定。カーソルの下・選択中のユニットの顔・兵数・士気・行動力・能力）
+    StatusCard.tsx       情報札と同じ中身（騎士・配備のウィンドウで使う）
     TerrainWindow.tsx    カーソルの HEX の地形のウィンドウ（移動・攻撃の予測も出す）
     BattleLogWindow.tsx  戦闘記録のウィンドウ（畳む・ドラッグで動かす）
     statusText.tsx       ステータス行の案内

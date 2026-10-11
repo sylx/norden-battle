@@ -12,8 +12,8 @@
 import * as THREE from 'three';
 import type { HexLayout, Offset } from '../core/hex';
 
-/** 範囲の HEX。mark は印（斜線）を付け、weak は薄く塗る */
-export type RangeCell = Offset & { mark?: boolean; weak?: boolean };
+/** 範囲の HEX。mark は印（斜線）を付け、weak は薄く塗る。alt は 2 つ目の色で塗る（移動範囲の外の攻撃範囲など） */
+export type RangeCell = Offset & { mark?: boolean; weak?: boolean; alt?: boolean };
 
 export interface HexOverlayUniforms {
   [name: string]: THREE.IUniform;
@@ -29,10 +29,14 @@ export interface HexOverlayUniforms {
   uFocus: THREE.IUniform<THREE.Vector2>;
   /** 強調の明滅に使う時間（秒） */
   uTime: THREE.IUniform<number>;
-  /** 範囲（移動範囲など）。r = 1 は範囲内、r = 0.5 は範囲内で印付き、r = 0.25 は範囲内で薄く塗る、0 は範囲外 */
+  /**
+   * 範囲（移動範囲など）。r = 1 は範囲内、r = 0.8 は範囲内で 2 つ目の色、r = 0.5 は範囲内で印付き、r = 0.25 は範囲内で薄く塗る、
+   * 0 は範囲外
+   */
   uRangeTex: THREE.IUniform<THREE.DataTexture>;
   uRangeColor: THREE.IUniform<THREE.Color>;
   uRangeMarkColor: THREE.IUniform<THREE.Color>;
+  uRangeAltColor: THREE.IUniform<THREE.Color>;
   /** 範囲を出しているか（0 / 1） */
   uRangeOn: THREE.IUniform<number>;
   uCellTex: THREE.IUniform<THREE.DataTexture>;
@@ -57,6 +61,7 @@ uniform float uTime;
 uniform sampler2D uRangeTex;
 uniform vec3 uRangeColor;
 uniform vec3 uRangeMarkColor;
+uniform vec3 uRangeAltColor;
 uniform int uRangeOn;
 uniform sampler2D uCellTex;
 uniform float uCellOpacity;
@@ -133,6 +138,11 @@ bool hexRangeWeak(vec2 off) {
   return texelFetch(uRangeTex, ivec2(off), 0).r < 0.375;
 }
 
+bool hexRangeAlt(vec2 off) {
+  float r = texelFetch(uRangeTex, ivec2(off), 0).r;
+  return r > 0.75 && r < 0.9;
+}
+
 float hexHash(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
   p += dot(p, p + 45.32);
@@ -168,6 +178,7 @@ vec3 hexLineColor = uGridColor;
 float hexFocus = 0.0;
 vec3 hexFocusColor = vec3(1.0, 0.76, 0.22);
 float hexRangeEdge = 0.0;
+vec3 hexRangeColor = uRangeColor;
 
 #ifdef HEX_GRAIN
   // 頂点色だけだと単調なので細かい粒状感を足す
@@ -215,7 +226,8 @@ if (hexInMap) {
   if (hexIsRange) {
     // 範囲内はゆっくり明滅する塗り（weak は薄く）。印付きの HEX は別の色の斜線を重ねる
     float hexFill = hexRangeWeak(hexI.xy) ? 0.12 : 0.3 + 0.06 * sin(uTime * 2.5);
-    diffuseColor.rgb = mix(diffuseColor.rgb, uRangeColor, hexFill);
+    if (hexRangeAlt(hexI.xy)) hexRangeColor = uRangeAltColor;
+    diffuseColor.rgb = mix(diffuseColor.rgb, hexRangeColor, hexFill);
     if (hexRangeMarked(hexI.xy)) {
       float stripe = step(0.5, fract((vHexWorld.x - vHexWorld.z) / (uHexSize * 0.22)));
       diffuseColor.rgb = mix(diffuseColor.rgb, uRangeMarkColor, 0.25 + 0.3 * stripe);
@@ -244,7 +256,7 @@ if (hexInMap) {
   }
   hexLine = (1.0 - smoothstep(lw - hexFw, lw + hexFw, hexD)) * op;
   diffuseColor.rgb = mix(diffuseColor.rgb, hexLineColor, hexLine);
-  diffuseColor.rgb = mix(diffuseColor.rgb, mix(uRangeColor, vec3(1.0), 0.45), hexRangeEdge);
+  diffuseColor.rgb = mix(diffuseColor.rgb, mix(hexRangeColor, vec3(1.0), 0.45), hexRangeEdge);
 
   if (hexIsFocus) {
     // 0 = 辺、1 = 中心
@@ -272,7 +284,7 @@ const GLSL_EMISSIVE = /* glsl */ `
 // 影の中でも線が見えるよう少し自己発光させる
 totalEmissiveRadiance += hexLineColor * hexLine * 0.25;
 totalEmissiveRadiance += hexFocusColor * hexFocus * 0.6;
-totalEmissiveRadiance += uRangeColor * hexRangeEdge * 0.5;
+totalEmissiveRadiance += hexRangeColor * hexRangeEdge * 0.5;
 `;
 
 export class HexOverlay {
@@ -293,6 +305,7 @@ export class HexOverlay {
       uRangeTex: { value: HexOverlay.makeRangeTexture(1, 1) },
       uRangeColor: { value: new THREE.Color(0x4aa8ff) },
       uRangeMarkColor: { value: new THREE.Color(0xff8a3a) },
+      uRangeAltColor: { value: new THREE.Color(0xff4a3a) },
       uRangeOn: { value: 0 },
       uCellTex: { value: HexOverlay.makeCellTexture(1, 1) },
       uCellOpacity: { value: 0.55 },
@@ -354,18 +367,27 @@ export class HexOverlay {
     u.uPaveTex.value.dispose();
   }
 
-  /** 範囲（移動範囲など）を出す。mark の付いた HEX には印を付け、weak の HEX は薄く塗る。cells = null で消す */
-  setRange(cells: Iterable<RangeCell> | null, color?: THREE.ColorRepresentation, markColor?: THREE.ColorRepresentation): void {
+  /**
+   * 範囲（移動範囲など）を出す。mark の付いた HEX には印を付け、weak の HEX は薄く塗り、alt の HEX は altColor で塗る。
+   * cells = null で消す
+   */
+  setRange(
+    cells: Iterable<RangeCell> | null,
+    color?: THREE.ColorRepresentation,
+    markColor?: THREE.ColorRepresentation,
+    altColor?: THREE.ColorRepresentation,
+  ): void {
     const u = this.uniforms;
     const tex = u.uRangeTex.value;
     const { width } = tex.image as { width: number };
     const data = tex.image.data as Uint8Array;
     data.fill(0);
-    for (const o of cells ?? []) data[o.row * width + o.col] = o.mark ? 128 : o.weak ? 64 : 255;
+    for (const o of cells ?? []) data[o.row * width + o.col] = o.mark ? 128 : o.weak ? 64 : o.alt ? 208 : 255;
     tex.needsUpdate = true;
     u.uRangeOn.value = cells ? 1 : 0;
     if (color !== undefined) u.uRangeColor.value.set(color);
     if (markColor !== undefined) u.uRangeMarkColor.value.set(markColor);
+    if (altColor !== undefined) u.uRangeAltColor.value.set(altColor);
   }
 
   /** HEX ごとの塗り色を設定する（color = null で塗りなし） */

@@ -5,7 +5,8 @@
  * - 未配備の部隊を選び、その陣営の配置地点の空いている HEX をクリックして置く。置くと次の未配備の部隊を選ぶ。
  * - 置いた部隊をクリックすると選び直し、ほかの配置地点へ動かせる。選んだ部隊を別の部隊の上に置くと入れ替える。
  *   配置地点の外をクリックすると選ぶのをやめる。
- * - 配置地点より部隊が多いときは、置かなかった部隊は戦闘に出ない。
+ * - 1 つの陣営が置けるのは MAX_DEPLOY 部隊まで（配置地点がそれより少なければ配置地点の数まで）。置かなかった部隊は戦闘に出ない。
+ *   上限まで置いた後も、置いた部隊と未配備の部隊を入れ替えることはできる。
  * - 「配備完了」（1 部隊以上置いたとき）で次の陣営へ。最後の陣営が終われば戦闘が始まる。
  *
  * マップのユニットと戦闘中の状態（statuses）を直接書き換える。描画の更新は BattleApp がする。
@@ -18,6 +19,8 @@ import { demoStatus, FACE_COUNT, hash, type UnitStatus } from './unitStatus';
 /** 陣営の軍 */
 export const SIDE_TEAM: Record<DeploySide, TeamId> = { defender: 'red', attacker: 'blue' };
 export const SIDE_NAMES: Record<DeploySide, string> = { defender: '防衛側', attacker: '攻撃側' };
+/** 1 つの陣営が配備できる部隊の数 */
+export const MAX_DEPLOY = 6;
 /** 配備する順（防衛側が先） */
 const DEPLOY_ORDER: readonly DeploySide[] = ['defender', 'attacker'];
 
@@ -46,6 +49,8 @@ export interface DeployState {
   picked: string | null;
   /** この陣営の配置地点の数 */
   slots: number;
+  /** この陣営が置ける部隊の数（MAX_DEPLOY と配置地点の数の小さいほう） */
+  limit: number;
   /** この後に配備する陣営があるか */
   more: boolean;
 }
@@ -123,6 +128,7 @@ export class Deployment {
       placed,
       picked: this.picked?.id ?? null,
       slots: this.slots().length,
+      limit: this.limit(),
       more: this.index < this.sides.length - 1,
     };
     return this.snapshot;
@@ -169,9 +175,11 @@ export class Deployment {
     }
     if (!picked) return;
     const fromReserve = !this.units.has(picked);
+    // 上限まで置いたら、未配備の部隊は置いた部隊と入れ替えるしかない
+    if (fromReserve && this.placedCount() >= this.limit()) return;
     this.put(picked, slot);
-    // 未配備の一覧から置いたときは、続けて置けるように次の未配備の部隊を選ぶ
-    this.picked = fromReserve ? this.nextReserve(picked) : null;
+    // 未配備の一覧から置いたときは、続けて置けるように次の未配備の部隊を選ぶ（上限まで置いたら選ばない）
+    this.picked = fromReserve && this.placedCount() < this.limit() ? this.nextReserve(picked) : null;
     this.changed();
   }
 
@@ -182,6 +190,7 @@ export class Deployment {
     const free = this.slots().filter((s) => !this.map.unitAt(s.col, s.row));
     for (const troop of this.troops) {
       if (troop.side !== side || this.units.has(troop)) continue;
+      if (this.placedCount() >= this.limit()) break;
       const slot = free.shift();
       if (!slot) break;
       this.put(troop, slot);
@@ -198,6 +207,18 @@ export class Deployment {
     this.picked = null;
     this.changed();
     return true;
+  }
+
+  /** 配備している陣営が置ける部隊の数 */
+  private limit(): number {
+    return Math.min(MAX_DEPLOY, this.slots().length);
+  }
+
+  /** 配備している陣営が置いた部隊の数 */
+  private placedCount(): number {
+    let n = 0;
+    for (const troop of this.units.keys()) if (troop.side === this.side) n++;
+    return n;
   }
 
   private slotsOf(side: DeploySide): Offset[] {

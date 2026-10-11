@@ -9,7 +9,7 @@ export type { BattleEvents, BattlePhase, ExecuteReport, InterceptReport, Plan, P
 export type { ActionMenuModel, MenuFrame, MenuState } from './menuModel';
 
 // 配備フェーズ
-export { demoTroops, SIDE_NAMES, SIDE_TEAM } from './deployment';
+export { demoTroops, MAX_DEPLOY, SIDE_NAMES, SIDE_TEAM } from './deployment';
 export type { DeployState, Troop, TroopFactory } from './deployment';
 
 // ユニットの戦闘中の状態

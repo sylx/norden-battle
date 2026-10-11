@@ -240,9 +240,17 @@ export class MapView {
     this.units.setFocus(o);
   }
 
-  /** 範囲（移動範囲など）の HEX を塗り、外周を縁取る。mark の付いた HEX には印を付け、weak の HEX は薄く塗る。null で消す */
-  setRange(cells: Iterable<RangeCell> | null, color?: THREE.ColorRepresentation, markColor?: THREE.ColorRepresentation): void {
-    this.overlay.setRange(cells, color, markColor);
+  /**
+   * 範囲（移動範囲など）の HEX を塗り、外周を縁取る。mark の付いた HEX には印を付け、weak の HEX は薄く塗り、
+   * alt の HEX は altColor で塗る。null で消す
+   */
+  setRange(
+    cells: Iterable<RangeCell> | null,
+    color?: THREE.ColorRepresentation,
+    markColor?: THREE.ColorRepresentation,
+    altColor?: THREE.ColorRepresentation,
+  ): void {
+    this.overlay.setRange(cells, color, markColor, altColor);
   }
 
   /**

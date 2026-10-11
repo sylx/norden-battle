@@ -169,6 +169,32 @@
   display: none;
 }
 
+/* 行動済みのユニットの E の印（unitTags.ts。ユニットの絵の右上。札より手前） */
+.battle-screen .unit-end-mark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 10000;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #fff4d0;
+  border-radius: 3px;
+  background: linear-gradient(#c23a2a, #7e1d14);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  color: #fff4d0;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: Georgia, 'Times New Roman', serif;
+  line-height: 1;
+  will-change: transform;
+}
+
+.battle-screen .unit-end-mark[hidden] {
+  display: none;
+}
+
 /* --- 行動メニュー（ActionMenu.tsx） --- */
 .battle-screen .action-menu {
   position: absolute;
@@ -225,15 +251,6 @@
   transform: rotate(45deg);
 }
 
-.battle-screen .action-menu .unit-tag.in-menu {
-  position: static;
-  width: auto;
-  min-width: 140px;
-  margin-top: 6px;
-  box-shadow: none;
-  will-change: auto;
-}
-
 .battle-screen .action-menu .menu-ap {
   display: flex;
   align-items: baseline;
@@ -279,49 +296,6 @@
 .battle-screen .action-menu .menu-ap .pips i.spent {
   border-style: dashed;
   background: rgba(226, 183, 90, 0.25);
-}
-
-/* 指揮官の統率・武力（0..100） */
-.battle-screen .action-menu .menu-commander {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 5px;
-}
-
-.battle-screen .action-menu .menu-commander .stat {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: baseline;
-  line-height: 13px;
-}
-
-.battle-screen .action-menu .menu-commander .label {
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.battle-screen .action-menu .menu-commander .value {
-  font-size: 12px;
-  font-weight: 600;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-
-.battle-screen .action-menu .menu-commander .track {
-  grid-column: 1 / -1;
-  height: 3px;
-  margin-top: 2px;
-  background: rgba(0, 0, 0, 0.55);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.battle-screen .action-menu .menu-commander .fill {
-  height: 100%;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #8a6a3a, #e2b75a);
 }
 
 .battle-screen .action-menu .menu-items {
@@ -529,6 +503,139 @@
 
 .battle-screen .terrain-info .none {
   color: rgba(191, 174, 138, 0.6);
+}
+
+/* --- 部隊（騎士）のウィンドウ（UnitInfoWindow.tsx。画面の左下、地形のウィンドウの右） --- */
+.battle-screen .unit-info {
+  left: calc(12px + min(260px, calc(100% - 24px)) + 10px);
+  bottom: 50px;
+  width: 250px;
+  /* 表示するだけなので、マウスは下のマップへ通す */
+  pointer-events: none;
+}
+
+.battle-screen .unit-info .info-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+
+.battle-screen .unit-info .info-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+/* 軍の色の菱形 */
+.battle-screen .unit-info .info-name::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: var(--team);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  transform: rotate(45deg);
+}
+
+.battle-screen .unit-info .info-state {
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.battle-screen .unit-info .info-state.done {
+  border-color: #c23a2a;
+  color: #ffb4a8;
+}
+
+.battle-screen .unit-info .info-state.done b {
+  margin-right: 4px;
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.battle-screen .unit-info .unit-tag.in-info {
+  position: static;
+  width: auto;
+  box-shadow: none;
+  will-change: auto;
+}
+
+.battle-screen .unit-info dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+.battle-screen .unit-info dt {
+  color: var(--text-dim);
+}
+
+.battle-screen .unit-info dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-screen .unit-info dd b {
+  color: var(--accent);
+}
+
+.battle-screen .unit-info .none {
+  color: var(--text-dim);
+}
+
+/* 指揮官の統率・武力・知力（0..100） */
+.battle-screen .unit-info .info-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.battle-screen .unit-info .info-stats .stat {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  line-height: 13px;
+}
+
+.battle-screen .unit-info .info-stats .label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.battle-screen .unit-info .info-stats .value {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* 兵種で使わない能力（魔術師の武力・ほかの兵種の知力）は薄く */
+.battle-screen .unit-info .info-stats .stat.unused {
+  opacity: 0.5;
+}
+
+.battle-screen .unit-info .info-stats .track {
+  grid-column: 1 / -1;
+  height: 3px;
+  margin-top: 2px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.battle-screen .unit-info .info-stats .fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #8a6a3a, #e2b75a);
 }
 
 /* --- 戦闘記録（BattleLogWindow.tsx。画面の右下、ターン表示の上） --- */
@@ -988,6 +1095,20 @@
   flex: 1;
   color: var(--text-dim);
   white-space: nowrap;
+}
+
+/* 上限まで置いたら、未配備の部隊はさらに沈ませる（入れ替えには選べる） */
+.battle-screen .deploy-window .deploy-troop.over {
+  opacity: 0.55;
+}
+
+.battle-screen .deploy-window .deploy-count small {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--accent);
 }
 
 .battle-screen .deploy-window .deploy-count output {

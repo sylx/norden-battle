@@ -48,6 +48,11 @@ export function planStatus(plan: Plan): string {
     : `${unitLabel(plan.unit)}: 予約を取り消しました / ${IDLE_STATUS}`;
 }
 
+/** 相手方のユニットを調べたとき */
+export function inspectStatus(u: UnitData): string {
+  return `${unitLabel(u)}: 次の番に動ける範囲（青。橙の斜線は ZOC で止まる）と攻撃できる範囲（赤）/ もう一度クリック・Esc: 閉じる`;
+}
+
 /** 選べない攻撃の相手を選んだとき */
 export function rejectStatus(reason: string): ReactNode {
   return (
@@ -68,16 +73,18 @@ export function battleStartStatus(team: TeamId): string {
 }
 
 /** 配備の様子が変わったとき */
-export function deployStatus({ side, team, troops, picked, placed }: DeployState): string {
+export function deployStatus({ side, team, troops, picked, placed, limit }: DeployState): string {
   const who = `${TEAM_DEFS[team].name}（${SIDE_NAMES[side]}）の配備`;
   const troop = troops.find((t) => t.id === picked);
   if (troop) {
     const name = UNIT_DEFS[troop.type].name;
-    return placed.has(troop.id)
-      ? `${who}: ${name}の移し先を選んでください（軍の色の HEX。部隊の上なら入れ替え）/ Esc・範囲外クリック: 選ぶのをやめる`
-      : `${who}: ${name}を置く HEX を選んでください（軍の色の HEX。部隊の上なら入れ替え）/ Esc・範囲外クリック: 選ぶのをやめる`;
+    if (placed.has(troop.id))
+      return `${who}: ${name}の移し先を選んでください（軍の色の HEX。部隊の上なら入れ替え）/ Esc・範囲外クリック: 選ぶのをやめる`;
+    if (placed.size >= limit)
+      return `${who}: ${limit} 部隊まで置きました。${name}は置いた部隊の上に置くと入れ替えられます / Esc・範囲外クリック: 選ぶのをやめる`;
+    return `${who}: ${name}を置く HEX を選んでください（軍の色の HEX。部隊の上なら入れ替え）/ Esc・範囲外クリック: 選ぶのをやめる`;
   }
-  return `${who}: 一覧で部隊を選び、軍の色の HEX に置いてください / 置いた部隊をクリック: 選び直して動かす / 左ドラッグ: 移動 / ホイール: ズーム`;
+  return `${who}: 一覧で部隊を選び、軍の色の HEX に置いてください（${limit} 部隊まで）/ 置いた部隊をクリック: 選び直して動かす / 左ドラッグ: 移動 / ホイール: ズーム`;
 }
 
 /** 決定で予約を実行し終えたとき */

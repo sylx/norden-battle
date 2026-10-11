@@ -3,7 +3,7 @@
  *
  * - ユニットの絵（移動を予約したら予約した移動先に置いた絵）の右（入らなければ左）に置き、
  *   カメラを動かしても毎フレーム追いかける（位置は再描画せずに DOM を直接動かす）。
- * - 上部にユニットの状態（情報札と同じ顔・兵士数・士気と、残り行動力・指揮官の統率・武力（魔術師は知力））を出す。
+ * - 上部はユニットの名前と残り行動力だけ（顔・兵士数・士気・指揮官の能力は、地形の横の部隊のウィンドウ UnitInfoWindow.tsx に出す）。
  * - 2 階層目は 1 階層目の項目の横に開く。マウスは項目に乗せる、タッチはタップで開く。
  * - パネルは norden-ui の細いベゼル（ThinFrame）で囲む。
  */
@@ -11,9 +11,7 @@ import { useEffect, useRef, useSyncExternalStore, type CSSProperties } from 'rea
 import { ThinFrame } from 'norden-ui';
 import { TEAM_DEFS, UNIT_DEFS } from '@norden/map-runtime/core/units';
 import type { MenuAction, MenuEntry } from '../actions';
-import { COMBAT_DEFS } from '../combat';
 import type { ActionMenuModel, MenuFrame } from '../menuModel';
-import StatusCard from './StatusCard';
 
 /** ユニットの絵とメニューの間隔（CSS ピクセル） */
 const GAP = 14;
@@ -42,7 +40,6 @@ export default function ActionMenu({ model }: { model: ActionMenuModel }) {
   if (!ctx) return null;
   const { unit, status } = ctx;
   const team = TEAM_DEFS[unit.team];
-  const magic = COMBAT_DEFS[unit.type].magic;
   const sub = openIndex !== null ? entries[openIndex]?.children : undefined;
 
   return (
@@ -54,7 +51,6 @@ export default function ActionMenu({ model }: { model: ActionMenuModel }) {
             <div className="menu-title">
               {team.name} {UNIT_DEFS[unit.type].name}
             </div>
-            <StatusCard status={status} className="in-menu" />
             <div className="menu-ap">
               <span className="label">行動力</span>
               <span className="value">{ctx.ap}</span>
@@ -65,11 +61,6 @@ export default function ActionMenu({ model }: { model: ActionMenuModel }) {
                   <i key={i} className={i + 1 <= ctx.ap ? 'on' : i < ctx.ap ? 'half' : i < status.ap ? 'spent' : ''} />
                 ))}
               </span>
-            </div>
-            {/* 指揮官の能力（0..100）。魔術師は武力の代わりに知力 */}
-            <div className="menu-commander">
-              <Stat label="統率" n={status.leadership} />
-              {magic ? <Stat label="知力" n={status.intelligence} /> : <Stat label="武力" n={status.strength} />}
             </div>
           </div>
           <ul className="menu-items">
@@ -144,19 +135,6 @@ function Item({
     >
       {content}
     </li>
-  );
-}
-
-/** 指揮官の能力の値とグラフ */
-function Stat({ label, n }: { label: string; n: number }) {
-  return (
-    <div className="stat">
-      <span className="label">{label}</span>
-      <span className="value">{n}</span>
-      <div className="track">
-        <div className="fill" style={{ width: `${Math.max(0, Math.min(100, n))}%` }} />
-      </div>
-    </div>
   );
 }
 

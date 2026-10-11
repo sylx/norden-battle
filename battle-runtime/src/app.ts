@@ -30,6 +30,8 @@
  * 部隊を選んで配置地点に置く。初期配置地点が無いマップは、マップに置いてあるユニットのまま戦闘を始める。
  *
  * ターンは軍ごとの交互（防衛側の赤軍 → 攻撃側の青軍。TURN_ORDER）。いまの番の軍のユニットだけを選んで行動させられる。
+ * 相手方のユニットは暗くし、クリックするとそのユニットが次の番に動ける範囲（青）と攻撃できる範囲（赤）を出す（inspect）。
+ * いまの番の軍で、もう移動・攻撃・迎撃のどれもできないユニットは行動済みとして、絵を暗くして右上に E の印を付ける。
  * ターン終了で次の軍の番になり、その軍の全ユニットの行動力が最大まで戻る（全軍が 1 回ずつ行動したらターンの数が進む）。
  * 敵の ZOC の中のユニットは、その番にまだ移動も攻撃もしていなければ動き出せる。
  *
@@ -43,8 +45,9 @@ import { HexMap, type HexCell, type MapData } from '@norden/map-runtime/core/map
 import { TEAM_DEFS, type Facing, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
 import { MapView } from '@norden/map-runtime/render/mapView';
 import { SceneContext } from '@norden/map-runtime/render/scene';
+import type { RangeCell } from '@norden/map-runtime/render/hexOverlay';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
-import type { ActionId, MenuAction } from './actions';
+import { canAct, minAttackCost, type ActionId, type MenuAction, type MenuContext } from './actions';
 import {
   attackForecast,
   attackRange,
@@ -214,6 +217,8 @@ export interface BattleEvents {
   targetCancel: [];
   /** 選べない攻撃の相手を選んだとき（選び直しになる） */
   targetReject: [reason: string];
+  /** ユニットを選択した・相手方のユニットを調べたとき（外したときは null） */
+  select: [unit: UnitData | null];
   /** 行動する軍が変わったとき（戦闘が始まったときも） */
   turn: [turn: number, team: TeamId];
   /** 決定で予約を実行し終えたとき */
@@ -307,6 +312,10 @@ export class BattleApp {
   hovered: Offset | null = null;
   /** 選択中のユニットの予約（選択していなければ null） */
   plan: Plan | null = null;
+  /** 調べている相手方のユニット（動ける範囲・攻撃できる範囲を出している。いなければ null） */
+  inspected: UnitData | null = null;
+  /** いまの番の軍の、行動済み（もう移動・攻撃・迎撃のどれもできない）ユニット */
+  readonly done = new Set<UnitData>();
   /** 何ターン目か（1 から。全軍が 1 回ずつ行動したら進む） */
   turn = 1;
   /** いま行動している軍 */
@@ -429,6 +438,13 @@ export class BattleApp {
     }
   }
 
+  /** 部隊のウィンドウに出すユニット（カーソルの下 → 選択中 → 調べている相手方の順。どれも無ければ null） */
+  infoUnit(): UnitData | null {
+    const map = this.map;
+    const hovered = this.hovered && map?.unitAt(this.hovered.col, this.hovered.row);
+    return hovered ?? this.plan?.unit ?? this.inspected;
+  }
+
   /** 配備の様子（配備フェーズでなければ null） */
   get deployState(): DeployState | null {
     return this.deployment?.state() ?? null;
@@ -470,6 +486,7 @@ export class BattleApp {
     this.view.rebuildUnits();
     this.view.setRange(d.slots(), TEAM_DEFS[state.team].color);
     this.view.setFocus(d.pickedAt());
+    this.refreshMarks();
     this.emit('deploy', state);
   }
 
@@ -481,6 +498,7 @@ export class BattleApp {
     this.turn = 1;
     this.activeTeam = this.nextTeam(null);
     this.refreshTeam(this.activeTeam);
+    this.refreshMarks();
     this.emit('phase', 'battle');
     this.emit('turn', this.turn, this.activeTeam);
   }
@@ -496,6 +514,7 @@ export class BattleApp {
     if (TURN_ORDER.indexOf(next) <= TURN_ORDER.indexOf(this.activeTeam)) this.turn++;
     this.activeTeam = next;
     this.refreshTeam(next);
+    this.refreshMarks();
     this.emit('turn', this.turn, this.activeTeam);
     return true;
   }
@@ -509,6 +528,24 @@ export class BattleApp {
       if (teams.has(team)) return team;
     }
     return after ?? TURN_ORDER[0];
+  }
+
+  /**
+   * 行動済みのユニット（done）を数え直して絵の右上に E の印を付け、行動済みのユニットと相手方のユニット
+   * （配備フェーズでは配備していない陣営のユニット）の絵を暗くする（情報札は暗くしない）
+   */
+  private refreshMarks(): void {
+    const map = this.map;
+    const team = this.deployState?.team ?? this.activeTeam;
+    this.done.clear();
+    if (map && !this.deployment) {
+      for (const [unit, status] of this.statuses) {
+        if (unit.team !== team) continue;
+        if (!canAct(this.menuContext({ unit, status, legs: [], attack: null }))) this.done.add(unit);
+      }
+    }
+    this.view.units.setDimmed((u) => u.team !== team || this.done.has(u));
+    this.tags.setMarks(this.done);
   }
 
   /** team の全ユニットの行動力を最大まで戻し、移動済み・攻撃済みを消す（番の初め） */
@@ -624,8 +661,48 @@ export class BattleApp {
     }
     // 選択中のユニットをもう一度クリックしたときはそのまま（予約を捨てない）
     if (isSelf) return;
-    // 味方のいる HEX ならそのユニットを選択し、それ以外（敵・ユニットのいない HEX）なら選択を外す
+    // 味方のいる HEX ならそのユニットを選択し、相手方なら動ける範囲・攻撃できる範囲を出す。ユニットのいない HEX なら選択を外す
+    if (unit && !own) return this.inspect(unit);
     this.setSelected(own ? o : null);
+  }
+
+  /** 相手方のユニットを調べる（選択を外し、そのユニットを強調して、動ける範囲・攻撃できる範囲を出す）。もう一度で外す */
+  private inspect(unit: UnitData): void {
+    const again = this.inspected === unit;
+    this.setSelected(null);
+    if (again) return;
+    this.inspected = unit;
+    this.view.setFocus(unit);
+    this.view.setRange(this.threatRange(unit), MOVE_RANGE_COLOR, MOVE_ZOC_COLOR, ATTACK_RANGE_COLOR);
+    this.emit('select', unit);
+  }
+
+  /**
+   * unit が次の番に（最大の行動力で）動ける HEX と、そこから攻撃できる HEX。
+   * 動ける HEX は青（敵の ZOC で止まる HEX は印付き）、その外の攻撃できる HEX は赤（alt）。
+   * 攻撃は、動いた後に残る行動力でいちばん軽い攻撃ができる HEX からだけ数える
+   */
+  private threatRange(unit: UnitData): RangeCell[] {
+    const map = this.map!;
+    const status = this.statuses.get(unit);
+    if (!status) return [];
+    const cols = map.layout.cols;
+    const ap = status.maxAp;
+    const moves = moveRange(map, unit, unit, ap, { escapeZoc: true });
+    const out = new Map<number, RangeCell>();
+    for (const [k, step] of moves) out.set(k, { col: step.col, row: step.row, mark: step.zoc });
+    const cost = minAttackCost(unit.type);
+    if (cost === null) return [...out.values()];
+    const self = unit.row * cols + unit.col;
+    const froms = [{ pos: unit as Offset, spent: 0 }, ...[...moves.values()].map((step) => ({ pos: step as Offset, spent: step.cost }))];
+    for (const { pos, spent } of froms) {
+      if (ap - spent < cost) continue;
+      for (const o of attackRange(map, unit, pos)) {
+        const k = o.row * cols + o.col;
+        if (k !== self && !out.has(k)) out.set(k, { ...o, alt: true });
+      }
+    }
+    return [...out.values()];
   }
 
   /** 移動できる HEX を出して、移動先を選ぶ状態にする */
@@ -1124,17 +1201,21 @@ export class BattleApp {
     this.view.rebuildUnits();
     // 動いた先で選び直す（残りの行動力でメニューを開く）
     this.setSelected(lost ? null : { col: report.unit.col, row: report.unit.row });
+    this.refreshMarks();
     this.emit('execute', report);
   }
 
   private openMenu(): void {
-    const map = this.map;
-    const plan = this.plan;
-    if (!map || !plan) return this.menu.open(null);
+    this.menu.open(this.map && this.plan ? this.menuContext(this.plan) : null);
+  }
+
+  /** 予約 plan の後の行動メニューの状況 */
+  private menuContext(plan: Plan): MenuContext {
+    const map = this.map!;
     const pos = BattleApp.planPos(plan);
     const options = BattleApp.moveOptions(plan);
     const targets = attackTargets(map, plan.unit, pos);
-    this.menu.open({
+    return {
       unit: plan.unit,
       status: plan.status,
       ap: plan.status.ap - BattleApp.planCost(plan),
@@ -1146,7 +1227,7 @@ export class BattleApp {
       canMoveAfterAttack: !!COMBAT_DEFS[plan.unit.type].moveAfterAttack,
       hasTargets: targets.length > 0,
       hasVolleyTargets: targets.some((t) => volleySupporters(map, plan.unit, t).length > 0),
-    });
+    };
   }
 
   private setPointer(e: PointerEvent): void {
@@ -1169,6 +1250,10 @@ export class BattleApp {
   /** ユニットを選択する（予約は捨てる） */
   private setSelected(o: Offset | null): void {
     if (this.targeting) this.endTargeting();
+    if (this.inspected) {
+      this.inspected = null;
+      this.view.setRange(null);
+    }
     this.selected = o;
     this.view.setFocus(o);
     this.view.setPath(null);
@@ -1177,6 +1262,7 @@ export class BattleApp {
     const status = unit && this.statuses.get(unit);
     this.plan = unit && status ? { unit, status, legs: [], attack: null } : null;
     this.openMenu();
+    this.emit('select', this.plan?.unit ?? null);
   }
 
   private cellAndUnit(o: Offset | null): [HexCell | null, UnitData | null] {

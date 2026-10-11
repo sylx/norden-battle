@@ -35,6 +35,8 @@ const GLOW_SPREAD = 0.07;
 const GLOW_COLOR = 0xffc23a;
 /** 選択中のユニットがあるとき、ほかのユニットの明るさ */
 const DIM = 0.5;
+/** 暗くするユニット（setDimmed。いまは行動できない相手方など）の明るさ */
+const SHADE = 0.2;
 
 const SHADOW_ORDER = 9;
 const SPRITE_ORDER = 10;
@@ -77,6 +79,7 @@ export class UnitLayer {
   /** 選択中のユニットの光の明滅に使う時間（秒）。描画のたびに進める */
   readonly time: THREE.IUniform<number> = { value: 0 };
   private focus: Offset | null = null;
+  private dimmed: ((unit: UnitData) => boolean) | null = null;
   /** 最後に build したときの地形（moveTo で影を作り直すのに使う） */
   private terrain: { hm: Heightmap; waterLevel: number; size: number } | null = null;
   private readonly glow = createGlowSprite(this.time);
@@ -88,12 +91,19 @@ export class UnitLayer {
     this.group.add(this.glow);
   }
 
+  /** dimmed が true を返すユニットを暗くする（選択中のユニットは除く。null で解除） */
+  setDimmed(dimmed: ((unit: UnitData) => boolean) | null): void {
+    this.dimmed = dimmed;
+    this.setFocus(this.focus);
+  }
+
   /** 選択中のユニットを光で囲み、ほかのユニットを暗くする（null で解除） */
   setFocus(o: Offset | null): void {
     this.focus = o;
     const target = o ? this.sprites.find(({ unit }) => unit.col === o.col && unit.row === o.row) : undefined;
-    for (const { sprite } of this.sprites) {
-      sprite.material.color.setScalar(target && sprite !== target.sprite ? DIM : 1);
+    for (const { sprite, unit } of this.sprites) {
+      const shade = this.dimmed?.(unit) ? SHADE : 1;
+      sprite.material.color.setScalar(sprite === target?.sprite ? 1 : target ? Math.min(shade, DIM) : shade);
       sprite.renderOrder = sprite === target?.sprite ? FOCUS_ORDER : SPRITE_ORDER;
     }
     this.glow.visible = !!target;

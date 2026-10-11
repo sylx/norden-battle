@@ -7,7 +7,8 @@
  *   なるべく小さなずれで済む位置・ユニットの絵にかぶらない位置・前のフレームと同じ位置を優先して、
  *   カメラを動かしてもちらつかないようにする。
  * - どの札も、ユニットの中心から札へ軍の色の引き出し線を引く（ずれても持ち主が分かるように）。
- * - 選択中のユニットの札は出さない（行動メニューの上に同じ中身を出す。renderStatus を共用する）。
+ * - 選択中のユニットの札は出さない（部隊のウィンドウに同じ中身を出す。renderStatus を共用する）。
+ * - 行動済みのユニットは、絵の右上に E の印を付ける（setMarks。絵を暗くするのは BattleApp）。札は暗くしない。
  */
 import * as THREE from 'three';
 import type { Offset } from '@norden/map-runtime/core/hex';
@@ -37,6 +38,9 @@ const COST_SPRITE_OVERLAP = 0.25; // ほかのユニットの絵へのかぶり�
 const COST_OFFSCREEN = 4; // 画面外にはみ出す面積あたり
 const COST_DISTANCE = 2; // 既定の位置からの距離あたり
 const BONUS_KEEP = 120; // 前のフレームと同じ候補
+/** E の印の中心を、絵の範囲の右上の角から内側へ寄せる量（絵の幅・高さ比。絵の周りの透明な余白の分） */
+const MARK_INSET_X = 0.2;
+const MARK_INSET_Y = 0.12;
 /** 画面外のユニットの札は出さない（この余白まで） */
 const OFFSCREEN_MARGIN = 80;
 /** 士気がこれ未満なら低い色にする */
@@ -59,6 +63,8 @@ interface Tag {
   el: HTMLDivElement;
   line: SVGLineElement;
   dot: SVGCircleElement;
+  /** 行動済みの E の印（絵の右上） */
+  mark: HTMLDivElement;
   /** 前のフレームで選んだ候補（-1 は未表示） */
   slot: number;
   /** 表示中の値（変わったときだけ DOM を書き換える） */
@@ -83,6 +89,7 @@ export class UnitTags {
   private readonly svg: SVGSVGElement;
   private readonly tags = new Map<UnitData, Tag>();
   private statuses = new Map<UnitData, UnitStatus>();
+  private done: ReadonlySet<UnitData> = new Set();
 
   constructor(container: HTMLElement) {
     this.root = document.createElement('div');
@@ -103,6 +110,11 @@ export class UnitTags {
     this.statuses = statuses;
     for (const tag of this.tags.values()) this.removeTag(tag);
     this.tags.clear();
+  }
+
+  /** 行動済みのユニット（E の印を付ける）を決める */
+  setMarks(done: ReadonlySet<UnitData>): void {
+    this.done = done;
   }
 
   /**
@@ -148,7 +160,15 @@ export class UnitTags {
         head.x > w + OFFSCREEN_MARGIN ||
         head.y < -OFFSCREEN_MARGIN ||
         foot.y > h + OFFSCREEN_MARGIN;
-      // 選択中のユニットは行動メニューに中身を出すので札は消す（絵の範囲はほかの札が避けるよう残す）
+      // E の印は選択中のユニットにも付ける（絵に付いていく）
+      const done = !off && this.done.has(p.unit);
+      tag.mark.hidden = !done;
+      if (done) {
+        const mx = sprite.r - (sprite.r - sprite.l) * MARK_INSET_X;
+        const my = sprite.t + (sprite.b - sprite.t) * MARK_INSET_Y;
+        tag.mark.style.transform = `translate(${mx.toFixed(1)}px, ${my.toFixed(1)}px) translate(-50%, -50%)`;
+      }
+      // 選択中のユニットは部隊のウィンドウに中身を出し、行動メニューも添えるので札は消す（絵の範囲はほかの札が避けるよう残す）
       if (off || isAt(p.unit, selected)) {
         this.hideTag(tag);
         continue;
@@ -207,12 +227,17 @@ export class UnitTags {
     dot.setAttribute('fill', color);
     dot.setAttribute('r', '2.5');
     this.svg.append(line, dot);
-    this.root.appendChild(el);
+    const mark = document.createElement('div');
+    mark.className = 'unit-end-mark';
+    mark.textContent = 'E';
+    mark.hidden = true;
+    this.root.append(el, mark);
     tag = {
       unit,
       el,
       line,
       dot,
+      mark,
       slot: -1,
       shown: '',
     };
@@ -237,6 +262,7 @@ export class UnitTags {
 
   private removeTag(tag: Tag): void {
     tag.el.remove();
+    tag.mark.remove();
     tag.line.remove();
     tag.dot.remove();
   }
