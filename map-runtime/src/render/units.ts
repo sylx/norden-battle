@@ -188,6 +188,21 @@ export class UnitLayer {
     this.setFocus(this.focus);
   }
 
+  /**
+   * ユニットの絵と影の不透明度（0〜1。戦場から去るときなど）。影は 1 未満にしたときに自分のマテリアルに分ける。
+   * 配置どおりに戻すときは build し直す。
+   */
+  setOpacity(unit: UnitData, opacity: number): void {
+    const u = this.sprites.find((x) => x.unit === unit);
+    if (!u) return;
+    u.sprite.material.opacity = opacity;
+    if (u.shadow.material === this.shadowMaterial) {
+      if (opacity >= 1) return;
+      u.shadow.material = this.shadowMaterial.clone();
+    }
+    (u.shadow.material as THREE.MeshBasicMaterial).opacity = opacity;
+  }
+
   /** 足元 (x, z) の影の楕円盤 */
   private shadowGeometry(x: number, z: number, floor: number): THREE.BufferGeometry {
     const { hm, size } = this.terrain!;
@@ -226,9 +241,11 @@ export class UnitLayer {
     for (const child of [...this.group.children]) {
       if (child === this.glow) continue;
       this.group.remove(child);
-      // 影のマテリアルとテクスチャは共有なので、捨てるのは影のジオメトリとスプライトのマテリアルだけ
-      if (child instanceof THREE.Mesh) child.geometry.dispose();
-      else if (child instanceof THREE.Sprite) child.material.dispose();
+      // 影のマテリアルとテクスチャは共有なので、捨てるのは影のジオメトリ（と setOpacity で分けたマテリアル）とスプライトのマテリアルだけ
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose();
+        if (child.material !== this.shadowMaterial) (child.material as THREE.Material).dispose();
+      } else if (child instanceof THREE.Sprite) child.material.dispose();
     }
     this.sprites = [];
   }

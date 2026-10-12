@@ -134,6 +134,11 @@ export class Deployment {
     return this.snapshot;
   }
 
+  /** 配備したユニットの部隊の ID（すべての陣営） */
+  troopIds(): Map<UnitData, string> {
+    return new Map([...this.units].map(([troop, unit]) => [unit, troop.id]));
+  }
+
   /** 部隊を選ぶ（null で選ぶのをやめる。もう一度同じ部隊を選んでもやめる） */
   pick(id: string | null): void {
     const troop = this.troopOf(id);

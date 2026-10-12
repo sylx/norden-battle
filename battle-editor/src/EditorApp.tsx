@@ -10,6 +10,7 @@
  * - 描画負荷: FPS・解像度・森の描き方・深度プリパス・影の更新。
  * - セリフ: 喋る場面で必ず喋らせる（確率を無視）・選択中か調べているユニットに場面ごとのセリフを言わせる。
  *   ゲーム（nordencult）のセリフのデータがあればそれを使い（gameVoices.ts）、ユニットに喋らせる騎士を選べる。言ったセリフの記録。
+ * - 退却: 軍ごとにダミーの退却先の拠点を渡すかどうか（渡さない軍は退却できない）・失敗する確率・退却した結果の記録。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cropBattleArea } from '@norden/map-runtime/core/battleArea';
@@ -17,17 +18,38 @@ import { MapParseError, parseMapData, type MapData } from '@norden/map-runtime/c
 import { listMapFiles, loadMapFile, type MapFileInfo } from '@norden/map-runtime/mapFiles';
 import type { ForestMode } from '@norden/map-runtime/render/foliage';
 import { DEFAULT_PIXEL_RATIO } from '@norden/map-runtime/render/scene';
-import type { UnitData } from '@norden/map-runtime/core/units';
-import { BARK_CHANCE, BARK_SITUATION_NAMES, BARK_SITUATIONS, BattleScreen, EXCHANGE_CHANCE, type BattleApp } from '@norden/battle-runtime';
+import { TEAM_DEFS, UNIT_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
+import {
+  BARK_CHANCE,
+  BARK_SITUATION_NAMES,
+  BARK_SITUATIONS,
+  BattleScreen,
+  EXCHANGE_CHANCE,
+  RETREAT_FAIL_CHANCE,
+  type BattleApp,
+  type RetreatDestination,
+  type RetreatDestinations,
+  type RetreatReport,
+} from '@norden/battle-runtime';
 import { gameVoices, type KnightCast } from './gameVoices';
 
 /** 画面の端・ツールバーとの間（CSS ピクセル） */
 const MARGIN = 12;
 const GAP = 6;
 
-type Tool = 'map' | 'perf' | 'bark';
+type Tool = 'map' | 'perf' | 'bark' | 'retreat';
 
-const TOOLS: Record<Tool, string> = { map: 'マップ', perf: '描画負荷', bark: 'セリフ' };
+const TOOLS: Record<Tool, string> = { map: 'マップ', perf: '描画負荷', bark: 'セリフ', retreat: '退却' };
+
+/** 表示確認用のダミーの退却先の拠点（ゲームでは戦場の拠点に街道でつながる自勢力の拠点を渡す） */
+const DUMMY_RETREATS: Record<'red' | 'blue', readonly RetreatDestination[]> = {
+  red: [
+    { id: 'dummy-north-fort', name: '北の砦（ダミー）' },
+    { id: 'dummy-east-town', name: '東の町（ダミー）' },
+  ],
+  blue: [{ id: 'dummy-west-castle', name: '西の城（ダミー）' }],
+};
+const DUMMY_TEAMS = Object.keys(DUMMY_RETREATS) as (keyof typeof DUMMY_RETREATS)[];
 
 export default function EditorApp() {
   const [app, setApp] = useState<BattleApp | null>(null);
@@ -43,6 +65,12 @@ export default function EditorApp() {
   const [currentFile, setCurrentFile] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool | null>(null);
   const [dragging, setDragging] = useState(false);
+  /** ダミーの退却先の拠点を渡す軍 */
+  const [retreatTeams, setRetreatTeams] = useState<ReadonlySet<TeamId>>(() => new Set(DUMMY_TEAMS));
+  const retreats = useMemo(
+    (): RetreatDestinations => Object.fromEntries(DUMMY_TEAMS.filter((t) => retreatTeams.has(t)).map((t) => [t, DUMMY_RETREATS[t]])),
+    [retreatTeams],
+  );
 
   const showError = (e: unknown) => {
     const msg = e instanceof MapParseError ? `マップの読み込みに失敗: ${e.message}` : String(e);
@@ -140,6 +168,7 @@ export default function EditorApp() {
       map={map}
       notice={notice ?? (cropError && <span className="err">戦闘の範囲を切り出せません: {cropError}</span>)}
       barks={gameVoices?.barks}
+      retreats={retreats}
       onApp={setApp}
       className="editor-screen"
     >
@@ -163,6 +192,7 @@ export default function EditorApp() {
           ),
           perf: app && <PerfTool app={app} />,
           bark: app && <BarkTool app={app} cast={gameVoices?.cast ?? null} />,
+          retreat: app && <RetreatTool app={app} teams={retreatTeams} onTeams={setRetreatTeams} />,
         }}
       />
       {dragging && <div className="drop-hint">ここにドロップして開く</div>}
@@ -478,6 +508,55 @@ function BarkTool({ app, cast }: { app: BattleApp; cast: KnightCast | null }) {
                 {l.situation}
               </span>
               {l.text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+/** 退却の記録に残す数 */
+const RETREAT_LOG_SIZE = 8;
+
+function RetreatTool({ app, teams, onTeams }: { app: BattleApp; teams: ReadonlySet<TeamId>; onTeams: (teams: ReadonlySet<TeamId>) => void }) {
+  const [log, setLog] = useState<readonly RetreatReport[]>(() => [...app.retreated].reverse().slice(0, RETREAT_LOG_SIZE));
+  useEffect(() => {
+    const offs = [
+      app.on('load', () => setLog([])),
+      app.on('retreat', (report) => setLog((list) => [report, ...list].slice(0, RETREAT_LOG_SIZE))),
+    ];
+    return () => offs.forEach((off) => off());
+  }, [app]);
+  const toggle = (team: TeamId, on: boolean) => {
+    const next = new Set(teams);
+    if (on) next.add(team);
+    else next.delete(team);
+    onTeams(next);
+  };
+  const percent = (p: number) => `${Math.round(p * 100)}%`;
+  return (
+    <>
+      <p className="hint">ダミーの退却先の拠点を渡す軍（渡さない軍は退却を選べない）。メニューを開き直すと反映される</p>
+      {DUMMY_TEAMS.map((team) => (
+        <label key={team} className="check">
+          <input type="checkbox" checked={teams.has(team)} onChange={(e) => toggle(team, e.target.checked)} /> {TEAM_DEFS[team].name}:{' '}
+          {DUMMY_RETREATS[team].map((d) => d.name).join('・')}
+        </label>
+      ))}
+      <p className="hint">
+        失敗する確率（隣接する敵の数）:{' '}
+        {RETREAT_FAIL_CHANCE.map((p, n) => `${n}${n === RETREAT_FAIL_CHANCE.length - 1 ? ' 以上' : ''} ${percent(p)}`).join(' / ')}。失敗すると捕虜になる
+      </p>
+      {log.length > 0 && (
+        <ul className="bark-log">
+          {log.map((r, i) => (
+            <li key={i}>
+              <span className="bark-log__who">
+                第 {r.turn} ターン {TEAM_DEFS[r.unit.team].name} {UNIT_DEFS[r.unit.type].name}
+                {r.troopId ? `（${r.troopId}）` : ''}・失敗 {percent(r.failChance)}（敵 {r.enemies}）
+              </span>
+              {r.captured ? `${r.to.name}への退却に失敗し、捕虜になった` : `${r.to.name}へ退却した`}
             </li>
           ))}
         </ul>

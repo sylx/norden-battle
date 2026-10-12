@@ -187,13 +187,14 @@
           <button data-tool="area">範囲を配置</button>
           <button data-tool="deploy-attacker" class="deploy attacker">攻撃側の配置</button>
           <button data-tool="deploy-defender" class="deploy defender">防衛側の配置</button>
+          <button data-tool="stronghold" class="deploy stronghold">防衛拠点</button>
         </div>
         <div class="buttons">
           <button id="btn-deploy-clear">この範囲の配置地点を消す</button>
         </div>
         <label class="check"><input id="chk-area-preview" type="checkbox" /> 範囲だけ表示</label>
         <p class="hint">戦略マップの街道でつながる 2 都市（A–B）を 1 枚に描いたマップで、侵攻方向ごとの戦闘の範囲を決めます。範囲は防衛する都市の ID で引きます（A→B の侵攻なら B の範囲）。都市を選んで「範囲を配置」でマップをクリック・ドラッグすると、その HEX を中心に範囲が動きます（列・行は偶数に寄せます）。</p>
-        <p class="hint">「攻撃側の配置」「防衛側の配置」で、選んだ範囲の初期配置地点（戦闘でユニットを自由に置ける HEX）をクリック・ドラッグで塗ります。配置地点の HEX から始めると消します。範囲の外・水域には置けません。「範囲だけ表示」はゲームの戦闘で使う切り出し後の見た目です（その間は編集できません）。ファイル名は road-&lt;小さい ID&gt;-&lt;大きい ID&gt;.json にします</p>
+        <p class="hint">「攻撃側の配置」「防衛側の配置」で、選んだ範囲の初期配置地点（戦闘でユニットを自由に置ける HEX）をクリック・ドラッグで塗ります。配置地点の HEX から始めると消します。範囲の外・水域には置けません。「防衛拠点」で、選んだ範囲の防衛拠点（城の中心部など 1 HEX。攻撃側のユニットが入ると防衛側の負け）をクリックで置きます（もう一度クリックで消します。攻撃側の配置地点とは重ねられません）。「範囲だけ表示」はゲームの戦闘で使う切り出し後の見た目です（その間は編集できません）。ファイル名は road-&lt;小さい ID&gt;-&lt;大きい ID&gt;.json にします</p>
       </details>
 
       <details>

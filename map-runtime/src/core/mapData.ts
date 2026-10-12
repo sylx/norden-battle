@@ -32,6 +32,9 @@ import { isTeamId, isUnitType, type UnitData } from './units';
  * - deployments は街道マップの戦闘の初期配置地点。battleAreas と同じく防衛する都市の ID で引き、
  *   攻撃側・防衛側の HEX（街道マップの座標）を持つ。範囲の外の HEX は切り出したときに落ちる。省略可。
  * - deploy は切り出したマップの初期配置地点（cropBattleArea が deployments から作る。切り出したマップの座標）。省略可。
+ * - strongholds は街道マップの防衛拠点（城の中心部などの 1 HEX。攻撃側のユニットが入ると防衛側の負け）。
+ *   battleAreas と同じく防衛する都市の ID で引く（街道マップの座標）。範囲の外なら切り出したときに落ちる。省略可。
+ * - stronghold は切り出したマップの防衛拠点（cropBattleArea が strongholds から作る。切り出したマップの座標）。省略可。
  */
 export interface HexCell {
   col: number;
@@ -55,6 +58,8 @@ export interface MapData {
   origin?: Offset;
   deployments?: Record<string, BattleDeployment>;
   deploy?: BattleDeployment;
+  strongholds?: Record<string, Offset>;
+  stronghold?: Offset;
   cells: HexCell[];
   units?: UnitData[];
 }
@@ -175,6 +180,24 @@ export function parseMapData(json: unknown): MapData {
   }
   const deploy = o.deploy === undefined ? undefined : deploymentOf(o.deploy, 'deploy');
 
+  const hexOf = (v: unknown, what: string): Offset => {
+    const p = v as Record<string, unknown> | null;
+    if (typeof p !== 'object' || p === null || !Number.isInteger(p.col) || !Number.isInteger(p.row)) fail(`${what}: col/row が不正です`);
+    const col = p!.col as number;
+    const row = p!.row as number;
+    if (col < 0 || row < 0 || col >= grid.cols || row >= grid.rows) fail(`${what}: (${col}, ${row}) はマップ範囲外です`);
+    return { col, row };
+  };
+
+  let strongholds: Record<string, Offset> | undefined;
+  if (o.strongholds !== undefined) {
+    if (typeof o.strongholds !== 'object' || o.strongholds === null || Array.isArray(o.strongholds))
+      fail('strongholds がオブジェクトではありません');
+    strongholds = {};
+    for (const [city, v] of Object.entries(o.strongholds as Record<string, unknown>)) strongholds[city] = hexOf(v, `strongholds.${city}`);
+  }
+  const stronghold = o.stronghold === undefined ? undefined : hexOf(o.stronghold, 'stronghold');
+
   if (!Array.isArray(o.cells)) fail('cells が配列ではありません');
   const cells: HexCell[] = [];
   (o.cells as unknown[]).forEach((c, i) => {
@@ -245,6 +268,8 @@ export function parseMapData(json: unknown): MapData {
     ...(origin ? { origin } : {}),
     ...(deployments ? { deployments } : {}),
     ...(deploy ? { deploy } : {}),
+    ...(strongholds ? { strongholds } : {}),
+    ...(stronghold ? { stronghold } : {}),
     cells,
     ...(units.length > 0 ? { units } : {}),
   };
@@ -371,6 +396,8 @@ export class HexMap {
         ? { deployments: Object.fromEntries(Object.entries(rest.deployments).map(([k, v]) => [k, cloneDeployment(v)])) }
         : {}),
       ...(rest.deploy ? { deploy: cloneDeployment(rest.deploy) } : {}),
+      ...(rest.strongholds ? { strongholds: Object.fromEntries(Object.entries(rest.strongholds).map(([k, v]) => [k, { ...v }])) } : {}),
+      ...(rest.stronghold ? { stronghold: { ...rest.stronghold } } : {}),
       cells: this.cells.map((c) => ({ ...c, ...(c.roads ? { roads: [...c.roads] } : {}) })),
       ...(units.length > 0 ? { units } : {}),
     };

@@ -82,6 +82,8 @@ server/
 - `origin`（省略可）: 切り出したマップの、元のマップでの左上の HEX（`cropMap` が付ける）
 - `deployments`（省略可）: 街道マップの戦闘の初期配置地点。防衛する都市の ID で引く（下記）
 - `deploy`（省略可）: 切り出したマップの初期配置地点（`cropBattleArea` が付ける。切り出したマップの座標）
+- `strongholds`（省略可）: 街道マップの防衛拠点（1 HEX）。防衛する都市の ID で引く（下記）
+- `stronghold`（省略可）: 切り出したマップの防衛拠点（`cropBattleArea` が付ける。切り出したマップの座標）
 
 ## 街道マップと戦闘の範囲
 
@@ -106,6 +108,9 @@ A→B の侵攻では B を含む範囲 `battleAreas.B`、B→A では `battleAr
       "defender": [{"col":24,"row":8},{"col":25,"row":8}]
     }
   },
+  "strongholds": {
+    "P004": { "col": 26, "row": 9 }
+  },
   "cells": []
 }
 ```
@@ -117,8 +122,11 @@ A→B の侵攻では B を含む範囲 `battleAreas.B`、B→A では `battleAr
   元のマップと同じ見た目になる（範囲の縁だけは、外の HEX が無い分だけ地形の混ざり方が変わる）
 - `deployments.<都市>` は、その範囲の戦闘の初期配置地点（ユーザーがユニットを自由に置ける HEX）。`attacker`（攻撃側）・`defender`（防衛側）の HEX の配列で、
   座標は街道マップのもの。範囲の外の HEX は切り出したときに落ちる。1 つの HEX は片方の陣営にだけ属する
-- `cropBattleArea(data, city)`（`core/battleArea.ts`）は `battleAreas[city]` を切り出し、`deployments[city]` を切り出したマップの座標にして `deploy` に付ける
-- map-editor の「街道マップ」欄で両端の都市と範囲・初期配置地点を設定できる
+- `strongholds.<都市>` は、その範囲の戦闘の防衛拠点（城の中心部など。攻撃側のユニットが入ると防衛側の負け＝入城）。座標は街道マップのもので、
+  範囲の外なら切り出したときに落ちる（その戦闘には入城での決着が無い）
+- `cropBattleArea(data, city)`（`core/battleArea.ts`）は `battleAreas[city]` を切り出し、`deployments[city]`・`strongholds[city]` を
+  切り出したマップの座標にして `deploy`・`stronghold` に付ける
+- map-editor の「街道マップ」欄で両端の都市と範囲・初期配置地点・防衛拠点を設定できる
 
 ## 地形生成の仕組み
 

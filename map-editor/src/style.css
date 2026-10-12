@@ -525,6 +525,10 @@ button[data-tool].deploy.defender {
   border-left: 3px solid #2e7ad8;
 }
 
+button[data-tool].deploy.stronghold {
+  border-left: 3px solid #f0c030;
+}
+
 .area-list .area .text {
   line-height: 1.35;
 }

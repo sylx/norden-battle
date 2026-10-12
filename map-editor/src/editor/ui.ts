@@ -1,5 +1,5 @@
 import GUI from 'lil-gui';
-import { BATTLE_AREA_SIZE } from '@norden/map-runtime/core/battleArea';
+import { BATTLE_AREA_SIZE, inBattleArea } from '@norden/map-runtime/core/battleArea';
 import { castleWard, FEATURE_DEFS } from '@norden/map-runtime/core/features';
 import { MapParseError, parseMapData, stringifyMapData, type HexCell, type MapData } from '@norden/map-runtime/core/mapData';
 import { generateRandomMap } from '@norden/map-runtime/core/randomMap';
@@ -14,7 +14,7 @@ import {
   type MapFileInfo,
 } from '@norden/map-runtime/mapFiles';
 import { foliageUniforms, windUniforms } from '@norden/map-runtime/render/foliage';
-import { DEPLOY_COLORS, PITCH_RANGE, type EditTool, type EditorApp, type OverlayMode } from './app';
+import { DEPLOY_COLORS, PITCH_RANGE, STRONGHOLD_COLOR, type EditTool, type EditorApp, type OverlayMode } from './app';
 import { ComboBox } from './combobox';
 import { MAX_ELEVATION, MIN_ELEVATION, type ElevationBrush, type ElevationMode } from './terrainTools';
 
@@ -228,7 +228,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
   const toolButtons = [...document.querySelectorAll<HTMLButtonElement>('button[data-tool]')];
   const toolOpts = [...document.querySelectorAll<HTMLElement>('.tool-opts')];
   const setTool = (tool: EditTool) => {
-    if ((tool === 'area' || tool.startsWith('deploy-')) && app.previewing) {
+    if ((tool === 'area' || tool.startsWith('deploy-') || tool === 'stronghold') && app.previewing) {
       app.onMessage('範囲のプレビュー中は編集できません');
       return;
     }
@@ -237,6 +237,9 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
     else if (tool.startsWith('deploy-')) {
       if (!app.areaCity || !app.map?.data.battleAreas?.[app.areaCity]) app.onMessage('「街道マップ」欄で都市を選び、先に範囲を配置してください');
       else setStatus(`${app.areaCity} の範囲の${tool === 'deploy-attacker' ? '攻撃側' : '防衛側'}の初期配置地点: クリック・ドラッグで塗る（配置地点から始めると消す）`);
+    } else if (tool === 'stronghold') {
+      if (!app.areaCity || !app.map?.data.battleAreas?.[app.areaCity]) app.onMessage('「街道マップ」欄で都市を選び、先に範囲を配置してください');
+      else setStatus(`${app.areaCity} の範囲の防衛拠点: クリックした HEX にする（もう一度クリックで消す）。攻撃側のユニットが入ると防衛側の負け`);
     } else if (TOOL_HINTS[tool]) setStatus(TOOL_HINTS[tool]!);
     app.setTool(tool);
     for (const b of toolButtons) b.classList.toggle('active', b.dataset.tool === tool);
@@ -412,7 +415,12 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
     linkA.value = data?.link?.cities[0] ?? '';
     linkB.value = data?.link?.cities[1] ?? '';
     const cities = [
-      ...new Set([...(data?.link?.cities ?? []), ...Object.keys(data?.battleAreas ?? {}), ...Object.keys(data?.deployments ?? {})]),
+      ...new Set([
+        ...(data?.link?.cities ?? []),
+        ...Object.keys(data?.battleAreas ?? {}),
+        ...Object.keys(data?.deployments ?? {}),
+        ...Object.keys(data?.strongholds ?? {}),
+      ]),
     ];
     if (!app.areaCity || !cities.includes(app.areaCity)) {
       app.areaCity = cities[0] ?? null;
@@ -448,13 +456,15 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
           pos.textContent = area ? `(${area.col}, ${area.row})` : '未設定';
           const counts = document.createElement('span');
           counts.className = 'counts';
-          const inside = (o: { col: number; row: number }) =>
-            !!area && o.col >= area.col && o.row >= area.row && o.col < area.col + BATTLE_AREA_SIZE.cols && o.row < area.row + BATTLE_AREA_SIZE.rows;
+          const inside = (o: { col: number; row: number }) => !!area && inBattleArea(area, o);
           const outside = [...dep.attacker, ...dep.defender].filter((o) => !inside(o)).length;
+          const hold = data?.strongholds?.[city];
           counts.innerHTML =
             `<span style="color:${hex(DEPLOY_COLORS.attacker)}">攻 ${dep.attacker.length}</span> ` +
             `<span style="color:${hex(DEPLOY_COLORS.defender)}">防 ${dep.defender.length}</span>` +
-            (outside > 0 ? ` <span class="warn" title="範囲の外の配置地点は戦闘では使われません">範囲外 ${outside}</span>` : '');
+            (outside > 0 ? ` <span class="warn" title="範囲の外の配置地点は戦闘では使われません">範囲外 ${outside}</span>` : '') +
+            ` <span style="color:${hex(STRONGHOLD_COLOR)}">拠点 ${hold ? `(${hold.col}, ${hold.row})` : '未設定'}</span>` +
+            (hold && !inside(hold) ? ' <span class="warn" title="範囲の外の防衛拠点は戦闘では使われません（入城で決着しない）">範囲外</span>' : '');
           const text = document.createElement('span');
           text.className = 'text';
           text.append(`${city} の範囲 `, pos, document.createElement('br'), counts);
@@ -570,7 +580,9 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
     const a = map.layout.offsetToAxial(cell.col, cell.row);
     const dep = app.previewing ? map.data.deploy : app.areaCity ? map.data.deployments?.[app.areaCity] : undefined;
     const at = (list: readonly { col: number; row: number }[] | undefined) => !!list?.some((o) => o.col === cell.col && o.row === cell.row);
-    const deploy = at(dep?.attacker) ? '攻撃側' : at(dep?.defender) ? '防衛側' : '-';
+    const hold = app.previewing ? map.data.stronghold : app.areaCity ? map.data.strongholds?.[app.areaCity] : undefined;
+    const isHold = !!hold && hold.col === cell.col && hold.row === cell.row;
+    const deploy = [at(dep?.attacker) && '攻撃側', at(dep?.defender) && '防衛側', isHold && '防衛拠点'].filter(Boolean).join('・') || '-';
     el.innerHTML = [
       ['座標', `(${cell.col}, ${cell.row})`],
       ['軸座標', `q=${a.q}, r=${a.r}`],

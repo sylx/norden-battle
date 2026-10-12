@@ -11,7 +11,7 @@ UI の部品は [norden-ui](https://github.com/sylx/norden-ui) を使う（地�
 import { BattleScreen } from '@norden/battle-runtime';
 
 // 親の要素いっぱいに広がる。map を変えると読み込み直す
-<BattleScreen map={mapData} statuses={makeStatuses} troops={makeTroops} onApp={setApp} notice={error}>
+<BattleScreen map={mapData} statuses={makeStatuses} troops={makeTroops} retreats={retreats} onRetreat={onRetreat} onApp={setApp} notice={error}>
   {/* 上に重ねるもの（エディタの道具・ゲームの見出しなど） */}
 </BattleScreen>
 ```
@@ -29,6 +29,12 @@ import { BattleScreen } from '@norden/battle-runtime';
   省略すると表示確認用の決まったセリフ（`demoBarks`）。ゲームでは騎士の口調・性格からセリフのデータ（nordencult の `src/data/voiceLines.json`）を引くものを
   `lineBarks` で作って渡す。データの場面の ID は `battle.` + 場面（`lineSituationId`）。一斉攻撃の掛け合いは、攻撃する部隊の
   `battle.exchange_lead`（呼びかけ）に、加わる味方が 2 部隊まで `battle.exchange_reply`（応じる）で応じる。
+- `retreats`: 軍ごとの退却先の拠点（`RetreatDestinations`。`{ red: [{ id, name }, …], blue: […] }`）。無い軍のユニットは退却を選べない。
+  省略するとどの軍も退却できない。ゲームでは戦場の拠点に街道でつながる自勢力の拠点（nordencult の `retreatCities`）を、
+  battle-editor ではダミーの拠点を渡す。
+- `onRetreat`: ユニットが退却した・退却に失敗して捕虜になったとき（`RetreatReport`: ユニット・配備した部隊の ID `troopId`・
+  退却したときの状態・退却先・隣接していた敵の数・失敗する確率・捕虜になったか `captured`）。この戦闘の分は `app.retreated` にも残る。
+  ゲームは部隊の ID（騎士の ID で作る）から騎士を引いて、戦後処理に渡す。捕虜をどう扱うかは使う側が決める。
 - `notice`: ステータス行に出す知らせ（マップを読めないときなど）。
 
 ## 戦闘の流れ
@@ -44,6 +50,9 @@ import { BattleScreen } from '@norden/battle-runtime';
    相手方のユニットは暗く描き、クリックすると次の番に動ける範囲（青）と攻撃できる範囲（赤）を出す。
    もう移動・攻撃・迎撃・鼓舞のどれもできないユニットは、絵を暗くして右上に E の印を付ける。
    行動力が余ったら「待機」（行動力 0）で行動を終えられる（待機・迎撃で行動を終えた後は選べない）。指揮官のスキル「鼓舞」（行動力 2）は自分の士気を 10〜20 回復する。
+   「特殊」の「退却」（ターンの初めだけ。行動力は使わない）は、行動メニューに退却先の拠点の一覧と失敗する確率を出し、拠点を選ぶと退却する
+   （退却先が無い軍のユニット・ターンの初めでないときは選べない。2 階層目にはそのときも灰色で残し、理由を title に持たせる）。隣接している敵ユニットの数で失敗することがあり（0: 1%・1: 10%・2: 25%・3 以上: 50%。`RETREAT_FAIL_CHANCE`）、
+   失敗すると捕虜になる。どちらでもそのユニットは戦場から消える（成功は敵から離れる向きへ下がりながら、失敗は下がりかけて止められてから）。
    画面の上の中央の戦況のパネルに、軍ごとの兵数の合計の比を帯で出す。
    「ターン終了」で次の軍の番になり、その軍の行動力が戻る。両軍が 1 回ずつ行動したらターンの数が進む。
    いまはどちらの軍も人が操作する（CPU の操作はまだ無い）。
@@ -58,7 +67,7 @@ import { BattleScreen } from '@norden/battle-runtime';
    | `rally` | 鼓舞で士気を回復したとき | 必ず |
    | `wiped_out` | 兵数が 0 になったとき（攻撃・反撃・迎撃）。吹き出しは消えたユニットの場所に残る | 必ず |
    | `enemy_eliminated` | `wiped_out` の後に、討ち取ったユニットが | ランダム |
-   | `retreat` | 退却を選んだとき（退却の処理はまだ無い） | 必ず |
+   | `retreat` | 退却先の拠点を選んで退却し始めるとき（読み終えてから下がる） | 必ず |
 
    殲滅のセリフは読み終えるまでカメラを寄せたままにする。吹き出しの調子は場面で変わる（`BARK_TONE`。
    叫ぶ: 太い字で弾んで出る、弱々しい: くすんだ吹き出しでゆっくり出る）。喋ると `app.on('bark', …)` で知らせる。
@@ -80,6 +89,7 @@ src/
   damage.ts        ダメージの計算
   morale.ts        士気の増減
   movement.ts      移動の範囲・経路・ZOC
+  retreat.ts       退却（退却先の拠点の型・失敗する確率・結果の RetreatReport）
   unitStatus.ts    ユニットの戦闘中の状態（と表示確認用の仮の値）
   unitTags.ts      ユニットの頭上の情報札（HTML。毎フレーム置き直す）
   popups.ts        兵数の減少などを頭上に出す
@@ -88,7 +98,7 @@ src/
   interceptFx.ts   迎撃の構えのユニットの足元の光の輪
   ui/
     BattleScreen.tsx     戦闘画面（BattleApp を置き、下の部品とカットインを重ねる）
-    ActionMenu.tsx       行動メニュー（ユニットの横に毎フレーム追いかける）
+    ActionMenu.tsx       行動メニュー（ユニットの横に毎フレーム追いかける。退却を選んだ後は退却先の拠点の一覧）
     DeployWindow.tsx     配備のウィンドウ（部隊の一覧・自動配置・配備完了）
     SituationPanel.tsx   戦況のパネル（画面の上の中央。軍ごとの兵数の合計の比の帯）
     UnitInfoWindow.tsx   騎士のウィンドウ（地形の右に固定。カーソルの下・選択中のユニットの顔・兵数・士気・行動力・能力）

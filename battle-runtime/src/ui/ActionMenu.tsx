@@ -5,13 +5,15 @@
  *   カメラを動かしても毎フレーム追いかける（位置は再描画せずに DOM を直接動かす）。
  * - 上部はユニットの名前と残り行動力だけ（顔・兵士数・士気・指揮官の能力は、地形の横の部隊のウィンドウ UnitInfoWindow.tsx に出す）。
  * - 2 階層目は 1 階層目の項目の横に開く。マウスは項目に乗せる、タッチはタップで開く。
+ *   選べない項目（退却先の無い退却など）は灰色で出し、理由を title に持たせる。
+ * - 退却を選んだ後は、項目の代わりに退却先の拠点の一覧と失敗する確率を出す（「戻る」で項目に戻る）。
  * - パネルは norden-ui の細いベゼル（ThinFrame）で囲む。
  */
 import { useEffect, useRef, useSyncExternalStore, type CSSProperties } from 'react';
 import { ThinFrame } from 'norden-ui';
 import { TEAM_DEFS, UNIT_DEFS } from '@norden/map-runtime/core/units';
 import type { MenuAction, MenuEntry } from '../actions';
-import type { ActionMenuModel, MenuFrame } from '../menuModel';
+import type { ActionMenuModel, MenuFrame, RetreatMenu } from '../menuModel';
 
 /** ユニットの絵とメニューの間隔（CSS ピクセル） */
 const GAP = 14;
@@ -21,7 +23,7 @@ const MARGIN = 8;
 const SUB_GAP = 4;
 
 export default function ActionMenu({ model }: { model: ActionMenuModel }) {
-  const { ctx, entries, openIndex } = useSyncExternalStore(model.subscribe, model.getState);
+  const { ctx, entries, openIndex, retreat } = useSyncExternalStore(model.subscribe, model.getState);
   const rootRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const subRef = useRef<HTMLDivElement>(null);
@@ -63,23 +65,34 @@ export default function ActionMenu({ model }: { model: ActionMenuModel }) {
               </span>
             </div>
           </div>
-          <ul className="menu-items">
-            {entries.map((entry, i) => (
-              <Item key={i} entry={entry} open={openIndex === i} model={model} index={i} itemRef={(el) => void (items.current[i] = el)} />
-            ))}
-          </ul>
+          {retreat ? (
+            <RetreatList retreat={retreat} model={model} />
+          ) : (
+            <ul className="menu-items">
+              {entries.map((entry, i) => (
+                <Item key={i} entry={entry} open={openIndex === i} model={model} index={i} itemRef={(el) => void (items.current[i] = el)} />
+              ))}
+            </ul>
+          )}
         </div>
       </div>
       {sub && (
         <div ref={subRef} className="menu-panel sub">
           <ThinFrame />
           <ul className="menu-body menu-items">
-            {sub.map((a) => (
-              <li key={a.id} className="menu-item" onClick={() => model.choose(a)}>
-                <span className="name">{a.name}</span>
-                {a.cost !== undefined && <Cost n={a.cost} />}
-              </li>
-            ))}
+            {sub.map(({ reason, ...a }) =>
+              reason ? (
+                <li key={a.id} className="menu-item disabled" title={reason}>
+                  <span className="name">{a.name}</span>
+                  {a.cost !== undefined && <Cost n={a.cost} />}
+                </li>
+              ) : (
+                <li key={a.id} className="menu-item" onClick={() => model.choose(a)}>
+                  <span className="name">{a.name}</span>
+                  {a.cost !== undefined && <Cost n={a.cost} />}
+                </li>
+              ),
+            )}
           </ul>
         </div>
       )}
@@ -135,6 +148,31 @@ function Item({
     >
       {content}
     </li>
+  );
+}
+
+/** 退却先の拠点の一覧（項目の代わりに出す） */
+function RetreatList({ retreat, model }: { retreat: RetreatMenu; model: ActionMenuModel }) {
+  const { destinations, enemies, failChance } = retreat;
+  return (
+    <>
+      <div className="menu-note">
+        退却先を選択
+        <span className="fail" title={`隣接する敵 ${enemies} 部隊`}>
+          失敗 {Math.round(failChance * 100)}%
+        </span>
+      </div>
+      <ul className="menu-items">
+        {destinations.map((d) => (
+          <li key={d.id} className="menu-item" onClick={() => model.chooseRetreat(d)}>
+            <span className="name">{d.name}</span>
+          </li>
+        ))}
+        <li className="menu-item back" onClick={() => model.closeRetreat()}>
+          <span className="name">戻る</span>
+        </li>
+      </ul>
+    </>
   );
 }
 

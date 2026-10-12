@@ -6,7 +6,8 @@ import { TEAM_DEFS, UNIT_DEFS, type TeamId, type UnitData } from '@norden/map-ru
 import type { MenuAction } from '../actions';
 import { BattleApp, type ExecuteReport, type Plan } from '../app';
 import { isAttack } from '../combat';
-import { SIDE_NAMES, type DeployState } from '../deployment';
+import { SIDE_NAMES, SIDE_TEAM, type DeployState } from '../deployment';
+import { BATTLE_END_REASON_NAMES, type BattleOutcome } from '../victory';
 
 export const IDLE_STATUS = 'クリック: 味方のユニットを選択 / Esc: 予約を 1 つ戻す・選択を外す';
 const BACK = 'Esc・範囲外クリック: メニューに戻る';
@@ -25,6 +26,7 @@ export function actionStatus(u: UnitData, a: MenuAction): string {
   if (a.id === 'move') return `${unitLabel(u)}: 移動先を選んでください（青い HEX。橙の斜線は敵の ZOC で、入るとそれ以上動けない）/ ${BACK}`;
   if (a.id === 'volley') return `${unitLabel(u)}: ${a.name}の相手を選んでください（金の斜線: ほかの味方とも接している敵）/ ${BACK}`;
   if (isAttack(a.id)) return `${unitLabel(u)}: ${a.name}の相手を選んでください（赤い HEX）/ ${BACK}`;
+  if (a.id === 'retreat') return `${unitLabel(u)}: 退却先の拠点を選んでください（隣接する敵が多いほど失敗しやすく、失敗すると捕虜になる）/ Esc・戻る: メニューに戻る`;
   // 移動・攻撃以外の処理はまだ無いので、選んだものを知らせるだけ
   return `${unitLabel(u)}: 「${a.name}」を選択${a.cost !== undefined ? `（行動力 ${a.cost}）` : ''}— 未実装`;
 }
@@ -72,6 +74,11 @@ export function battleStartStatus(team: TeamId): string {
   return `戦闘開始 — ${TEAM_DEFS[team].name}の番 / ${LOADED_STATUS}`;
 }
 
+/** 戦闘が決着したとき */
+export function endStatus({ winner, reason, turn }: BattleOutcome): string {
+  return `決着 — ターン ${turn}、${BATTLE_END_REASON_NAMES[reason]}で${TEAM_DEFS[SIDE_TEAM[winner]].name}（${SIDE_NAMES[winner]}）の勝利`;
+}
+
 /** 配備の様子が変わったとき */
 export function deployStatus({ side, team, troops, picked, placed, limit }: DeployState): string {
   const who = `${TEAM_DEFS[team].name}（${SIDE_NAMES[side]}）の配備`;
@@ -88,8 +95,12 @@ export function deployStatus({ side, team, troops, picked, placed, limit }: Depl
 }
 
 /** 決定で予約を実行し終えたとき */
-export function executeStatus({ unit, from, moveCost, attack, intercepts, lost, halted, intercept, wait, inspire }: ExecuteReport): string {
+export function executeStatus({ unit, from, moveCost, attack, intercepts, lost, halted, intercept, wait, inspire, retreat }: ExecuteReport): string {
   const parts: string[] = [];
+  if (retreat) {
+    const odds = `失敗 ${Math.round(retreat.failChance * 100)}%・隣接する敵 ${retreat.enemies}`;
+    parts.push(retreat.captured ? `${retreat.to.name}への退却に失敗し、捕虜になった（${odds}）` : `${retreat.to.name}へ退却した（${odds}）`);
+  }
   if (moveCost > 0) parts.push(`(${from.col}, ${from.row}) から移動（行動力 ${moveCost}）`);
   // 移動の途中で受けた迎撃（攻撃の前の移動・後の移動）
   const interceptParts = (afterAttack: boolean) => {

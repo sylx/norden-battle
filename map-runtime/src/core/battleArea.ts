@@ -52,24 +52,28 @@ export function cropMap(data: MapData, area: Offset, size: { cols: number; rows:
   };
 }
 
+/** o が左上 area の戦闘の範囲の中か */
+export function inBattleArea(area: Offset, o: Offset): boolean {
+  return o.col >= area.col && o.row >= area.row && o.col < area.col + BATTLE_AREA_SIZE.cols && o.row < area.row + BATTLE_AREA_SIZE.rows;
+}
+
 /**
  * 防衛する都市 city の範囲（battleAreas[city]）を切り出したマップ。
- * 初期配置地点（deployments[city]）のうち範囲の中のものを、切り出したマップの座標で deploy に付ける。
- * 範囲が無ければ例外。
+ * 初期配置地点（deployments[city]）のうち範囲の中のものを deploy に、防衛拠点（strongholds[city]）が範囲の中なら stronghold に、
+ * 切り出したマップの座標で付ける。範囲が無ければ例外。
  */
 export function cropBattleArea(data: MapData, city: string): MapData {
   const area = data.battleAreas?.[city];
   if (!area) throw new Error(`${city} の範囲（battleAreas.${city}）がありません`);
   const out = cropMap(data, area);
+  const move = (o: Offset): Offset => ({ col: o.col - area.col, row: o.row - area.row });
   const src = data.deployments?.[city];
-  if (!src) return out;
+  const hold = data.strongholds?.[city];
   const deploy: BattleDeployment = { attacker: [], defender: [] };
-  for (const side of DEPLOY_SIDES) {
-    for (const o of src[side]) {
-      const col = o.col - area.col;
-      const row = o.row - area.row;
-      if (col >= 0 && row >= 0 && col < BATTLE_AREA_SIZE.cols && row < BATTLE_AREA_SIZE.rows) deploy[side].push({ col, row });
-    }
-  }
-  return { ...out, deploy };
+  for (const side of DEPLOY_SIDES) for (const o of src?.[side] ?? []) if (inBattleArea(area, o)) deploy[side].push(move(o));
+  return {
+    ...out,
+    ...(src ? { deploy } : {}),
+    ...(hold && inBattleArea(area, hold) ? { stronghold: move(hold) } : {}),
+  };
 }

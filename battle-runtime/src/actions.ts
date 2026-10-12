@@ -2,20 +2,22 @@
  * ユニットの行動の定義と、行動メニューの項目の組み立て。
  *
  * メニューは 2 階層。1 階層目は常に全部並べ、選べないものは無効にする。
- * 2 階層目（攻撃の種類・指揮官のスキルと退却）は選べるものだけを並べる。
+ * 2 階層目（攻撃の種類・指揮官のスキルと退却）は選べるものだけを並べる。ただし退却は選べないときも灰色で残す（keepDisabled）。
+ * 2 階層目に何か並ぶ（灰色だけでも）1 階層目の項目は開ける。
  * 選べるかどうかは残り行動力・兵種・指揮官のスキルで決まる。コスト・兵種の制限は仮の値。
  *
  * 行動は予約してから最後にまとめて実行する。移動・攻撃を予約すると、残り行動力は予約した分を引いたものになり、
  * 最後に予約を実行する「決定」と、予約をすべて取り消す「取消」が並ぶ。
  * 攻撃は 1 ターンに 1 回で、攻撃を予約した後は移動できない（騎兵は除く）。
- * 退却は「特殊」の中（指揮官のスキルの後）に並べ、ターンの初めだけ選べる。行動力は使わない。
+ * 退却は「特殊」の中（指揮官のスキルの後）に並べ、ターンの初め（待機・鼓舞などで行動力を使う前）だけ選べる。行動力は使わない。
+ * 退却先の拠点が無い軍のユニット・ターンの初めでないときは選べない（灰色で理由を持つ）。選ぶと退却先の拠点の一覧を出し、拠点を選ぶと退却する（retreat.ts）。
  * 魔術師は通常攻撃の代わりにサンダーフォール（行動力 4。最大行動力と同じなので移動した後は撃てない）。
  * 一斉攻撃は直接攻撃の兵種だけで、射程内に自分のほかの味方とも隣接している敵がいるときだけ並ぶ（hasVolleyTargets）。
  * 迎撃は選んだらすぐに実行し（予約した移動があればそこまで動く）、迎撃の構えで待機して行動を終える。攻撃の後と騎兵はできない。
  * 待機（行動力 0）も選んだらすぐに実行し（予約した行動があれば実行してから）、残りの行動力を捨てて行動を終える。
  * 行動力が残っていない（待機・迎撃で行動を終えた後など）ときは待機を選べない。
  * 指揮官のスキルのうち鼓舞（行動力 2）は、選んだらすぐに実行し（予約した行動があれば実行してから）、自分の士気を 10〜20 回復する。
- * ほかのスキルと退却はまだ処理が無い。
+ * ほかのスキルはまだ処理が無い。
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { UnitStatus } from './unitStatus';
@@ -56,6 +58,8 @@ interface ActionDef {
   cost?: number;
   /** 使える兵種（省略時はすべて） */
   types?: readonly UnitType[];
+  /** 2 階層目で、選べないときも灰色で残す（省略時は選べなければ並べない） */
+  keepDisabled?: boolean;
 }
 
 interface GroupDef {
@@ -87,7 +91,7 @@ const MENU: readonly (ActionDef | GroupDef)[] = [
   { id: 'intercept', name: '迎撃', cost: 2, types: ['infantry', 'archer', 'mage'] },
   // 行動力が余ったときに行動を終える
   { id: 'wait', name: '待機', cost: 0 },
-  { name: '特殊', skills: true, children: [{ id: 'retreat', name: '退却' }] },
+  { name: '特殊', skills: true, children: [{ id: 'retreat', name: '退却', keepDisabled: true }] },
 ];
 
 export interface MenuAction {
@@ -108,6 +112,8 @@ export interface MenuContext {
   zocLocked: boolean;
   /** ターンの初めか（まだ移動も攻撃もしておらず、予約も無い）。退却はこのときだけ */
   turnStart: boolean;
+  /** 退却先の拠点があるか */
+  canRetreat: boolean;
   /** 予約した行動があるか（最後に「決定」「取消」を出す） */
   planned: boolean;
   /** 攻撃を予約したか（それ以上は攻撃できない。移動は canMoveAfterAttack のときだけ） */
@@ -123,6 +129,12 @@ export interface MenuContext {
 const CONFIRM: MenuAction = { id: 'confirm', name: '決定' };
 const CANCEL: MenuAction = { id: 'cancel', name: '取消' };
 
+/** 2 階層目の行動 */
+export interface MenuChild extends MenuAction {
+  /** 選べない理由（選べないときだけ。灰色で出す） */
+  reason?: string;
+}
+
 export interface MenuEntry {
   name: string;
   enabled: boolean;
@@ -130,8 +142,8 @@ export interface MenuEntry {
   reason?: string;
   /** 1 階層目で直接選ぶ行動 */
   action?: MenuAction;
-  /** 2 階層目（選べるものだけ） */
-  children?: MenuAction[];
+  /** 2 階層目（選べるものと、選べないときも残すもの） */
+  children?: MenuChild[];
 }
 
 /** ユニットの行動メニューの 1 階層目 */
@@ -144,9 +156,11 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
       ? '行動力が足りない'
       : c.id === 'volley' && !ctx.hasVolleyTargets
         ? '取り囲んだ敵がいない'
-        : c.id === 'retreat' && !ctx.turnStart
-          ? 'ターンの初めしか退却できない'
-          : null;
+        : c.id === 'retreat' && !ctx.canRetreat
+          ? '退却できる拠点がない'
+          : c.id === 'retreat' && (!ctx.turnStart || status.ap < status.maxAp)
+            ? 'ターンの初めしか退却できない'
+            : null;
   const entries = MENU.map((def): MenuEntry => {
     if ('id' in def) {
       const action = { id: def.id, name: def.name, cost: def.cost };
@@ -165,12 +179,16 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
       const reason = status.attacked ? 'このターンは攻撃済み' : ctx.attackPlanned ? '攻撃は予約済み' : !ctx.hasTargets ? '攻撃できる敵がいない' : null;
       if (reason) return { name: def.name, enabled: false, reason };
     }
-    const cands: MenuAction[] = [
+    const cands: (MenuAction & { keepDisabled?: boolean })[] = [
       ...(def.skills ? status.skills.map((s) => ({ id: `skill:${s}` as const, name: SKILL_DEFS[s].name, cost: SKILL_DEFS[s].cost })) : []),
-      ...def.children.filter((c) => !c.types || c.types.includes(unit.type)).map(({ id, name, cost }) => ({ id, name, cost })),
+      ...def.children.filter((c) => !c.types || c.types.includes(unit.type)).map(({ id, name, cost, keepDisabled }) => ({ id, name, cost, keepDisabled })),
     ];
     if (cands.length === 0) return { name: def.name, enabled: false, reason: 'この兵種は使えない' };
-    const children = cands.filter((c) => childReason(c) === null);
+    const children = cands.flatMap(({ keepDisabled, ...c }): MenuChild[] => {
+      const reason = childReason(c);
+      if (reason === null) return [c];
+      return keepDisabled ? [{ ...c, reason }] : [];
+    });
     if (children.length === 0) return { name: def.name, enabled: false, reason: childReason(cands[0])! };
     return { name: def.name, enabled: true, children };
   });
@@ -178,8 +196,8 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
   return entries;
 }
 
-/** 処理のある特殊の行動（ほかのスキル・退却はまだ処理が無い） */
-const WORKING_SPECIALS: readonly ActionId[] = ['skill:inspire'];
+/** 処理のある特殊の行動（ほかのスキルはまだ処理が無い） */
+const WORKING_SPECIALS: readonly ActionId[] = ['skill:inspire', 'retreat'];
 
 /**
  * まだ行動できるか（移動・攻撃・迎撃・処理のある特殊の行動のどれかを選べるか）。どれも選べなければ行動済み（E の印）。
@@ -189,7 +207,7 @@ export function canAct(ctx: MenuContext): boolean {
   return buildActionMenu(ctx).some((entry, i) => {
     const def = MENU[i];
     if (!entry.enabled || !def || entry.action?.id === 'wait') return false;
-    if ('skills' in def && def.skills) return !!entry.children?.some((c) => WORKING_SPECIALS.includes(c.id));
+    if ('skills' in def && def.skills) return !!entry.children?.some((c) => !c.reason && WORKING_SPECIALS.includes(c.id));
     return true;
   });
 }

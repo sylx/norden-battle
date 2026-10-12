@@ -1,7 +1,7 @@
 /**
  * カーソルの HEX の地形を出すウィンドウ（画面の左下、ステータス行の上）。
  *
- * - 地形の名前と色、人工物、座標、標高、入るのに使う行動力、地形効果（受けるダメージの減り方）、街道を出す。
+ * - 地形の名前と色、人工物（防衛拠点ならその札も）、座標、標高、入るのに使う行動力、地形効果（受けるダメージの減り方）、街道を出す。
  * - 移動先・攻撃の相手を選んでいる間は、その HEX への移動・攻撃の予測を下に足す。
  * - カーソルがマップの外にあるときは隠す。
  * - 枠は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）。表示するだけなので、マウスは下のマップへ通す。
@@ -36,6 +36,11 @@ export default function TerrainWindow({ app }: { app: BattleApp }) {
         <i className="terrain-swatch" style={{ background: `rgb(${r}, ${g}, ${b})` }} />
         <span className="terrain-name">{terrain.name}</span>
         {cell.feature && <span className="terrain-feature">{FEATURE_DEFS[cell.feature].name}</span>}
+        {app.stronghold?.col === cell.col && app.stronghold.row === cell.row && (
+          <span className="terrain-feature stronghold" title="攻撃側のユニットが入ると防衛側の負け（入城）">
+            防衛拠点
+          </span>
+        )}
         <span className="terrain-coord">
           ({cell.col}, {cell.row})
         </span>

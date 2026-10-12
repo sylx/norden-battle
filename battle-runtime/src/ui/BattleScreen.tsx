@@ -10,6 +10,10 @@
  * - 地形・騎士・戦闘記録・配備は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）、行動メニュー・ターン表示は ThinFrame で囲む。
  * - 画面の上の中央に戦況（軍ごとの兵数の合計の比の帯）を出す。
  * - 攻撃・迎撃・鼓舞・殲滅などのとき、ユニットの頭上にセリフの吹き出しを出す（BattleApp・speechBubbles.ts）。何を喋るかは barks で差し替える。
+ * - 退却先の拠点は軍ごとに retreats で渡す（無い軍は退却できない）。退却した・捕虜になったユニットは onRetreat で知らせる。
+ * - 決着すると（どちらかの陣営の全滅・退却、攻撃側の入城。victory.ts）決着のカットインを出し、終わったら画面の中央に
+ *   決着のウィンドウ（BattleEndWindow.tsx）を出す。そのボタン（onEnd を渡したときだけ）で使う側に知らせる。
+ *   カットインのテンプレートは CUTIN_TEMPLATES の battle-end（無ければ battle-start の見た目）。決着した後はターン表示を出さない。
  * - ターン表示には、いま行動している軍を出す（防衛側の赤軍 → 攻撃側の青軍の交互）。
  * - 画面の下に操作の案内・予約の中身・実行した結果のステータス行を出す（notice を渡すとそちらを出す）。
  * - 親の要素いっぱいに広がる。children はその上に重ねる（エディタの道具・ゲームの見出しなど）。
@@ -20,14 +24,18 @@ import type { MapData } from '@norden/map-runtime/core/mapData';
 import { TEAM_DEFS, type TeamId } from '@norden/map-runtime/core/units';
 import { BattleApp, type BattlePhase, type StatusFactory } from '../app';
 import { demoBarks, type BarkSource } from '../barks';
-import type { TroopFactory } from '../deployment';
+import { SIDE_TEAM, type TroopFactory } from '../deployment';
+import type { RetreatDestinations, RetreatReport } from '../retreat';
+import { BATTLE_END_REASON_NAMES, type BattleOutcome } from '../victory';
 import ActionMenu from './ActionMenu';
+import BattleEndWindow from './BattleEndWindow';
 import BattleLogWindow from './BattleLogWindow';
 import DeployWindow from './DeployWindow';
 import {
   actionStatus,
   battleStartStatus,
   deployStatus,
+  endStatus,
   executeStatus,
   IDLE_STATUS,
   inspectStatus,
@@ -47,6 +55,8 @@ export interface BattleCutInTexts {
   start?: (map: MapData) => CutInPlayOptions;
   /** 軍の番の始め。既定は「赤軍のターン」と「TURN  1」 */
   turn?: (turn: number, team: TeamId) => CutInPlayOptions;
+  /** 決着。既定は「青軍の勝利」と決着の理由（「入城」など） */
+  end?: (outcome: BattleOutcome) => CutInPlayOptions;
 }
 
 const defaultStartText = (map: MapData): CutInPlayOptions => ({ text: '戦闘開始', subText: map.name });
@@ -54,10 +64,14 @@ const defaultTurnText = (turn: number, team: TeamId): CutInPlayOptions => ({
   text: `${TEAM_DEFS[team].name}のターン`,
   subText: `TURN  ${turn}`,
 });
+const defaultEndText = ({ winner, reason }: BattleOutcome): CutInPlayOptions => ({
+  text: `${TEAM_DEFS[SIDE_TEAM[winner]].name}の勝利`,
+  subText: BATTLE_END_REASON_NAMES[reason],
+});
 
-/** CUTIN_TEMPLATES のテンプレートを再生する（無ければすぐに終える） */
-function playCutIn(queue: CutInQueue, name: string, options: CutInPlayOptions): Promise<void> {
-  const template = CUTIN_TEMPLATES[name];
+/** CUTIN_TEMPLATES のテンプレート（names の最初にあるもの）を再生する（どれも無ければすぐに終える） */
+function playCutIn(queue: CutInQueue, names: string | readonly string[], options: CutInPlayOptions): Promise<void> {
+  const template = [names].flat().map((name) => CUTIN_TEMPLATES[name]).find(Boolean);
   return template ? queue.play(template, options) : Promise.resolve();
 }
 
@@ -72,6 +86,14 @@ export interface BattleScreenProps {
   cutInTexts?: BattleCutInTexts;
   /** 何を喋るか（ゲームでは騎士の口調・性格から会話データを引くものを渡す。既定は表示確認用の決まったセリフ） */
   barks?: BarkSource;
+  /** 軍ごとの退却先の拠点（ゲームでは戦場の拠点に街道でつながる自勢力の拠点）。無い軍は退却できない（既定はどの軍も無い） */
+  retreats?: RetreatDestinations;
+  /** ユニットが退却した・退却に失敗して捕虜になったとき（この戦闘のすべては BattleApp.retreated にも残る） */
+  onRetreat?: (report: RetreatReport) => void;
+  /** 決着のウィンドウのボタンを押したとき（渡さなければボタンを出さない。決着そのものは BattleApp の end でも受け取れる） */
+  onEnd?: (outcome: BattleOutcome) => void;
+  /** 決着のウィンドウのボタンの文字（既定は「戦闘を終える」） */
+  endLabel?: string;
   /** ステータス行に出す知らせ（マップを読めないときなど）。あれば戦闘の案内の代わりに出す */
   notice?: ReactNode;
   /** BattleApp を作った・破棄した（null）とき。描画の設定を変えるときなどに使う */
@@ -80,7 +102,21 @@ export interface BattleScreenProps {
   children?: ReactNode;
 }
 
-export default function BattleScreen({ map, statuses, troops, cutInTexts, barks, notice, onApp, className = '', children }: BattleScreenProps) {
+export default function BattleScreen({
+  map,
+  statuses,
+  troops,
+  cutInTexts,
+  barks,
+  retreats,
+  onRetreat,
+  onEnd,
+  endLabel = '戦闘を終える',
+  notice,
+  onApp,
+  className = '',
+  children,
+}: BattleScreenProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [app, setApp] = useState<BattleApp | null>(null);
   const [status, setStatus] = useState<ReactNode>(IDLE_STATUS);
@@ -91,15 +127,22 @@ export default function BattleScreen({ map, statuses, troops, cutInTexts, barks,
   /** 戦闘開始のカットインを出している（読み込み直すたびに番号を進め、前の読み込みの終わりを無視する） */
   const [intro, setIntro] = useState(false);
   const introId = useRef(0);
-  const latest = useRef({ statuses, troops, cutInTexts, onApp });
-  latest.current = { statuses, troops, cutInTexts, onApp };
+  /** 戦闘の決着（まだなら null）と、決着のカットインを終えて決着のウィンドウを出しているか */
+  const [outcome, setOutcome] = useState<BattleOutcome | null>(null);
+  const [endShown, setEndShown] = useState(false);
+  const latest = useRef({ statuses, troops, cutInTexts, onRetreat, onApp });
+  latest.current = { statuses, troops, cutInTexts, onRetreat, onApp };
 
   useEffect(() => {
     const app = new BattleApp(viewportRef.current!);
     setApp(app);
     latest.current.onApp?.(app);
     const offs = [
-      app.on('load', () => setStatus(LOADED_STATUS)),
+      app.on('load', () => {
+        setStatus(LOADED_STATUS);
+        setOutcome(null);
+        setEndShown(false);
+      }),
       app.on('phase', (p) => {
         setPhase(p);
         if (p === 'battle') setStatus(battleStartStatus(app.activeTeam));
@@ -117,6 +160,15 @@ export default function BattleScreen({ map, statuses, troops, cutInTexts, barks,
       app.on('targetCancel', () => setStatus(IDLE_STATUS)),
       app.on('targetReject', (reason) => setStatus(rejectStatus(reason))),
       app.on('execute', (report) => setStatus(executeStatus(report))),
+      app.on('retreat', (report) => latest.current.onRetreat?.(report)),
+      app.on('end', (o) => {
+        setOutcome(o);
+        setStatus(endStatus(o));
+        // 読み込み直したら（outcome が変わったら）前の決着のウィンドウは出さない
+        void playCutIn(queue, ['battle-end', 'battle-start'], (latest.current.cutInTexts?.end ?? defaultEndText)(o)).then(() => {
+          if (app.outcome === o) setEndShown(true);
+        });
+      }),
     ];
     return () => {
       for (const off of offs) off();
@@ -142,6 +194,10 @@ export default function BattleScreen({ map, statuses, troops, cutInTexts, barks,
     if (app) app.barks = barks ?? demoBarks;
   }, [app, barks]);
 
+  useEffect(() => {
+    if (app) app.retreats = retreats ?? {};
+  }, [app, retreats]);
+
   const endTurn = () => {
     if (app?.endTurn()) setStatus(turnStatus(app.turn, app.activeTeam));
   };
@@ -157,7 +213,7 @@ export default function BattleScreen({ map, statuses, troops, cutInTexts, barks,
           {phase === 'deploy' && !intro && <DeployWindow app={app} />}
           {phase === 'battle' && <BattleLogWindow app={app} />}
           <ActionMenu model={app.menu} />
-          {map && phase === 'battle' && !intro && (
+          {map && phase === 'battle' && !intro && !outcome && (
             <div className="battle-turn-bar" style={{ '--team': TEAM_DEFS[turn.team].color } as CSSProperties}>
               <ThinFrame />
               <span className="turn">
@@ -175,6 +231,7 @@ export default function BattleScreen({ map, statuses, troops, cutInTexts, barks,
         {notice ?? status}
       </div>
       <CutInLayer cutIn={cutIn} />
+      {app && outcome && endShown && <BattleEndWindow outcome={outcome} label={endLabel} onEnd={onEnd && (() => onEnd(outcome))} />}
       {children}
     </div>
   );

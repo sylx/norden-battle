@@ -5,11 +5,13 @@
  * - React の側は subscribe / getState（useSyncExternalStore）で中身の変化を受け取り、
  *   onFrame で毎フレームの位置の更新を受け取る（位置は再描画せずに DOM を直接動かす）。
  * - 2 階層目の開け閉めもここで持つ（Esc で BattleApp から閉じるため）。
+ * - 退却を選んだ後は、項目の代わりに退却先の拠点の一覧を出す（openRetreat。Esc・「戻る」で項目に戻る）。
  */
 import * as THREE from 'three';
 import type { UnitData } from '@norden/map-runtime/core/units';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { buildActionMenu, type MenuAction, type MenuContext, type MenuEntry } from './actions';
+import type { RetreatDestination } from './retreat';
 
 /** 画面上の範囲（コンテナの左上からの CSS ピクセル） */
 export interface ScreenRect {
@@ -17,6 +19,14 @@ export interface ScreenRect {
   t: number;
   r: number;
   b: number;
+}
+
+/** 退却先の拠点の一覧 */
+export interface RetreatMenu {
+  destinations: readonly RetreatDestination[];
+  /** 隣接している敵ユニットの数と、退却に失敗する確率（0〜1） */
+  enemies: number;
+  failChance: number;
 }
 
 export interface MenuState {
@@ -27,6 +37,8 @@ export interface MenuState {
   openIndex: number | null;
   /** true の間はメニューを隠しておく（移動先を選んでいる間など） */
   suspended: boolean;
+  /** 項目の代わりに出している退却先の拠点の一覧（出していなければ null） */
+  retreat: RetreatMenu | null;
 }
 
 /** 毎フレームの位置の基準。sprite はユニットの絵の範囲（画面の外・カメラの後ろなら null） */
@@ -40,8 +52,10 @@ export interface MenuFrame {
 export class ActionMenuModel {
   /** 行動を選んだとき */
   onAction: (unit: UnitData, action: MenuAction) => void = () => {};
+  /** 退却先の拠点を選んだとき */
+  onRetreat: (unit: UnitData, to: RetreatDestination) => void = () => {};
 
-  private state: MenuState = { ctx: null, entries: [], openIndex: null, suspended: false };
+  private state: MenuState = { ctx: null, entries: [], openIndex: null, suspended: false, retreat: null };
   private readonly listeners = new Set<() => void>();
   private readonly frameListeners = new Set<(frame: MenuFrame) => void>();
 
@@ -72,7 +86,25 @@ export class ActionMenuModel {
 
   /** ユニットのメニューを開く（null で閉じる）。開いたまま呼ぶと中身を作り直す */
   open(ctx: MenuContext | null): void {
-    this.set({ ctx, entries: ctx ? buildActionMenu(ctx) : [], openIndex: null });
+    this.set({ ctx, entries: ctx ? buildActionMenu(ctx) : [], openIndex: null, retreat: null });
+  }
+
+  /** 項目の代わりに退却先の拠点の一覧を出す */
+  openRetreat(retreat: RetreatMenu): void {
+    this.set({ openIndex: null, retreat });
+  }
+
+  /** 退却先の拠点の一覧を閉じて項目に戻る。閉じたものがあれば true */
+  closeRetreat(): boolean {
+    if (!this.state.retreat) return false;
+    this.set({ retreat: null });
+    return true;
+  }
+
+  chooseRetreat(to: RetreatDestination): void {
+    const unit = this.state.ctx?.unit;
+    this.closeRetreat();
+    if (unit) this.onRetreat(unit, to);
   }
 
   /** 1 階層目の index の項目の 2 階層目を開く */

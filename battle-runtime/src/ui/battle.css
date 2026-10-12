@@ -337,6 +337,30 @@
   color: var(--text-dim);
 }
 
+.battle-screen .action-menu .menu-item.back {
+  margin-top: 4px;
+  border-top: 1px solid rgba(138, 106, 58, 0.6);
+  color: var(--text-dim);
+}
+
+/* 退却先の拠点の一覧の見出しと、失敗する確率 */
+.battle-screen .action-menu .menu-note {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 4px 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.battle-screen .action-menu .menu-note .fail {
+  margin-left: auto;
+  font-weight: 600;
+  color: #ff8a70;
+  font-variant-numeric: tabular-nums;
+}
+
 .battle-screen .action-menu .menu-item.disabled {
   cursor: default;
   color: rgba(191, 174, 138, 0.45);
@@ -399,6 +423,17 @@
 .battle-screen .popup.counter {
   color: #ffb070;
   font-size: 32px;
+}
+
+/* 退却したとき・退却に失敗して捕虜になったとき */
+.battle-screen .popup.retreat {
+  color: #9cc8ff;
+  font-size: 30px;
+}
+
+.battle-screen .popup.captured {
+  color: #ff6a50;
+  font-size: 30px;
 }
 
 /* 鼓舞などで士気が上がったとき */
@@ -1456,3 +1491,69 @@
   color: #ff8a7a;
 }
 
+
+/* --- 決着のウィンドウ（BattleEndWindow.tsx。画面の中央。決着のカットインの後） --- */
+.battle-screen .battle-end-window {
+  left: 50%;
+  top: 50%;
+  /* カットイン・行動メニューより手前 */
+  z-index: 4;
+  width: min(320px, calc(100% - 32px));
+  transform: translate(-50%, -50%);
+  user-select: none;
+}
+
+.battle-screen .battle-end-window .end-winner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 2px 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(138, 106, 58, 0.6);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: #fff4d0;
+}
+
+.battle-screen .battle-end-window .end-winner::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: var(--team);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  transform: rotate(45deg);
+}
+
+.battle-screen .battle-end-window dl {
+  display: grid;
+  grid-template-columns: 4em 1fr;
+  gap: 2px 8px;
+  margin: 0;
+}
+
+.battle-screen .battle-end-window dl .row {
+  display: contents;
+}
+
+.battle-screen .battle-end-window dt {
+  color: var(--text-dim);
+}
+
+.battle-screen .battle-end-window dd {
+  margin: 0;
+  color: var(--text);
+}
+
+.battle-screen .battle-end-window .end-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+/* 防衛拠点の HEX（地形のウィンドウの札） */
+.battle-screen .terrain-info .terrain-feature.stronghold {
+  border-color: rgba(240, 192, 48, 0.8);
+  color: #f0c030;
+}

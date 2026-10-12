@@ -35,15 +35,23 @@
  * ターン終了で次の軍の番になり、その軍の全ユニットの行動力が最大まで戻る（全軍が 1 回ずつ行動したらターンの数が進む）。
  * 敵の ZOC の中のユニットは、その番にまだ移動も攻撃もしていなければ動き出せる。
  *
+ * 勝敗（victory.ts）: 行動を実行し終えるたびに調べる。どちらかの陣営の部隊がすべて殲滅・退却するか、攻撃側のユニットが
+ * 防衛拠点（マップの stronghold。地面を金色に塗る）に入る（入城）と決着し、戦闘を終える（end のイベント。outcome に残す）。
+ * 決着した後はユニットを選べず、ターンも終えられない。
+ *
  * - 待機は選んだらすぐに実行する。予約した行動があれば実行してから、残りの行動力を捨てて行動を終える（行動力は 0 になる）。
  * - 鼓舞（指揮官のスキル。行動力 2）は選んだらすぐに実行する。予約した行動があれば実行してから、自分の士気を 10〜20 回復する。
  *   予約した行動の途中で壊滅・足止めされたときは鼓舞しない。
+ * - 退却（ターンの初めだけ。行動力は使わない）は、選ぶと行動メニューに退却先の拠点（retreats。軍ごとに使う側が渡す）の一覧を出し、
+ *   拠点を選ぶとすぐに実行する。退却先の無い軍のユニットは選べない。隣接している敵ユニットの数で決まる確率で失敗し（retreat.ts）、
+ *   失敗すると捕虜になる。成功したユニットは敵から離れる向きへ下がりながら消え、失敗したユニットは下がりかけたところで止められて消える。
+ *   結果は retreat のイベントで知らせ、retreated に残す（捕虜をどう扱うかは使う側が決める）。
  *
  * セリフ（barks.ts。吹き出しは speechBubbles.ts）:
  * - 攻撃: カメラが寄ったところで攻撃するユニットが確率で喋り、読み終えてから攻撃する。
  *   一斉攻撃は、確率で攻撃するユニットと加わる味方の掛け合いになる（掛け合いが無ければ攻撃のつぶやき）。
  * - 迎撃: 迎撃の構えの間接ユニットが、射程に入った敵を自動で攻撃する前に喋る（構えをとったときは喋らない）。
- * - 鼓舞: 士気を回復したときに喋る。退却: 選んだときに喋る（退却の処理はまだ無い）。
+ * - 鼓舞: 士気を回復したときに喋る。退却: 退却先の拠点を選んで退却し始めるときに喋る（読み終えてから下がる）。
  * - 殲滅: 兵数が 0 になったユニットが喋り、続いて討ち取ったユニットが確率で喋る。読み終えるまでカメラを寄せたままにする。
  *
  * メニューの「取消」で予約をすべて取り消す。
@@ -52,7 +60,7 @@
 import * as THREE from 'three';
 import type { Offset } from '@norden/map-runtime/core/hex';
 import { Polyline, smoothPath } from '@norden/map-runtime/core/polyline';
-import { HexMap, type HexCell, type MapData } from '@norden/map-runtime/core/mapData';
+import { DEPLOY_SIDES, HexMap, type DeploySide, type HexCell, type MapData } from '@norden/map-runtime/core/mapData';
 import { TEAM_DEFS, type Facing, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
 import { MapView } from '@norden/map-runtime/render/mapView';
 import { SceneContext } from '@norden/map-runtime/render/scene';
@@ -82,6 +90,7 @@ import { InterceptEffects } from './interceptFx';
 import { LANCE_HIT_SEC, LanceEffects } from './lanceFx';
 import { applyMorale } from './morale';
 import { ActionMenuModel } from './menuModel';
+import { adjacentEnemies, retreatFailChance, type RetreatDestination, type RetreatDestinations, type RetreatReport } from './retreat';
 import { inEnemyZoc, movePath, moveRange, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
 import { SLASH_HIT_SEC, SlashEffects } from './slashFx';
@@ -89,6 +98,7 @@ import { SpeechBubbles } from './speechBubbles';
 import { THUNDER_HIT_SEC, ThunderEffects } from './thunderFx';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
+import { judgeBattle, sideUnits, type BattleOutcome } from './victory';
 
 /** 移動できる HEX の色と、そのうち敵の ZOC で止まる HEX の印の色 */
 const MOVE_RANGE_COLOR = 0x4aa8ff;
@@ -137,6 +147,13 @@ const THUNDER_CAST_SEC = 0.35;
 const BARK_BEFORE_SEC = 0.25;
 /** 殲滅されたときの言葉を、当たってから出すまでの時間（秒） */
 const BARK_AFTER_HIT_SEC = 0.3;
+/** 退却のアニメーションの時間（秒。セリフを読み終えてから）と、その間に下がる距離（HEX 数） */
+const RETREAT_SEC = 1.2;
+const RETREAT_HEX = 0.6;
+/** 退却に失敗したユニットが止められる時点（退却のアニメーションの 0〜1） */
+const RETREAT_CAPTURE_T = 0.35;
+/** 防衛拠点の HEX の地面の色 */
+const STRONGHOLD_COLOR = 0xf0c030;
 
 /**
  * 攻撃の演出の種類。slash: 光の剣で斬る（歩兵の通常攻撃）、lance: 光るランスで貫く（騎兵の通常攻撃・突撃）、
@@ -209,13 +226,15 @@ export interface ExecuteReport {
   wait: boolean;
   /** 鼓舞で回復した士気（鼓舞しなかったら無い） */
   inspire?: number;
+  /** 退却の結果（退却しなかったら無い） */
+  retreat?: RetreatReport;
 }
 
 /**
  * 予約を実行した後にすること。confirm: なし（決定）、intercept: 迎撃の構えをとる、wait: 待機して行動を終える、
- * inspire: 鼓舞する
+ * inspire: 鼓舞する、retreat: 退却する（予約の無いターンの初めだけ）
  */
-type ExecuteEnd = 'confirm' | 'intercept' | 'wait' | 'inspire';
+type ExecuteEnd = 'confirm' | 'intercept' | 'wait' | 'inspire' | 'retreat';
 
 /** 迎撃の自動攻撃 1 回分 */
 export interface InterceptReport {
@@ -252,8 +271,12 @@ export interface BattleEvents {
   select: [unit: UnitData | null];
   /** 行動する軍が変わったとき（戦闘が始まったときも） */
   turn: [turn: number, team: TeamId];
-  /** 決定で予約を実行し終えたとき */
+  /** 決定で予約を実行し終えたとき（退却も。そのときは retreat の後） */
   execute: [report: ExecuteReport];
+  /** ユニットが退却した・退却に失敗して捕虜になったとき（ユニットはもうマップにいない） */
+  retreat: [report: RetreatReport];
+  /** 戦闘が決着したとき（execute の後） */
+  end: [outcome: BattleOutcome];
   /** ユニットがセリフを言うと決まったとき（掛け合いの 2 行目からなど、吹き出しを出すのは遅れることがある） */
   bark: [unit: UnitData, situation: BarkSituation | 'exchange', text: string];
 }
@@ -272,11 +295,13 @@ type Targeting =
  * - strike: 予約した攻撃をする
  * - intercept: shooter（迎撃の構えの間接ユニット）が、at まで歩いてきたユニットを攻撃する。
  *   route はこの移動で at まで通ってきた HEX（足止めされて味方のいる HEX から戻るときに使う）
+ * - retreat: 退却する。away は下がる向き（ワールドの xz の単位ベクトル）、lead はセリフを読み終えて下がり始めるまでの秒数
  */
 type Phase =
   | { kind: 'walk'; path: Offset[]; commit: boolean }
   | { kind: 'strike' }
-  | { kind: 'intercept'; shooter: UnitData; at: Offset; route: Offset[] };
+  | { kind: 'intercept'; shooter: UnitData; at: Offset; route: Offset[] }
+  | { kind: 'retreat'; away: { x: number; z: number }; lead: number };
 
 /** 決定した予約の実行（アニメーション）。phases を順に進める */
 interface Execution {
@@ -365,13 +390,26 @@ export class BattleApp {
   activeTeam: TeamId = TURN_ORDER[0];
   /** 配備フェーズの間の配備（戦闘が始まったら null） */
   deployment: Deployment | null = null;
+  /** 軍ごとの退却先の拠点（無い軍は退却できない） */
+  retreats: RetreatDestinations = {};
+  /** この戦闘で退却した・退却に失敗して捕虜になったユニット（順に。マップを読み込むと空にする） */
+  readonly retreated: RetreatReport[] = [];
+  /** 配備したユニットの部隊の ID（戦闘が始まったときに配備から写す） */
+  private troopIds = new Map<UnitData, string>();
+  /** 防衛拠点の HEX（マップの stronghold。無ければ入城では決着しない） */
+  stronghold: Offset | null = null;
+  /** 戦闘の決着（まだなら null） */
+  outcome: BattleOutcome | null = null;
+  /** 全滅で負けにする陣営（戦闘が始まったときに部隊のいた陣営） */
+  private judged = new Set<DeploySide>();
 
   private readonly listeners = new Map<keyof BattleEvents, Set<(...args: never[]) => void>>();
   private readonly container: HTMLElement;
   private readonly onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape' || this.exec) return;
+    if (e.key !== 'Escape' || this.exec || this.outcome) return;
     if (this.deployment) this.pickTroop(null);
     else if (this.targeting) this.cancelTargeting();
+    else if (this.menu.closeRetreat()) this.emit('targetCancel');
     else if (this.menu.closeSub()) return;
     else if (this.plan && BattleApp.planned(this.plan)) this.undo();
     else this.setSelected(null);
@@ -400,12 +438,12 @@ export class BattleApp {
       if (action.id === 'wait') return this.execute('wait');
       if (action.id === 'skill:inspire') return this.execute('inspire');
       if (action.id === 'cancel') return this.clearPlan();
-      // 退却はまだ処理が無いので、セリフだけ
-      if (action.id === 'retreat') this.bark('retreat', unit, null);
-      if (action.id === 'move') this.startMove();
+      if (action.id === 'retreat') this.openRetreat(unit);
+      else if (action.id === 'move') this.startMove();
       else if (isAttack(action.id)) this.startAttack(action);
       this.emit('action', unit, action);
     };
+    this.menu.onRetreat = (_unit, to) => this.execute('retreat', to);
     const el = this.ctx.renderer.domElement;
     el.addEventListener('pointermove', (e) => this.setPointer(e));
     el.addEventListener('pointerleave', () => this.setHover(null));
@@ -471,11 +509,17 @@ export class BattleApp {
     this.thunderFx.clear();
     this.cameraFocus.stop();
     this.statuses = makeStatuses(map.allUnits());
+    this.retreated.length = 0;
+    this.troopIds = new Map();
+    this.outcome = null;
+    this.judged = new Set();
+    this.stronghold = data.stronghold ?? null;
     const troops = data.deploy ? makeTroops(data.deploy) : [];
     this.deployment = data.deploy ? new Deployment(map, data.deploy, troops, this.statuses) : null;
     if (!this.deployment?.side) this.deployment = null;
     this.tags.setStatuses(this.statuses);
     this.view.setMap(map);
+    this.paintStronghold();
     this.setSelected(null);
     this.turn = 1;
     this.activeTeam = TURN_ORDER[0];
@@ -542,10 +586,12 @@ export class BattleApp {
 
   /** 配備を終えて戦闘を始める（最初の軍の番にする） */
   private startBattle(): void {
+    if (this.deployment) this.troopIds = this.deployment.troopIds();
     this.deployment = null;
     this.view.setRange(null);
     this.setSelected(null);
     this.turn = 1;
+    this.judged = new Set(DEPLOY_SIDES.filter((side) => sideUnits(this.map!, side).length > 0));
     this.activeTeam = this.nextTeam(null);
     this.refreshTeam(this.activeTeam);
     this.refreshMarks();
@@ -558,7 +604,7 @@ export class BattleApp {
    * 移動済み・攻撃済みを消す。全軍が 1 回ずつ行動したらターンの数を進める（実行中・配備フェーズは何もしない）
    */
   endTurn(): boolean {
-    if (this.exec || !this.map || this.deployment) return false;
+    if (this.exec || !this.map || this.deployment || this.outcome) return false;
     this.setSelected(null);
     const next = this.nextTeam(this.activeTeam);
     if (TURN_ORDER.indexOf(next) <= TURN_ORDER.indexOf(this.activeTeam)) this.turn++;
@@ -685,6 +731,7 @@ export class BattleApp {
   }
 
   private click(o: Offset | null): void {
+    if (this.outcome) return;
     if (this.deployment) {
       this.deployment.click(o);
       return this.deployChanged();
@@ -753,6 +800,19 @@ export class BattleApp {
       }
     }
     return [...out.values()];
+  }
+
+  /** unit の軍の退却先の拠点 */
+  retreatDestinations(unit: UnitData): readonly RetreatDestination[] {
+    return this.retreats[unit.team] ?? [];
+  }
+
+  /** 行動メニューに退却先の拠点の一覧と、退却に失敗する確率を出す */
+  private openRetreat(unit: UnitData): void {
+    const destinations = this.retreatDestinations(unit);
+    if (!this.map || destinations.length === 0) return;
+    const enemies = adjacentEnemies(this.map, unit).length;
+    this.menu.openRetreat({ destinations, enemies, failChance: retreatFailChance(enemies) });
   }
 
   /** 移動できる HEX を出して、移動先を選ぶ状態にする */
@@ -858,10 +918,13 @@ export class BattleApp {
   /**
    * 予約を実行する。攻撃の前の移動 → 攻撃 → 攻撃の後の移動（騎兵）の順に進め、最後に end のこと（迎撃の構え・待機・鼓舞）をする。
    * 決定（confirm）は予約が無ければ何もしない。迎撃は攻撃を予約していないときだけ選べる。
+   * 退却（retreat）は予約の無いターンの初めだけで、to へ退却する（成否はここで決める）。
    */
-  private execute(end: ExecuteEnd): void {
+  private execute(end: ExecuteEnd, to?: RetreatDestination): void {
+    const map = this.map;
     const plan = this.plan;
-    if (!this.map || !plan || (end === 'confirm' && !BattleApp.planned(plan))) return;
+    if (!map || !plan || (end === 'confirm' && !BattleApp.planned(plan))) return;
+    if (end === 'retreat' && (!to || !BattleApp.turnStart(plan) || plan.status.ap < plan.status.maxAp)) return;
     const report: ExecuteReport = {
       unit: plan.unit,
       from: { col: plan.unit.col, row: plan.unit.row },
@@ -878,6 +941,23 @@ export class BattleApp {
     const split = plan.attack?.afterLeg ?? plan.legs.length;
     const walk = (legs: MoveStep[]): Phase => ({ kind: 'walk', path: legs.length > 0 ? movePath(legs) : [], commit: true });
     const phases: Phase[] = [walk(plan.legs.slice(0, split)), ...(plan.attack ? [{ kind: 'strike' as const }, walk(plan.legs.slice(split))] : [])];
+    if (end === 'retreat' && to) {
+      const enemies = adjacentEnemies(map, plan.unit).length;
+      const failChance = retreatFailChance(enemies);
+      report.retreat = {
+        unit: plan.unit,
+        troopId: this.troopIds.get(plan.unit) ?? null,
+        status: plan.status,
+        turn: this.turn,
+        to,
+        enemies,
+        failChance,
+        captured: Math.random() < failChance,
+      };
+      phases.splice(0, phases.length, { kind: 'retreat', away: this.awayFromEnemies(plan.unit), lead: 0 });
+      // 去っていくユニットに選択の光を残さない
+      this.view.setFocus(null);
+    }
     this.menu.open(null);
     this.exec = { plan, report, end, phases, phase: phases[0], start: 0, duration: 0, line: null, facing: undefined, hit: false, supporters: [], fx: null };
     this.nextPhase();
@@ -902,6 +982,13 @@ export class BattleApp {
     exec.start = performance.now();
     exec.hit = false;
     exec.fx = null;
+    if (phase.kind === 'retreat') {
+      // 退却のセリフを読み終えてから下がる
+      exec.phase = phase;
+      phase.lead = this.bark('retreat', exec.plan.unit, null);
+      exec.duration = phase.lead + RETREAT_SEC;
+      return;
+    }
     if (phase.kind !== 'walk') {
       exec.phase = phase;
       const attack = exec.plan.attack;
@@ -1059,6 +1146,60 @@ export class BattleApp {
     report.intercepts.push({ unit: phase.shooter, result, targetLeft: Math.max(0, plan.status.soldiers), afterAttack: !!report.attack, halted: false });
     const p = this.view.units.placements().find((x) => x.unit === plan.unit);
     if (p) this.popups.show(p, report.lost ? `迎撃 -${result.damage} 壊滅` : `迎撃 -${result.damage}`, 'damage');
+  }
+
+  /**
+   * 退却のアニメーションを進める。セリフを読み終えたら敵から離れる向きへ歩いて下がりながら消える。
+   * 退却に失敗したユニットは、下がりかけたところ（RETREAT_CAPTURE_T）で止められて揺れ、最後に消える
+   */
+  private stepRetreat(exec: Execution, phase: Extract<Phase, { kind: 'retreat' }>, now: number): void {
+    const map = this.map!;
+    const s = map.layout.size;
+    const unit = exec.plan.unit;
+    const { captured } = exec.report.retreat!;
+    const elapsed = (now - exec.start) / 1000;
+    const t = THREE.MathUtils.clamp((elapsed - phase.lead) / RETREAT_SEC, 0, 1);
+    const stop = captured ? RETREAT_CAPTURE_T : 1;
+    const k = Math.min(t, stop);
+    const hexes = k * RETREAT_HEX;
+    const d = hexes * s * Math.sqrt(3);
+    const a = map.layout.offsetToWorld(unit.col, unit.row);
+    const bob = t < stop ? Math.abs(Math.sin(hexes * WALK_STEPS_PER_HEX * Math.PI)) * WALK_BOB * s : 0;
+    const shake = captured && t >= stop ? Math.sin(t * 60) * HIT_SHAKE * s * Math.max(0, 1 - (t - stop) / 0.3) : 0;
+    const x = a.x + phase.away.x * d + shake;
+    const z = a.z + phase.away.z * d;
+    const facing: Facing | undefined = elapsed < phase.lead ? undefined : phase.away.x >= 0 ? 'right' : 'left';
+    this.view.units.moveTo(unit, new THREE.Vector3(x, this.view.groundAt(x, z) + bob, z), facing);
+    // 成功したら下がり始めてから、失敗したら止められてから消えていく
+    const fadeFrom = captured ? 0.7 : 0.3;
+    this.view.units.setOpacity(unit, t <= fadeFrom ? 1 : 1 - THREE.MathUtils.smoothstep(t, fadeFrom, 1));
+    if (elapsed >= phase.lead && t >= (captured ? stop : 0) && !exec.hit) {
+      exec.hit = true;
+      const p = this.view.units.placements().find((x) => x.unit === unit);
+      if (p) this.popups.show(p, captured ? '退却失敗 捕縛' : '退却', captured ? 'captured' : 'retreat');
+    }
+    if (elapsed < exec.duration) return;
+    this.nextPhase();
+  }
+
+  /** unit が敵から離れる向き（近い敵ほど重く見る。ワールドの xz の単位ベクトル。敵がいなければ右） */
+  private awayFromEnemies(unit: UnitData): { x: number; z: number } {
+    const layout = this.map!.layout;
+    const enemies = this.map!.allUnits().filter((u) => u.team !== unit.team);
+    const a = layout.offsetToWorld(unit.col, unit.row);
+    let x = 0;
+    let z = 0;
+    for (const e of enemies) {
+      const b = layout.offsetToWorld(e.col, e.row);
+      const dx = a.x - b.x;
+      const dz = a.z - b.z;
+      // 向きを距離の 2 乗で割る（遠い敵ほど効かない）
+      const w = 1 / Math.max(dx * dx + dz * dz, 1e-6);
+      x += dx * w;
+      z += dz * w;
+    }
+    const len = Math.hypot(x, z);
+    return len > 1e-6 ? { x: x / len, z: z / len } : { x: 1, z: 0 };
   }
 
   /** 予約した攻撃の演出の種類（演出の無い攻撃は null） */
@@ -1246,6 +1387,8 @@ export class BattleApp {
   private finish(plan: Plan, report: ExecuteReport, end: ExecuteEnd): void {
     const map = this.map!;
     const lost = report.lost || !!report.attack?.unitDestroyed;
+    // 壊滅したか、退却して戦場からいなくなったか
+    const gone = lost || !!report.retreat;
     plan.status.ap -= report.cost;
     // 待機したら、残りの行動力を捨てて行動を終える
     if (end === 'wait') plan.status.ap = 0;
@@ -1265,7 +1408,7 @@ export class BattleApp {
     }
     // 弓兵の迎撃で足止めされたら行動を終える
     if (report.halted) plan.status.ap = 0;
-    const removed = [report.attack?.targetDestroyed && report.attack.target, lost && report.unit];
+    const removed = [report.attack?.targetDestroyed && report.attack.target, gone && report.unit];
     for (const u of removed) {
       if (!u) continue;
       map.removeUnit(u.col, u.row);
@@ -1274,9 +1417,35 @@ export class BattleApp {
     if (removed.some(Boolean)) this.tags.setStatuses(this.statuses);
     this.view.rebuildUnits();
     // 動いた先で選び直す（残りの行動力でメニューを開く）
-    this.setSelected(lost ? null : { col: report.unit.col, row: report.unit.row });
+    this.setSelected(gone ? null : { col: report.unit.col, row: report.unit.row });
     this.refreshMarks();
+    if (report.retreat) {
+      this.retreated.push(report.retreat);
+      this.emit('retreat', report.retreat);
+    }
     this.emit('execute', report);
+    this.judge();
+  }
+
+  /** 決着したか調べ、決着していたら戦闘を終える（選択を外し、行動済みの印を消して end で知らせる） */
+  private judge(): void {
+    const map = this.map;
+    if (!map || this.deployment || this.outcome) return;
+    const outcome = judgeBattle(map, this.stronghold, this.judged, this.turn);
+    if (!outcome) return;
+    this.outcome = outcome;
+    this.setSelected(null);
+    this.done.clear();
+    this.view.units.setDimmed(() => false);
+    this.tags.setMarks(this.done);
+    this.emit('end', outcome);
+  }
+
+  /** 防衛拠点の HEX の地面を塗る */
+  private paintStronghold(): void {
+    const hold = this.stronghold;
+    const color = new THREE.Color(STRONGHOLD_COLOR);
+    this.view.overlay.setCellColors((col, row) => (hold && hold.col === col && hold.row === row ? color : null));
   }
 
   /**
@@ -1395,6 +1564,7 @@ export class BattleApp {
       canMove: moveRange(map, plan.unit, pos, plan.status.ap, options).size > 0,
       zocLocked: inEnemyZoc(map, plan.unit, pos) && !options.escapeZoc,
       turnStart: BattleApp.turnStart(plan),
+      canRetreat: this.retreatDestinations(plan.unit).length > 0,
       planned: BattleApp.planned(plan),
       attackPlanned: !!plan.attack,
       canMoveAfterAttack: !!COMBAT_DEFS[plan.unit.type].moveAfterAttack,
@@ -1465,6 +1635,7 @@ export class BattleApp {
     if (exec?.phase.kind === 'walk') this.stepWalk(exec, exec.phase, performance.now());
     else if (exec?.phase.kind === 'strike') this.stepStrike(exec, performance.now());
     else if (exec?.phase.kind === 'intercept') this.stepIntercept(exec, exec.phase, performance.now());
+    else if (exec?.phase.kind === 'retreat') this.stepRetreat(exec, exec.phase, performance.now());
     // 攻撃の演出の間は、移動のルートと攻撃の矢印を隠す（演出が終われば、残りのルートをまた出す）
     const v = this.view;
     const arrowsShown = !this.exec?.fx;

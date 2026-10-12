@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BATTLE_AREA_SIZE, cropBattleArea, snapBattleArea } from '@norden/map-runtime/core/battleArea';
+import { BATTLE_AREA_SIZE, cropBattleArea, inBattleArea, snapBattleArea } from '@norden/map-runtime/core/battleArea';
 import { bridgeAxis, bridgeAxisCandidates, canPlaceFeature, castleWard, FEATURE_DEFS, isFeatureId, type FeatureId } from '@norden/map-runtime/core/features';
 import { axialRound, type Offset } from '@norden/map-runtime/core/hex';
 import { HexMap, type BattleDeployment, type DeploySide, type HexCell, type MapData } from '@norden/map-runtime/core/mapData';
@@ -33,7 +33,7 @@ export type OverlayMode = 'none' | 'terrain' | 'elevation';
 /**
  * クリック・ドラッグ時の動作:
  * 選択 / 人工物の配置 / 撤去 / 街道（ドラッグ） / 標高ブラシ / 地形の塗り / 川 /
- * 戦闘の範囲（ドラッグ） / 攻撃側・防衛側の初期配置地点
+ * 戦闘の範囲（ドラッグ） / 攻撃側・防衛側の初期配置地点 / 防衛拠点（クリック）
  */
 export type EditTool =
   | 'select'
@@ -45,7 +45,8 @@ export type EditTool =
   | 'river'
   | 'area'
   | 'deploy-attacker'
-  | 'deploy-defender';
+  | 'deploy-defender'
+  | 'stronghold';
 
 /** ドラッグでなぞるツール（城はなぞって塗れる。1 HEX だけならクリック扱い） */
 type StrokeTool = 'road' | 'erase' | 'castle' | 'elevation' | 'terrain' | 'river' | 'deploy-attacker' | 'deploy-defender';
@@ -65,6 +66,8 @@ interface Stroke {
 const AREA_COLOR = 0xffb040;
 /** 初期配置地点の色 */
 export const DEPLOY_COLORS: Record<DeploySide, number> = { attacker: 0xd8442e, defender: 0x2e7ad8 };
+/** 防衛拠点の色 */
+export const STRONGHOLD_COLOR = 0xf0c030;
 /** ブラシの範囲（カーソル位置）の色 */
 const BRUSH_COLOR = 0xfff0c0;
 
@@ -389,9 +392,39 @@ export class EditorApp {
   /** o が areaCity の範囲の中か */
   private inArea(o: Offset): boolean {
     const area = this.areaCity ? this.map?.data.battleAreas?.[this.areaCity] : undefined;
-    return (
-      !!area && o.col >= area.col && o.row >= area.row && o.col < area.col + BATTLE_AREA_SIZE.cols && o.row < area.row + BATTLE_AREA_SIZE.rows
-    );
+    return !!area && inBattleArea(area, o);
+  }
+
+  /**
+   * areaCity の防衛拠点を o にする（同じ HEX をもう一度で消す）。範囲の外と水域には置けない。
+   * 攻撃側の初期配置地点だった HEX なら、その配置地点を消す。変えたら true
+   */
+  private setStronghold(o: Offset): boolean {
+    const map = this.map!;
+    const data = map.data;
+    const city = this.areaCity;
+    if (!city || !data.battleAreas?.[city]) {
+      this.onMessage('「街道マップ」欄で都市を選び、先に範囲を配置してください');
+      return false;
+    }
+    const cur = data.strongholds?.[city];
+    if (cur && cur.col === o.col && cur.row === o.row) {
+      delete data.strongholds![city];
+      if (Object.keys(data.strongholds!).length === 0) delete data.strongholds;
+      return true;
+    }
+    if (!this.inArea(o)) {
+      this.onMessage('防衛拠点は範囲の外には置けません');
+      return false;
+    }
+    if (!canPlaceUnit(map.get(o.col, o.row)!)) {
+      this.onMessage('防衛拠点は水域には置けません（橋の上は置けます）');
+      return false;
+    }
+    data.strongholds = { ...data.strongholds, [city]: { col: o.col, row: o.row } };
+    const dep = data.deployments?.[city];
+    if (dep) dep.attacker = dep.attacker.filter((p) => p.col !== o.col || p.row !== o.row);
+    return true;
   }
 
   /** 初期配置地点を足す・消す。範囲の外と、ユニットの立てない HEX（水域）には足さない */
@@ -405,18 +438,21 @@ export class EditorApp {
     let changed = false;
     let skipped = '';
     if (add) {
+      const hold = data.strongholds?.[city];
+      const isHold = (o: Offset) => side === 'attacker' && !!hold && o.col === hold.col && o.row === hold.row;
       for (const o of path) {
         if (!this.inArea(o)) skipped = '範囲の外には置けません';
         else if (!canPlaceUnit(map.get(o.col, o.row)!)) skipped = '水域には置けません（橋の上は置けます）';
+        else if (isHold(o)) skipped = '防衛拠点には攻撃側を置けません';
       }
       for (const s of ['attacker', 'defender'] as const) {
         const n = dep[s].length;
-        dep[s] = dep[s].filter((o) => !targets.has(key(o)) || (s === side && this.canDeploy(o)));
+        dep[s] = dep[s].filter((o) => !targets.has(key(o)) || (s === side && this.canDeploy(o) && !isHold(o)));
         changed ||= dep[s].length !== n;
       }
       const have = new Set(dep[side].map(key));
       for (const o of path) {
-        if (have.has(key(o)) || !this.canDeploy(o)) continue;
+        if (have.has(key(o)) || !this.canDeploy(o) || isHold(o)) continue;
         have.add(key(o));
         dep[side].push({ col: o.col, row: o.row });
         changed = true;
@@ -584,12 +620,14 @@ export class EditorApp {
     }
     // ブラシの範囲
     const brush = !stroke && this.hovered && !this.previewSource ? this.brushFootprint(this.hovered) : null;
-    // 初期配置地点（プレビュー中は切り出したマップの deploy）
+    // 初期配置地点と防衛拠点（プレビュー中は切り出したマップの deploy・stronghold）
     const deploy = new Map<number, number>();
     const dep = this.previewSource ? map.data.deploy : this.areaCity ? map.data.deployments?.[this.areaCity] : undefined;
     for (const side of ['attacker', 'defender'] as const) {
       for (const o of dep?.[side] ?? []) deploy.set(o.row * cols + o.col, DEPLOY_COLORS[side]);
     }
+    const hold = this.previewSource ? map.data.stronghold : this.areaCity ? map.data.strongholds?.[this.areaCity] : undefined;
+    if (hold) deploy.set(hold.row * cols + hold.col, STRONGHOLD_COLOR);
 
     this.overlay.setCellColors((col, row) => {
       const k = row * cols + col;
@@ -636,6 +674,16 @@ export class EditorApp {
     const tool = this.tool;
     if (tool === 'select' || !o || !map || this.previewSource) {
       if (tool !== 'select' && this.previewSource) this.onMessage('範囲のプレビュー中は編集できません');
+      this.setSelected(o);
+      return;
+    }
+    if (tool === 'stronghold') {
+      const before = map.toJSON();
+      if (this.setStronghold(o)) {
+        this.pushUndo(before);
+        this.onEdit();
+      }
+      this.updateCellColors();
       this.setSelected(o);
       return;
     }
