@@ -9,6 +9,7 @@
  *   （既定は初期配置地点のある最初の範囲）。「最初から」で配備からやり直す。
  * - 描画負荷: FPS・解像度・森の描き方・深度プリパス・影の更新。
  * - セリフ: 喋る場面で必ず喋らせる（確率を無視）・選択中か調べているユニットに場面ごとのセリフを言わせる。
+ *   ゲーム（nordencult）のセリフのデータがあればそれを使い（gameVoices.ts）、ユニットに喋らせる騎士を選べる。言ったセリフの記録。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cropBattleArea } from '@norden/map-runtime/core/battleArea';
@@ -16,7 +17,9 @@ import { MapParseError, parseMapData, type MapData } from '@norden/map-runtime/c
 import { listMapFiles, loadMapFile, type MapFileInfo } from '@norden/map-runtime/mapFiles';
 import type { ForestMode } from '@norden/map-runtime/render/foliage';
 import { DEFAULT_PIXEL_RATIO } from '@norden/map-runtime/render/scene';
+import type { UnitData } from '@norden/map-runtime/core/units';
 import { BARK_CHANCE, BARK_SITUATION_NAMES, BARK_SITUATIONS, BattleScreen, EXCHANGE_CHANCE, type BattleApp } from '@norden/battle-runtime';
+import { gameVoices, type KnightCast } from './gameVoices';
 
 /** 画面の端・ツールバーとの間（CSS ピクセル） */
 const MARGIN = 12;
@@ -136,6 +139,7 @@ export default function EditorApp() {
     <BattleScreen
       map={map}
       notice={notice ?? (cropError && <span className="err">戦闘の範囲を切り出せません: {cropError}</span>)}
+      barks={gameVoices?.barks}
       onApp={setApp}
       className="editor-screen"
     >
@@ -158,7 +162,7 @@ export default function EditorApp() {
             />
           ),
           perf: app && <PerfTool app={app} />,
-          bark: app && <BarkTool app={app} />,
+          bark: app && <BarkTool app={app} cast={gameVoices?.cast ?? null} />,
         }}
       />
       {dragging && <div className="drop-hint">ここにドロップして開く</div>}
@@ -385,9 +389,29 @@ function PerfTool({ app }: { app: BattleApp }) {
   );
 }
 
-function BarkTool({ app }: { app: BattleApp }) {
+/** セリフの記録に残す数 */
+const BARK_LOG_SIZE = 6;
+
+function BarkTool({ app, cast }: { app: BattleApp; cast: KnightCast | null }) {
   const [always, setAlways] = useState(app.alwaysBark);
   const [result, setResult] = useState('');
+  /** 選択中か調べているユニット */
+  const [unit, setUnit] = useState<UnitData | null>(app.plan?.unit ?? app.inspected);
+  /** 割り当てを変えたら増やす（cast は React の外にあるので、描き直すきっかけ） */
+  const [, setCastVersion] = useState(0);
+  const [log, setLog] = useState<{ id: number; who: string; situation: string; text: string }[]>([]);
+  useEffect(() => {
+    let id = 0;
+    const offs = [
+      app.on('select', setUnit),
+      app.on('bark', (u, situation, text) => {
+        const who = cast?.get(u)?.name ?? '';
+        setLog((list) => [{ id: id++, who, situation: BARK_SITUATION_NAMES[situation], text }, ...list].slice(0, BARK_LOG_SIZE));
+      }),
+    ];
+    return () => offs.forEach((off) => off());
+  }, [app, cast]);
+  const knight = unit && cast?.get(unit);
   const test = (situation: Parameters<BattleApp['testBark']>[0]) =>
     setResult(app.testBark(situation) ? '' : '言わせられません（ユニットを選ぶか相手方のユニットをクリックしてから。掛け合いは味方がもう 1 部隊要る）');
   const percent = (p: number) => (p < 1 ? `${Math.round(p * 100)}%` : '必ず');
@@ -404,6 +428,35 @@ function BarkTool({ app }: { app: BattleApp }) {
         />{' '}
         必ず喋る（確率を無視）
       </label>
+      {cast ? (
+        <>
+          <p className="hint">ゲームのセリフのデータで喋る。喋る騎士はユニットごとに選べる（決めていなければ口調のある騎士を順に割り当てる）</p>
+          {unit && knight ? (
+            <label className="row">
+              <span>喋る騎士</span>
+              <select
+                value={knight.id}
+                onChange={(e) => {
+                  const k = cast.knights.find((c) => c.id === e.target.value);
+                  if (k) cast.set(unit, k);
+                  setCastVersion((v) => v + 1);
+                }}
+              >
+                {cast.knights.map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.id} {k.name}
+                    {k.voiceTone ? '' : '（口調なし）'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p className="hint">ユニットを選ぶと、喋る騎士を選べます</p>
+          )}
+        </>
+      ) : (
+        <p className="hint">ゲーム（nordencult）のセリフのデータが無いので、表示確認用のセリフで喋る</p>
+      )}
       <p className="hint">選択中・調べているユニットに言わせる（相手はいちばん近い敵）</p>
       <div className="buttons">
         {BARK_SITUATIONS.map((s) => (
@@ -416,6 +469,19 @@ function BarkTool({ app }: { app: BattleApp }) {
         </button>
       </div>
       {result && <p className="hint">{result}</p>}
+      {log.length > 0 && (
+        <ul className="bark-log">
+          {log.map((l) => (
+            <li key={l.id}>
+              <span className="bark-log__who">
+                {l.who && `${l.who}・`}
+                {l.situation}
+              </span>
+              {l.text}
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }

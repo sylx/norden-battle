@@ -195,3 +195,19 @@ body,
   border: 3px dashed var(--accent);
   pointer-events: none;
 }
+
+/* セリフの記録（新しいものが上） */
+.tool-window .bark-log {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 6px 0 0;
+  border-top: 1px solid #5a4630;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.tool-window .bark-log__who {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+}

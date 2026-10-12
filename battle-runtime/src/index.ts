@@ -17,6 +17,6 @@ export { demoStatus, demoStatuses, MAX_MORALE } from './unitStatus';
 export type { UnitStatus } from './unitStatus';
 export type { ActionId, MenuAction, SkillId } from './actions';
 
-// セリフ（何を喋るか。ゲームでは会話データから引く BarkSource を渡す）
-export { BARK_CHANCE, BARK_SITUATION_NAMES, BARK_SITUATIONS, BARK_TONE, demoBarks, EXCHANGE_CHANCE } from './barks';
-export type { BarkSituation, BarkSource, BarkSpeaker, BarkTone, ExchangeLine } from './barks';
+// セリフ（何を喋るか。ゲームではセリフのデータから引く BarkSource を lineBarks で作って渡す）
+export { BARK_CHANCE, BARK_SITUATION_NAMES, BARK_SITUATIONS, BARK_TONE, demoBarks, EXCHANGE_CHANCE, lineBarks, lineSituationId } from './barks';
+export type { BarkSituation, BarkSource, BarkSpeaker, BarkTone, ExchangeLine, LineSituation } from './barks';

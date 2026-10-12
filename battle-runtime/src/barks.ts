@@ -2,8 +2,8 @@
  * 戦闘中のセリフ（攻撃・迎撃・鼓舞・殲滅などのときのつぶやきと、一斉攻撃の掛け合い）。
  *
  * どの場面で喋るか・喋る確率はここで決め、何を喋るかは BarkSource に任せる。
- * ゲームでは騎士の口調・性格から会話データを引く BarkSource を渡す（BattleScreen の barks）。
- * 渡されないときは表示確認用の決まったセリフ（demoBarks）。
+ * ゲームでは騎士の口調・性格からセリフのデータ（nordencult の voiceLines.json）を引く BarkSource を渡す（BattleScreen の barks）。
+ * セリフのデータの場面と掛け合いの組み立て方は lineBarks。渡されないときは表示確認用の決まったセリフ（demoBarks）。
  * 吹き出しの表示は speechBubbles.ts、いつ喋らせるかは app.ts。
  */
 import type { UnitData } from '@norden/map-runtime/core/units';
@@ -77,6 +77,36 @@ export interface BarkSource {
   line(situation: BarkSituation, speaker: BarkSpeaker, other: BarkSpeaker | null): string | null;
   /** 一斉攻撃の掛け合い（members の先頭が攻撃する部隊、続いて加わる味方。target は相手）。起きなければ null */
   exchange(members: readonly BarkSpeaker[], target: BarkSpeaker): ExchangeLine[] | null;
+}
+
+/** セリフのデータの場面。BarkSituation と、一斉攻撃の掛け合いの呼びかけ・応じる */
+export type LineSituation = BarkSituation | 'exchange_lead' | 'exchange_reply';
+
+/** セリフのデータ（nordencult の voiceLines.json）での場面の ID */
+export const lineSituationId = (situation: LineSituation) => `battle.${situation}`;
+
+/** 一斉攻撃の掛け合いで応じる味方の数 */
+const MAX_REPLIES = 2;
+
+/**
+ * セリフのデータから選ぶ BarkSource。pick は場面の ID（lineSituationId）で speaker が言うセリフを 1 つ選ぶ（無ければ null）。
+ * 一斉攻撃の掛け合いは、攻撃する部隊の呼びかけ（exchange_lead）に、加わる味方が MAX_REPLIES 部隊まで応じる（exchange_reply）
+ */
+export function lineBarks(pick: (situationId: string, speaker: BarkSpeaker) => string | null): BarkSource {
+  return {
+    line: (situation, speaker) => pick(lineSituationId(situation), speaker),
+    exchange: (members) => {
+      const lead = pick(lineSituationId('exchange_lead'), members[0]);
+      if (!lead) return null;
+      const lines: ExchangeLine[] = [{ who: 0, text: lead }];
+      members.slice(1, 1 + MAX_REPLIES).forEach((m, i) => {
+        const reply = pick(lineSituationId('exchange_reply'), m);
+        if (reply && !lines.some((l) => l.text === reply)) lines.push({ who: i + 1, text: reply });
+      });
+      // 誰も応じなければ掛け合いにならない
+      return lines.length >= 2 ? lines : null;
+    },
+  };
 }
 
 /** 表示確認用の決まったセリフ（場面ごとにいくつかから選ぶ） */

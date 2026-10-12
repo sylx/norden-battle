@@ -26,7 +26,9 @@ import { BattleScreen } from '@norden/battle-runtime';
 - `cutInTexts`: 戦闘開始・ターンのカットインの文字（`{ start: (map) => ({ text, subText }), turn: (turn, team) => ({ text, subText }) }`）。
   省略すると「戦闘開始」とマップの名前、「赤軍のターン」と「TURN  1」。ゲームでは戦場と日付・勢力の名前を渡す。
 - `barks`: 何を喋るか（`BarkSource`。場面ごとのセリフ `line` と一斉攻撃の掛け合い `exchange`）。
-  省略すると表示確認用の決まったセリフ（`demoBarks`）。ゲームでは騎士の口調・性格から会話データを引くものを渡す。
+  省略すると表示確認用の決まったセリフ（`demoBarks`）。ゲームでは騎士の口調・性格からセリフのデータ（nordencult の `src/data/voiceLines.json`）を引くものを
+  `lineBarks` で作って渡す。データの場面の ID は `battle.` + 場面（`lineSituationId`）。一斉攻撃の掛け合いは、攻撃する部隊の
+  `battle.exchange_lead`（呼びかけ）に、加わる味方が 2 部隊まで `battle.exchange_reply`（応じる）で応じる。
 - `notice`: ステータス行に出す知らせ（マップを読めないときなど）。
 
 ## 戦闘の流れ
@@ -81,7 +83,7 @@ src/
   unitStatus.ts    ユニットの戦闘中の状態（と表示確認用の仮の値）
   unitTags.ts      ユニットの頭上の情報札（HTML。毎フレーム置き直す）
   popups.ts        兵数の減少などを頭上に出す
-  barks.ts         セリフの場面・確率・吹き出しの調子と、何を喋るか（BarkSource。表示確認用の demoBarks）
+  barks.ts         セリフの場面・確率・吹き出しの調子と、何を喋るか（BarkSource。セリフのデータから選ぶ lineBarks、表示確認用の demoBarks）
   speechBubbles.ts セリフの吹き出し（頭上に出してユニットに付いていく。1 字ずつ出す）
   interceptFx.ts   迎撃の構えのユニットの足元の光の輪
   ui/

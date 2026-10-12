@@ -8,14 +8,16 @@ const local = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 const unitImagesDir = local('../assets/units');
 /** norden-ui（リポジトリの隣。nordencult では同じ親の下のサブモジュール）。ソースをそのまま使う */
 const nordenUiDir = local('../../norden-ui');
+/** ゲーム（nordencult。norden-battle をサブモジュールとして置いたときの親）のセリフのデータと騎士。無ければ使わない（src/gameVoices.ts） */
+const gameDataDir = local('../../src/data');
 
 export default defineConfig({
   base: './',
   server: {
     allowedHosts: ['78b2-113-37-101-195.ngrok-free.app'],
     port: 5175,
-    // norden-battle の外にある norden-ui のソース・画像も配る
-    fs: { allow: [local('..'), nordenUiDir] },
+    // norden-battle の外にある norden-ui のソース・画像と、ゲームのセリフのデータも配る
+    fs: { allow: [local('..'), nordenUiDir, gameDataDir] },
   },
   resolve: {
     alias: [{ find: /^norden-ui$/, replacement: `${nordenUiDir}/src/index.ts` }],
