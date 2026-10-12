@@ -3,7 +3,7 @@
 戦闘画面の UI・演出を試し、演出のパラメータを調整するためのツール。three.js + React + TypeScript + Vite。
 
 戦闘画面は [battle-runtime](../battle-runtime/) の `BattleScreen`（ゲーム本体と同じもの）で、ここではその上にエディタの道具
-（ツールバー・マップ・描画負荷）を重ねるだけ。マップの描画は map-editor と同じ [map-runtime](../map-runtime/) の `MapView` を使い、
+（ツールバー・マップ・描画負荷・セリフ）を重ねるだけ。マップの描画は map-editor と同じ [map-runtime](../map-runtime/) の `MapView` を使い、
 地形生成などのパラメータは map-editor の初期値のまま。UI の部品は [norden-ui](https://github.com/sylx/norden-ui)（リポジトリの隣の `../../norden-ui`）。
 
 ```sh
@@ -35,7 +35,7 @@ battle-editor からマップは書き換えない。
 ```
 src/
   main.tsx         入口
-  EditorApp.tsx    BattleScreen にツールバーと道具のウィンドウ（マップ・描画負荷）を重ねる。JSON のドロップ
+  EditorApp.tsx    BattleScreen にツールバーと道具のウィンドウ（マップ・描画負荷・セリフ）を重ねる。JSON のドロップ
   style.css        ツールバーと道具のウィンドウ
 ```
 

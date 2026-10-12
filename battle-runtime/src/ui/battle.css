@@ -407,6 +407,192 @@
   font-size: 30px;
 }
 
+/* --- セリフの吹き出し（speechBubbles.ts。顔の大きさは FACE_SIZE、しっぽは TAIL_H・TAIL_INSET と合わせる） --- */
+.battle-screen .barks {
+  position: absolute;
+  inset: 0;
+  /* 行動メニュー（3。DOM で後ろ）と同じ高さ、頭上の数字（4）より奥 */
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.battle-screen .bark {
+  --bark-bg: #fbf3df;
+  --bark-bg2: #eedfbd;
+  --bark-line: #3b2a18;
+  --bark-ink: #26190c;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: max-content;
+  max-width: 300px;
+  will-change: transform;
+}
+
+.battle-screen .bark-pop {
+  position: relative;
+  /* しっぽの先（ユニットの頭）から膨らむ */
+  transform-origin: var(--tail-x, 50%) calc(100% + var(--tail-h, 14px));
+  animation: bark-in 0.32s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+.battle-screen .bark-body {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 5px 13px 5px 5px;
+  background: linear-gradient(var(--bark-bg), var(--bark-bg2));
+  border: 2px solid var(--bark-line);
+  border-radius: 21px 14px 14px 21px;
+  box-shadow:
+    0 0 0 2px var(--team),
+    0 4px 12px rgba(0, 0, 0, 0.6);
+}
+
+.battle-screen .bark-face {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--team);
+  background-color: #3a2c1e;
+  background-repeat: no-repeat;
+  background-origin: padding-box;
+  box-shadow: 0 0 0 1px var(--bark-line);
+}
+
+.battle-screen .bark-text {
+  min-width: 0;
+  margin: 0;
+  font-family: 'Noto Serif JP', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--bark-ink);
+  /* 句読点で折り返しやすく */
+  line-break: strict;
+}
+
+.battle-screen .bark-text .rest {
+  visibility: hidden;
+}
+
+/* しっぽ（外側が枠の色、内側を本体の色で塗る。本体の下の枠に重ねてつなぐ） */
+.battle-screen .bark-tail {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: calc(var(--tail-x, 50%) - 9px);
+  width: 18px;
+  height: calc(var(--tail-h, 14px) + 2px);
+  background: var(--bark-line);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+.battle-screen .bark-tail::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 3px;
+  right: 3px;
+  height: calc(100% - 7px);
+  background: var(--bark-bg2);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+/* 叫ぶ（攻撃・迎撃・鼓舞・掛け合い）: 太く大きな字で、弾んで揺れて出る */
+.battle-screen .bark.shout .bark-text {
+  font-family: 'Shippori Mincho B1', 'Noto Serif JP', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: 0.02em;
+}
+
+.battle-screen .bark.shout .bark-pop {
+  animation: bark-in-shout 0.5s cubic-bezier(0.2, 1.2, 0.4, 1) both;
+}
+
+/* 弱々しい（退却・殲滅された）: くすんだ吹き出しで、ゆっくり沈むように出る */
+.battle-screen .bark.weak {
+  --bark-bg: #ddd6c6;
+  --bark-bg2: #bdb4a2;
+  --bark-line: #4e463b;
+  --bark-ink: #3a332b;
+}
+
+.battle-screen .bark.weak .bark-body {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--team) 45%, #6b6458),
+    0 4px 12px rgba(0, 0, 0, 0.6);
+}
+
+.battle-screen .bark.weak .bark-face {
+  filter: grayscale(0.7) brightness(0.85);
+}
+
+.battle-screen .bark.weak .bark-pop {
+  animation: bark-in-weak 0.6s ease-out both;
+}
+
+.battle-screen .bark.out .bark-pop {
+  animation: bark-out 0.3s ease-in both;
+}
+
+@keyframes bark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes bark-in-shout {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  62% {
+    transform: scale(0.97) rotate(-2deg);
+  }
+  78% {
+    transform: scale(1.02) rotate(1.2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes bark-in-weak {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes bark-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+}
+
 /* --- 画面のウィンドウ（地形・戦闘記録。枠と題名の札は norden-ui の ThinFrameWithTitle） --- */
 .battle-screen .battle-window {
   position: absolute;

@@ -87,6 +87,11 @@ export class CameraFocus {
     this.shakeAmount = amount;
   }
 
+  /** 寄ったままにする時間を sec 秒延ばす（セリフを読み終えるまで待つときなど。寄っていなければ何もしない） */
+  extendHold(sec: number): void {
+    if (this.home) this.timing = { ...this.timing, hold: this.timing.hold + sec };
+  }
+
   /** 寄るのをやめる（元の位置へは戻さない。マップを読み直したときなど） */
   stop(): void {
     this.home = null;

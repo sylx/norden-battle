@@ -8,6 +8,7 @@
  *   街道マップ（battleAreas のあるマップ）は戦闘の範囲（防衛する都市）を選んで切り出し、その初期配置地点で配備から始める
  *   （既定は初期配置地点のある最初の範囲）。「最初から」で配備からやり直す。
  * - 描画負荷: FPS・解像度・森の描き方・深度プリパス・影の更新。
+ * - セリフ: 喋る場面で必ず喋らせる（確率を無視）・選択中か調べているユニットに場面ごとのセリフを言わせる。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cropBattleArea } from '@norden/map-runtime/core/battleArea';
@@ -15,15 +16,15 @@ import { MapParseError, parseMapData, type MapData } from '@norden/map-runtime/c
 import { listMapFiles, loadMapFile, type MapFileInfo } from '@norden/map-runtime/mapFiles';
 import type { ForestMode } from '@norden/map-runtime/render/foliage';
 import { DEFAULT_PIXEL_RATIO } from '@norden/map-runtime/render/scene';
-import { BattleScreen, type BattleApp } from '@norden/battle-runtime';
+import { BARK_CHANCE, BARK_SITUATION_NAMES, BARK_SITUATIONS, BattleScreen, EXCHANGE_CHANCE, type BattleApp } from '@norden/battle-runtime';
 
 /** 画面の端・ツールバーとの間（CSS ピクセル） */
 const MARGIN = 12;
 const GAP = 6;
 
-type Tool = 'map' | 'perf';
+type Tool = 'map' | 'perf' | 'bark';
 
-const TOOLS: Record<Tool, string> = { map: 'マップ', perf: '描画負荷' };
+const TOOLS: Record<Tool, string> = { map: 'マップ', perf: '描画負荷', bark: 'セリフ' };
 
 export default function EditorApp() {
   const [app, setApp] = useState<BattleApp | null>(null);
@@ -157,6 +158,7 @@ export default function EditorApp() {
             />
           ),
           perf: app && <PerfTool app={app} />,
+          bark: app && <BarkTool app={app} />,
         }}
       />
       {dragging && <div className="drop-hint">ここにドロップして開く</div>}
@@ -379,6 +381,41 @@ function PerfTool({ app }: { app: BattleApp }) {
       </label>
       <p className="hint">重いときは解像度を下げてください。深度プリパス・影はオフ/オンで負荷を比べる用です</p>
       <p className="hint">GPU: {app.ctx.gpuName}</p>
+    </>
+  );
+}
+
+function BarkTool({ app }: { app: BattleApp }) {
+  const [always, setAlways] = useState(app.alwaysBark);
+  const [result, setResult] = useState('');
+  const test = (situation: Parameters<BattleApp['testBark']>[0]) =>
+    setResult(app.testBark(situation) ? '' : '言わせられません（ユニットを選ぶか相手方のユニットをクリックしてから。掛け合いは味方がもう 1 部隊要る）');
+  const percent = (p: number) => (p < 1 ? `${Math.round(p * 100)}%` : '必ず');
+  return (
+    <>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={always}
+          onChange={(e) => {
+            app.alwaysBark = e.target.checked;
+            setAlways(e.target.checked);
+          }}
+        />{' '}
+        必ず喋る（確率を無視）
+      </label>
+      <p className="hint">選択中・調べているユニットに言わせる（相手はいちばん近い敵）</p>
+      <div className="buttons">
+        {BARK_SITUATIONS.map((s) => (
+          <button key={s} onClick={() => test(s)} title={`戦闘では ${percent(BARK_CHANCE[s])}`}>
+            {BARK_SITUATION_NAMES[s]}
+          </button>
+        ))}
+        <button onClick={() => test('exchange')} title={`戦闘では ${percent(EXCHANGE_CHANCE)}。いちばん近い味方 2 部隊と`}>
+          {BARK_SITUATION_NAMES.exchange}
+        </button>
+      </div>
+      {result && <p className="hint">{result}</p>}
     </>
   );
 }

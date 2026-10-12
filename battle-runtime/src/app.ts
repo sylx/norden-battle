@@ -39,6 +39,13 @@
  * - 鼓舞（指揮官のスキル。行動力 2）は選んだらすぐに実行する。予約した行動があれば実行してから、自分の士気を 10〜20 回復する。
  *   予約した行動の途中で壊滅・足止めされたときは鼓舞しない。
  *
+ * セリフ（barks.ts。吹き出しは speechBubbles.ts）:
+ * - 攻撃: カメラが寄ったところで攻撃するユニットが確率で喋り、読み終えてから攻撃する。
+ *   一斉攻撃は、確率で攻撃するユニットと加わる味方の掛け合いになる（掛け合いが無ければ攻撃のつぶやき）。
+ * - 迎撃: 迎撃の構えの間接ユニットが、射程に入った敵を自動で攻撃する前に喋る（構えをとったときは喋らない）。
+ * - 鼓舞: 士気を回復したときに喋る。退却: 選んだときに喋る（退却の処理はまだ無い）。
+ * - 殲滅: 兵数が 0 になったユニットが喋り、続いて討ち取ったユニットが確率で喋る。読み終えるまでカメラを寄せたままにする。
+ *
  * メニューの「取消」で予約をすべて取り消す。
  * Esc: 移動先・攻撃の相手を選ぶのをやめる → 2 階層目を閉じる → 予約を 1 つ戻す → 選択を外す（配備フェーズでは部隊を選ぶのをやめる）。
  */
@@ -52,6 +59,7 @@ import { SceneContext } from '@norden/map-runtime/render/scene';
 import type { RangeCell } from '@norden/map-runtime/render/hexOverlay';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { canAct, minAttackCost, SKILL_DEFS, type ActionId, type MenuAction, type MenuContext } from './actions';
+import { BARK_CHANCE, BARK_TONE, demoBarks, EXCHANGE_CHANCE, type BarkSituation, type BarkSource, type BarkSpeaker } from './barks';
 import {
   attackForecast,
   attackRange,
@@ -59,6 +67,7 @@ import {
   attackTargets,
   chargeLanding,
   COMBAT_DEFS,
+  hexDistance,
   interceptorsAt,
   isAttack,
   volleySupporters,
@@ -76,6 +85,7 @@ import { ActionMenuModel } from './menuModel';
 import { inEnemyZoc, movePath, moveRange, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
 import { SLASH_HIT_SEC, SlashEffects } from './slashFx';
+import { SpeechBubbles } from './speechBubbles';
 import { THUNDER_HIT_SEC, ThunderEffects } from './thunderFx';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
@@ -123,6 +133,10 @@ const INSPIRE_MIN = 10;
 const INSPIRE_MAX = 20;
 /** 魔術師が雷を呼んで跳ねる時間（秒。雷が落ちる時点で終わる） */
 const THUNDER_CAST_SEC = 0.35;
+/** 攻撃・迎撃の前のセリフを、カメラが寄り始めてから出すまでの時間（秒） */
+const BARK_BEFORE_SEC = 0.25;
+/** 殲滅されたときの言葉を、当たってから出すまでの時間（秒） */
+const BARK_AFTER_HIT_SEC = 0.3;
 
 /**
  * 攻撃の演出の種類。slash: 光の剣で斬る（歩兵の通常攻撃）、lance: 光るランスで貫く（騎兵の通常攻撃・突撃）、
@@ -240,6 +254,8 @@ export interface BattleEvents {
   turn: [turn: number, team: TeamId];
   /** 決定で予約を実行し終えたとき */
   execute: [report: ExecuteReport];
+  /** ユニットがセリフを言うと決まったとき（掛け合いの 2 行目からなど、吹き出しを出すのは遅れることがある） */
+  bark: [unit: UnitData, situation: BarkSituation | 'exchange', text: string];
 }
 
 /** マップのユニットに戦闘中の状態を配る（既定は表示確認用の仮の値） */
@@ -290,6 +306,8 @@ interface StrikeFx {
   kind: StrikeFxKind;
   /** 攻撃のアニメーションの時間（秒。カメラが寄る・戻る時間を除く） */
   strikeSec: number;
+  /** カメラが寄り始めてから攻撃のアニメーションを始めるまでの時間（秒）。前のセリフがあれば読み終えるまで延ばす */
+  lead: number;
   /** エフェクトを出すユニットごとの演出（先頭が攻撃するユニット。一斉攻撃は加わる味方の分も続く） */
   shots: FxShot[];
 }
@@ -324,6 +342,12 @@ export class BattleApp {
   readonly thunderFx = new ThunderEffects();
   /** 攻撃の演出でカメラを寄せる */
   readonly cameraFocus: CameraFocus;
+  /** セリフの吹き出し */
+  readonly bubbles: SpeechBubbles;
+  /** 何を喋るか（ゲームでは会話データから引くものを渡す） */
+  barks: BarkSource = demoBarks;
+  /** 確率に関係なく、喋る場面では必ず喋る（表示確認用） */
+  alwaysBark = false;
   /** 戦闘中のユニットの状態 */
   statuses = new Map<UnitData, UnitStatus>();
   /** 選択中のユニットの HEX */
@@ -367,6 +391,7 @@ export class BattleApp {
     this.view = new MapView(this.ctx);
     this.tags = new UnitTags(container);
     this.popups = new Popups(container);
+    this.bubbles = new SpeechBubbles(container);
     this.cameraFocus = new CameraFocus(this.ctx);
     this.ctx.overlay.add(this.interceptFx.group, this.slashFx.group, this.lanceFx.group, this.arrowFx.group, this.thunderFx.group);
     this.menu.onAction = (unit, action) => {
@@ -375,6 +400,8 @@ export class BattleApp {
       if (action.id === 'wait') return this.execute('wait');
       if (action.id === 'skill:inspire') return this.execute('inspire');
       if (action.id === 'cancel') return this.clearPlan();
+      // 退却はまだ処理が無いので、セリフだけ
+      if (action.id === 'retreat') this.bark('retreat', unit, null);
       if (action.id === 'move') this.startMove();
       else if (isAttack(action.id)) this.startAttack(action);
       this.emit('action', unit, action);
@@ -418,6 +445,7 @@ export class BattleApp {
     this.exec = null;
     this.menu.open(null);
     this.popups.dispose();
+    this.bubbles.dispose();
     this.tags.dispose();
     this.interceptFx.dispose();
     this.view.dispose();
@@ -436,6 +464,7 @@ export class BattleApp {
     const map = new HexMap(data);
     this.exec = null;
     this.popups.clear();
+    this.bubbles.clear();
     this.slashFx.clear();
     this.lanceFx.clear();
     this.arrowFx.clear();
@@ -878,6 +907,8 @@ export class BattleApp {
       const attack = exec.plan.attack;
       exec.supporters = phase.kind === 'strike' && attack?.action.id === 'volley' ? volleySupporters(map, exec.plan.unit, attack.target) : [];
       const kind = phase.kind === 'strike' ? BattleApp.strikeFx(exec.plan.unit, attack!.action.id) : BattleApp.interceptFx(phase.shooter);
+      // 攻撃・迎撃の前のセリフ（演出のある攻撃は、カメラが寄ったまま読み終えるのを待ってから攻撃する）
+      const talk = phase.kind === 'strike' ? this.strikeTalk(exec) : this.bark('intercept', phase.shooter, exec.plan.unit, BARK_BEFORE_SEC);
       if (kind) {
         const strikeSec = { slash: SLASH_STRIKE_SEC, lance: attack?.landing ? LANCE_CHARGE_SEC : LANCE_STRIKE_SEC, arrows: ARROW_STRIKE_SEC, thunder: THUNDER_STRIKE_SEC }[kind];
         // 一斉攻撃は、加わる味方もそれぞれの兵種の演出を、当たりの時点を中心に少しずつずらして出す
@@ -886,9 +917,10 @@ export class BattleApp {
           const k = i === 0 ? kind : BattleApp.strikeFx(unit, 'volley');
           return k ? [{ unit, kind: k, offset: (i - (units.length - 1) / 2) * VOLLEY_FX_STAGGER_SEC, spawned: false }] : [];
         });
-        exec.fx = { kind, strikeSec, shots };
-        exec.duration = FX_ZOOM_IN_SEC + strikeSec + FX_HOLD_SEC + FX_ZOOM_OUT_SEC;
-        const timing = { in: FX_ZOOM_IN_SEC, hold: strikeSec + FX_HOLD_SEC, out: FX_ZOOM_OUT_SEC };
+        const lead = Math.max(FX_ZOOM_IN_SEC, talk);
+        exec.fx = { kind, strikeSec, shots, lead };
+        exec.duration = lead + strikeSec + FX_HOLD_SEC + FX_ZOOM_OUT_SEC;
+        const timing = { in: FX_ZOOM_IN_SEC, hold: lead - FX_ZOOM_IN_SEC + strikeSec + FX_HOLD_SEC, out: FX_ZOOM_OUT_SEC };
         if (phase.kind === 'strike') this.focusOn([exec.plan.unit, attack!.target, ...exec.supporters], attack!.landing, timing);
         else this.focusOn([phase.shooter, exec.plan.unit], null, timing);
       } else {
@@ -967,6 +999,7 @@ export class BattleApp {
       exec.hit = true;
       this.applyIntercept(exec, phase);
       if (fx) this.fxShake(fx);
+      if (exec.report.lost) this.holdForTalk(exec, this.lossTalk([[exec.plan.unit, phase.shooter]]));
     }
     if (exec.hit) {
       const shake = Math.sin(t * 60) * HIT_SHAKE * s * (1 - t) * 2;
@@ -1046,16 +1079,16 @@ export class BattleApp {
     return null;
   }
 
-  /** 攻撃・迎撃のアニメーションの進み具合（0〜1。半分の時点で当たる）。演出のある攻撃はカメラが寄る時間を除く */
+  /** 攻撃・迎撃のアニメーションの進み具合（0〜1。半分の時点で当たる）。演出のある攻撃はカメラが寄る時間（とセリフを待つ時間）を除く */
   private static strikeT(exec: Execution, elapsed: number): number {
     const fx = exec.fx;
-    return fx ? THREE.MathUtils.clamp((elapsed - FX_ZOOM_IN_SEC) / fx.strikeSec, 0, 1) : Math.min(elapsed / exec.duration, 1);
+    return fx ? THREE.MathUtils.clamp((elapsed - fx.lead) / fx.strikeSec, 0, 1) : Math.min(elapsed / exec.duration, 1);
   }
 
   /** 演出のエフェクトを、それぞれ当たりの時点（からずらした時点）に合わせて出す（まだ出していなければ）。target は at にいる */
   private spawnFxOnTime(fx: StrikeFx, elapsed: number, target: UnitData, at: Offset): void {
     const layout = this.map!.layout;
-    const time = (elapsed - FX_ZOOM_IN_SEC) / fx.strikeSec;
+    const time = (elapsed - fx.lead) / fx.strikeSec;
     const b = layout.offsetToWorld(at.col, at.row);
     for (const shot of fx.shots) {
       if (shot.spawned || time < 0.5 + (shot.offset - STRIKE_FX[shot.kind].hitSec) / fx.strikeSec) continue;
@@ -1134,6 +1167,11 @@ export class BattleApp {
       exec.hit = true;
       this.applyAttack(exec);
       if (fx) this.fxShake(fx);
+      const r = exec.report.attack!;
+      const losses: [UnitData, UnitData][] = [];
+      if (r.targetDestroyed) losses.push([attack.target, plan.unit]);
+      if (r.unitDestroyed) losses.push([plan.unit, attack.target]);
+      this.holdForTalk(exec, this.lossTalk(losses));
     }
     if (exec.hit) {
       // 当たった相手を揺らす
@@ -1218,6 +1256,7 @@ export class BattleApp {
       report.inspire = plan.status.morale - before;
       const p = this.view.units.placements().find((x) => x.unit === plan.unit);
       if (p) this.popups.show(p, `鼓舞 士気+${report.inspire}`, 'boost');
+      this.bark('rally', plan.unit, null);
     }
     // 迎撃の構えをとったら、残りの行動力に関わらず行動を終える
     if (report.intercept && !lost && !report.halted) {
@@ -1238,6 +1277,105 @@ export class BattleApp {
     this.setSelected(lost ? null : { col: report.unit.col, row: report.unit.row });
     this.refreshMarks();
     this.emit('execute', report);
+  }
+
+  /**
+   * unit が situation のセリフを（BARK_CHANCE の確率で）delay 秒後に言う。other は相手（吹き出しを反対の側に出す）。
+   * 言うなら読み終えるまでの秒数、言わなければ 0
+   */
+  private bark(situation: BarkSituation, unit: UnitData, other: UnitData | null, delay = 0): number {
+    const speaker = this.speaker(unit);
+    if (!speaker || (!this.alwaysBark && Math.random() >= BARK_CHANCE[situation])) return 0;
+    const text = this.barks.line(situation, speaker, other && this.speaker(other));
+    if (!text) return 0;
+    this.emit('bark', unit, situation, text);
+    return this.bubbles.say(unit, speaker.status.face, text, { delay, tone: BARK_TONE[situation], away: other });
+  }
+
+  /**
+   * 一斉攻撃の掛け合い（EXCHANGE_CHANCE の確率）。members の先頭が攻撃するユニット、続いて加わる味方。
+   * 1 行ずつ、前の行を読み終えてから出す。起きたら最後の行を読み終えるまでの秒数、起きなければ 0
+   */
+  private exchange(members: readonly UnitData[], target: UnitData, delay = 0): number {
+    const speakers = members.map((u) => this.speaker(u));
+    const ts = this.speaker(target);
+    if (!ts || speakers.some((s) => !s) || (!this.alwaysBark && Math.random() >= EXCHANGE_CHANCE)) return 0;
+    const lines = this.barks.exchange(speakers as BarkSpeaker[], ts);
+    if (!lines?.length) return 0;
+    let at = delay;
+    for (const { who, text } of lines) {
+      const s = speakers[who];
+      if (!s) continue;
+      this.emit('bark', s.unit, 'exchange', text);
+      at = this.bubbles.say(s.unit, s.status.face, text, { delay: at, tone: BARK_TONE.exchange, away: target });
+    }
+    return at;
+  }
+
+  private speaker(unit: UnitData): BarkSpeaker | null {
+    const status = this.statuses.get(unit);
+    return status ? { unit, status } : null;
+  }
+
+  /** 攻撃の前のセリフ。一斉攻撃は確率で掛け合い、それ以外（掛け合いが起きなければ）は確率で攻撃のつぶやき。読み終えるまでの秒数 */
+  private strikeTalk(exec: Execution): number {
+    const { unit, attack } = exec.plan;
+    if (!attack) return 0;
+    const talk = exec.supporters.length > 0 ? this.exchange([unit, ...exec.supporters], attack.target, BARK_BEFORE_SEC) : 0;
+    return talk || this.bark('attack', unit, attack.target, BARK_BEFORE_SEC);
+  }
+
+  /**
+   * 殲滅されたユニットの言葉と、続いて討ち取ったユニットの言葉（討ち取った側も殲滅されたら言わない）。
+   * losses は [殲滅されたユニット, 討ち取ったユニット]。読み終えるまでの秒数（誰も言わなければ 0）
+   */
+  private lossTalk(losses: readonly [lost: UnitData, by: UnitData][]): number {
+    const lost = new Set(losses.map(([u]) => u));
+    let end = 0;
+    for (const [u, by] of losses) {
+      const t = this.bark('wiped_out', u, by, BARK_AFTER_HIT_SEC);
+      end = Math.max(end, t);
+      if (!lost.has(by)) end = Math.max(end, this.bark('enemy_eliminated', by, u, Math.max(t, BARK_AFTER_HIT_SEC)));
+    }
+    return end;
+  }
+
+  /** 当たった後のセリフを talk 秒後に読み終えるまで、カメラを寄せたままにして実行の段階を延ばす */
+  private holdForTalk(exec: Execution, talk: number): void {
+    if (talk <= 0) return;
+    const fx = exec.fx;
+    const elapsed = (performance.now() - exec.start) / 1000;
+    // カメラが戻り始める時点（演出の無い攻撃は段階の終わり）
+    const holdEnd = fx ? fx.lead + fx.strikeSec + FX_HOLD_SEC : exec.duration;
+    const extra = elapsed + talk - holdEnd;
+    if (extra <= 0) return;
+    exec.duration += extra;
+    if (fx) this.cameraFocus.extendHold(extra);
+  }
+
+  /**
+   * 表示確認用: 選択中か調べているユニットに situation のセリフを言わせる（確率に関係なく）。
+   * 相手はいちばん近い敵、掛け合いはいちばん近い味方 2 部隊と。言わせるユニットがいない・実行中なら false
+   */
+  testBark(situation: BarkSituation | 'exchange'): boolean {
+    const map = this.map;
+    const unit = this.plan?.unit ?? this.inspected;
+    if (!map || !unit || this.exec) return false;
+    const near = (team: (u: UnitData) => boolean) =>
+      map
+        .allUnits()
+        .filter((u) => u !== unit && team(u))
+        .sort((a, b) => hexDistance(map, unit, a) - hexDistance(map, unit, b));
+    const enemy = near((u) => u.team !== unit.team)[0] ?? null;
+    const always = this.alwaysBark;
+    this.alwaysBark = true;
+    try {
+      if (situation !== 'exchange') return this.bark(situation, unit, situation === 'rally' || situation === 'retreat' ? null : enemy) > 0;
+      const allies = near((u) => u.team === unit.team).slice(0, 2);
+      return !!enemy && this.exchange([unit, ...allies], enemy) > 0;
+    } finally {
+      this.alwaysBark = always;
+    }
   }
 
   private openMenu(): void {
@@ -1343,6 +1481,7 @@ export class BattleApp {
     this.tags.update(placements, this.ctx.camera, this.view.display.units, this.hovered, this.selected);
     this.menu.update(this.menuAnchor(placements), this.ctx.camera, this.container.clientWidth, this.container.clientHeight);
     this.popups.update(this.ctx.camera);
+    this.bubbles.update(placements, this.ctx.camera, this.view.display.units);
   }
 }
 

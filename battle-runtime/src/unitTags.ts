@@ -284,16 +284,18 @@ export function renderStatus(el: HTMLElement, s: UnitStatus): void {
   q('.morale .value').textContent = String(s.morale);
   q('.morale .fill').style.width = `${(100 * clamp01(s.morale / MAX_MORALE)).toFixed(1)}%`;
   el.classList.toggle('low-morale', s.morale < LOW_MORALE);
+  setFace(q('.face'), s.face, FACE_SIZE);
+}
 
-  // 顔: 並べた画像のうち 1 枚を、少し拡大して円の中に収める
-  const face = q('.face');
-  const cell = FACE_SIZE * FACE_ZOOM;
-  const margin = (cell - FACE_SIZE) / 2;
-  const col = s.face % FACE_GRID;
-  const row = Math.floor(s.face / FACE_GRID);
-  face.style.backgroundImage = `url("${FACE_SHEET_URL}")`;
-  face.style.backgroundSize = `${cell * FACE_GRID}px ${cell * FACE_GRID}px`;
-  face.style.backgroundPosition = `${-(col * cell + margin)}px ${-(row * cell + margin)}px`;
+/** el の背景に顔（顔画像の通し番号 face）を入れる。並べた画像のうち 1 枚を、少し拡大して size の円の中に収める */
+export function setFace(el: HTMLElement, face: number, size: number): void {
+  const cell = size * FACE_ZOOM;
+  const margin = (cell - size) / 2;
+  const col = face % FACE_GRID;
+  const row = Math.floor(face / FACE_GRID);
+  el.style.backgroundImage = `url("${FACE_SHEET_URL}")`;
+  el.style.backgroundSize = `${cell * FACE_GRID}px ${cell * FACE_GRID}px`;
+  el.style.backgroundPosition = `${-(col * cell + margin)}px ${-(row * cell + margin)}px`;
 }
 
 /** 候補の位置に置いたときの札の範囲 */

@@ -25,6 +25,8 @@ import { BattleScreen } from '@norden/battle-runtime';
 - `onApp`: `BattleApp` を作った・破棄した（null）とき。描画の設定（解像度・森の描き方など）を変えるときに使う。
 - `cutInTexts`: 戦闘開始・ターンのカットインの文字（`{ start: (map) => ({ text, subText }), turn: (turn, team) => ({ text, subText }) }`）。
   省略すると「戦闘開始」とマップの名前、「赤軍のターン」と「TURN  1」。ゲームでは戦場と日付・勢力の名前を渡す。
+- `barks`: 何を喋るか（`BarkSource`。場面ごとのセリフ `line` と一斉攻撃の掛け合い `exchange`）。
+  省略すると表示確認用の決まったセリフ（`demoBarks`）。ゲームでは騎士の口調・性格から会話データを引くものを渡す。
 - `notice`: ステータス行に出す知らせ（マップを読めないときなど）。
 
 ## 戦闘の流れ
@@ -43,6 +45,21 @@ import { BattleScreen } from '@norden/battle-runtime';
    画面の上の中央の戦況のパネルに、軍ごとの兵数の合計の比を帯で出す。
    「ターン終了」で次の軍の番になり、その軍の行動力が戻る。両軍が 1 回ずつ行動したらターンの数が進む。
    いまはどちらの軍も人が操作する（CPU の操作はまだ無い）。
+3. セリフ: 次の場面で、ユニットの頭上に指揮官の顔付きの吹き出しを出す（`barks.ts`・`speechBubbles.ts`）。
+   （ランダム）の場面は確率（`BARK_CHANCE`・`EXCHANGE_CHANCE`）で喋らないこともある。
+
+   | 場面 | いつ | 確率 |
+   |---|---|---|
+   | `attack` | 攻撃の演出でカメラが寄ったところ。読み終えてから攻撃する | ランダム |
+   | 一斉攻撃の掛け合い | 一斉攻撃の前。攻撃するユニットと加わる味方が 1 行ずつ（掛け合いが無ければ `attack`） | ランダム |
+   | `intercept` | 迎撃の構えの間接ユニット（弓兵・魔術師）が射程に入った敵を撃つ前（構えをとったときは喋らない） | 必ず |
+   | `rally` | 鼓舞で士気を回復したとき | 必ず |
+   | `wiped_out` | 兵数が 0 になったとき（攻撃・反撃・迎撃）。吹き出しは消えたユニットの場所に残る | 必ず |
+   | `enemy_eliminated` | `wiped_out` の後に、討ち取ったユニットが | ランダム |
+   | `retreat` | 退却を選んだとき（退却の処理はまだ無い） | 必ず |
+
+   殲滅のセリフは読み終えるまでカメラを寄せたままにする。吹き出しの調子は場面で変わる（`BARK_TONE`。
+   叫ぶ: 太い字で弾んで出る、弱々しい: くすんだ吹き出しでゆっくり出る）。喋ると `app.on('bark', …)` で知らせる。
 
 `BattleApp` は React なしでも使える（`new BattleApp(container)` → `loadMap(data)`、画面を離れるときは `dispose()`）。
 起きたことは `app.on('execute', (report) => …)` のように受け取る（`BattleEvents`）。行動メニューは DOM を持たない
@@ -64,6 +81,8 @@ src/
   unitStatus.ts    ユニットの戦闘中の状態（と表示確認用の仮の値）
   unitTags.ts      ユニットの頭上の情報札（HTML。毎フレーム置き直す）
   popups.ts        兵数の減少などを頭上に出す
+  barks.ts         セリフの場面・確率・吹き出しの調子と、何を喋るか（BarkSource。表示確認用の demoBarks）
+  speechBubbles.ts セリフの吹き出し（頭上に出してユニットに付いていく。1 字ずつ出す）
   interceptFx.ts   迎撃の構えのユニットの足元の光の輪
   ui/
     BattleScreen.tsx     戦闘画面（BattleApp を置き、下の部品とカットインを重ねる）
