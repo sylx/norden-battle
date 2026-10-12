@@ -14,7 +14,8 @@
  * - 殲滅されたユニット（指揮官が捕縛されたか）は onWipeout で知らせる。
  * - 決着すると（どちらかの陣営の全滅・退却、攻撃側の入城。victory.ts）決着のカットインを出し、終わったら画面の中央に
  *   決着のウィンドウ（BattleEndWindow.tsx）を出す。そのボタン（onEnd を渡したときだけ）で使う側に知らせる。
- *   カットインのテンプレートは CUTIN_TEMPLATES の battle-end（無ければ battle-start の見た目）。決着した後はターン表示を出さない。
+ *   カットインは、プレイヤーの陣営（playerSide）が勝てば CUTIN_TEMPLATES の battle-win、負ければ battle-lose をテンプレートのまま出す
+ *   （プレイヤーが戦闘にいないときは battle-win）。決着した後はターン表示を出さない。
  * - ターン表示には、いま行動している軍を出す（防衛側の赤軍 → 攻撃側の青軍の交互）。
  * - 画面の下に操作の案内・予約の中身・実行した結果のステータス行を出す（notice を渡すとそちらを出す）。
  * - 親の要素いっぱいに広がる。children はその上に重ねる（エディタの道具・ゲームの見出しなど）。
@@ -25,10 +26,11 @@ import type { MapData } from '@norden/map-runtime/core/mapData';
 import { TEAM_DEFS, type TeamId } from '@norden/map-runtime/core/units';
 import { BattleApp, type BattlePhase, type StatusFactory } from '../app';
 import { demoBarks, type BarkSource } from '../barks';
-import { SIDE_TEAM, type TroopFactory } from '../deployment';
+import type { DeploySide } from '@norden/map-runtime/core/mapData';
+import type { TroopFactory } from '../deployment';
 import type { RetreatDestinations, RetreatReport } from '../retreat';
 import type { WipeoutReport } from '../wipeout';
-import { BATTLE_END_REASON_NAMES, type BattleOutcome } from '../victory';
+import type { BattleOutcome } from '../victory';
 import ActionMenu from './ActionMenu';
 import BattleEndWindow from './BattleEndWindow';
 import BattleLogWindow from './BattleLogWindow';
@@ -57,8 +59,6 @@ export interface BattleCutInTexts {
   start?: (map: MapData) => CutInPlayOptions;
   /** 軍の番の始め。既定は「赤軍のターン」と「TURN  1」 */
   turn?: (turn: number, team: TeamId) => CutInPlayOptions;
-  /** 決着。既定は「青軍の勝利」と決着の理由（「入城」など） */
-  end?: (outcome: BattleOutcome) => CutInPlayOptions;
 }
 
 const defaultStartText = (map: MapData): CutInPlayOptions => ({ text: '戦闘開始', subText: map.name });
@@ -66,14 +66,13 @@ const defaultTurnText = (turn: number, team: TeamId): CutInPlayOptions => ({
   text: `${TEAM_DEFS[team].name}のターン`,
   subText: `TURN  ${turn}`,
 });
-const defaultEndText = ({ winner, reason }: BattleOutcome): CutInPlayOptions => ({
-  text: `${TEAM_DEFS[SIDE_TEAM[winner]].name}の勝利`,
-  subText: BATTLE_END_REASON_NAMES[reason],
-});
+/** 決着のカットインのテンプレート。プレイヤーの陣営が負けたら battle-lose、ほかは battle-win */
+const endCutIn = (winner: DeploySide, playerSide: DeploySide | null | undefined): string =>
+  playerSide && winner !== playerSide ? 'battle-lose' : 'battle-win';
 
-/** CUTIN_TEMPLATES のテンプレート（names の最初にあるもの）を再生する（どれも無ければすぐに終える） */
-function playCutIn(queue: CutInQueue, names: string | readonly string[], options: CutInPlayOptions): Promise<void> {
-  const template = [names].flat().map((name) => CUTIN_TEMPLATES[name]).find(Boolean);
+/** CUTIN_TEMPLATES のテンプレートを再生する（options を省略すると文字はテンプレートのまま。無ければすぐに終える） */
+function playCutIn(queue: CutInQueue, name: string, options?: CutInPlayOptions): Promise<void> {
+  const template = CUTIN_TEMPLATES[name];
   return template ? queue.play(template, options) : Promise.resolve();
 }
 
@@ -98,6 +97,8 @@ export interface BattleScreenProps {
   onEnd?: (outcome: BattleOutcome) => void;
   /** 決着のウィンドウのボタンの文字（既定は「戦闘を終える」） */
   endLabel?: string;
+  /** プレイヤーの陣営（決着のカットインの勝利・敗北を決める）。プレイヤーが戦闘にいなければ省略 */
+  playerSide?: DeploySide | null;
   /** ステータス行に出す知らせ（マップを読めないときなど）。あれば戦闘の案内の代わりに出す */
   notice?: ReactNode;
   /** BattleApp を作った・破棄した（null）とき。描画の設定を変えるときなどに使う */
@@ -117,6 +118,7 @@ export default function BattleScreen({
   onWipeout,
   onEnd,
   endLabel = '戦闘を終える',
+  playerSide = null,
   notice,
   onApp,
   className = '',
@@ -135,8 +137,8 @@ export default function BattleScreen({
   /** 戦闘の決着（まだなら null）と、決着のカットインを終えて決着のウィンドウを出しているか */
   const [outcome, setOutcome] = useState<BattleOutcome | null>(null);
   const [endShown, setEndShown] = useState(false);
-  const latest = useRef({ statuses, troops, cutInTexts, onRetreat, onWipeout, onApp });
-  latest.current = { statuses, troops, cutInTexts, onRetreat, onWipeout, onApp };
+  const latest = useRef({ statuses, troops, cutInTexts, onRetreat, onWipeout, onApp, playerSide });
+  latest.current = { statuses, troops, cutInTexts, onRetreat, onWipeout, onApp, playerSide };
 
   useEffect(() => {
     const app = new BattleApp(viewportRef.current!);
@@ -171,7 +173,7 @@ export default function BattleScreen({
         setOutcome(o);
         setStatus(endStatus(o));
         // 読み込み直したら（outcome が変わったら）前の決着のウィンドウは出さない
-        void playCutIn(queue, ['battle-end', 'battle-start'], (latest.current.cutInTexts?.end ?? defaultEndText)(o)).then(() => {
+        void playCutIn(queue, endCutIn(o.winner, latest.current.playerSide)).then(() => {
           if (app.outcome === o) setEndShown(true);
         });
       }),

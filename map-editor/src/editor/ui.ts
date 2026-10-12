@@ -239,7 +239,7 @@ export function setupUI(app: EditorApp): { loadInitial(): Promise<void> } {
       else setStatus(`${app.areaCity} の範囲の${tool === 'deploy-attacker' ? '攻撃側' : '防衛側'}の初期配置地点: クリック・ドラッグで塗る（配置地点から始めると消す）`);
     } else if (tool === 'stronghold') {
       if (!app.areaCity || !app.map?.data.battleAreas?.[app.areaCity]) app.onMessage('「街道マップ」欄で都市を選び、先に範囲を配置してください');
-      else setStatus(`${app.areaCity} の範囲の防衛拠点: クリックした HEX にする（もう一度クリックで消す）。攻撃側のユニットが入ると防衛側の負け`);
+      else setStatus(`${app.areaCity} の範囲の防衛拠点: クリックした HEX にする（もう一度クリックで消す）。攻撃側のユニットが行動を終えると防衛側の負け`);
     } else if (TOOL_HINTS[tool]) setStatus(TOOL_HINTS[tool]!);
     app.setTool(tool);
     for (const b of toolButtons) b.classList.toggle('active', b.dataset.tool === tool);

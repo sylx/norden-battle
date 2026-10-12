@@ -122,7 +122,7 @@ A→B の侵攻では B を含む範囲 `battleAreas.B`、B→A では `battleAr
   元のマップと同じ見た目になる（範囲の縁だけは、外の HEX が無い分だけ地形の混ざり方が変わる）
 - `deployments.<都市>` は、その範囲の戦闘の初期配置地点（ユーザーがユニットを自由に置ける HEX）。`attacker`（攻撃側）・`defender`（防衛側）の HEX の配列で、
   座標は街道マップのもの。範囲の外の HEX は切り出したときに落ちる。1 つの HEX は片方の陣営にだけ属する
-- `strongholds.<都市>` は、その範囲の戦闘の防衛拠点（城の中心部など。攻撃側のユニットが入ると防衛側の負け＝入城）。座標は街道マップのもので、
+- `strongholds.<都市>` は、その範囲の戦闘の防衛拠点（城の中心部など。攻撃側のユニットが行動を終えると防衛側の負け＝入城）。座標は街道マップのもので、
   範囲の外なら切り出したときに落ちる（その戦闘には入城での決着が無い）
 - `cropBattleArea(data, city)`（`core/battleArea.ts`）は `battleAreas[city]` を切り出し、`deployments[city]`・`strongholds[city]` を
   切り出したマップの座標にして `deploy`・`stronghold` に付ける

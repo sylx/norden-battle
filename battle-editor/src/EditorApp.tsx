@@ -12,7 +12,7 @@
  *   ゲーム（nordencult）のセリフのデータがあればそれを使い（gameVoices.ts）、ユニットに喋らせる騎士を選べる。言ったセリフの記録。
  * - 退却・捕縛: 軍ごとにダミーの退却先の拠点を渡すかどうか（渡さない軍は退却できない）・退却に失敗する確率と殲滅されて捕縛される確率・
  *   退却と殲滅の結果の記録。
- * 決着のウィンドウの「最初から」で、同じマップを読み込み直す。
+ * 決着のカットインは青軍（攻撃側）をプレイヤーとして勝利・敗北を出す。決着のウィンドウの「最初から」で、同じマップを読み込み直す。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cropBattleArea } from '@norden/map-runtime/core/battleArea';
@@ -175,6 +175,8 @@ export default function EditorApp() {
       retreats={retreats}
       onEnd={() => setRestart((n) => n + 1)}
       endLabel="最初から"
+      // 両軍を操作するが、決着のカットイン（勝利・敗北）は青軍（攻撃側）をプレイヤーとして出す
+      playerSide="attacker"
       onApp={setApp}
       className="editor-screen"
     >

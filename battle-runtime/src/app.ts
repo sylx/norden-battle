@@ -35,8 +35,9 @@
  * ターン終了で次の軍の番になり、その軍の全ユニットの行動力が最大まで戻る（全軍が 1 回ずつ行動したらターンの数が進む）。
  * 敵の ZOC の中のユニットは、その番にまだ移動も攻撃もしていなければ動き出せる。
  *
- * 勝敗（victory.ts）: 行動を実行し終えるたびに調べる。どちらかの陣営の部隊がすべて殲滅・退却するか、攻撃側のユニットが
- * 防衛拠点（マップの stronghold。地面を金色に塗る）に入る（入城）と決着し、戦闘を終える（end のイベント。outcome に残す）。
+ * 勝敗（victory.ts）: 行動を実行し終えるたびと軍の番を終えるときに調べる。どちらかの陣営の部隊がすべて殲滅・退却するか、攻撃側のユニットが
+ * 防衛拠点（マップの stronghold。地面を金色に塗る）で行動を終える（もう行動できなくなる・拠点にいるまま番を終える。入城）と決着し、
+ * 戦闘を終える（end のイベント。outcome に残す）。
  * 決着した後はユニットを選べず、ターンも終えられない。
  *
  * - 待機は選んだらすぐに実行する。予約した行動があれば実行してから、残りの行動力を捨てて行動を終える（行動力は 0 になる）。
@@ -616,6 +617,9 @@ export class BattleApp {
   endTurn(): boolean {
     if (this.exec || !this.map || this.deployment || this.outcome) return false;
     this.setSelected(null);
+    // 番を終えると、その軍のユニットは行動を終える（防衛拠点にいれば入城）
+    this.judge(this.map.allUnits().filter((u) => u.team === this.activeTeam));
+    if (this.outcome) return false;
     const next = this.nextTeam(this.activeTeam);
     if (TURN_ORDER.indexOf(next) <= TURN_ORDER.indexOf(this.activeTeam)) this.turn++;
     this.activeTeam = next;
@@ -1467,14 +1471,18 @@ export class BattleApp {
       this.emit('wipeout', w);
     }
     this.emit('execute', report);
-    this.judge();
+    // もう行動できなくなった（行動済みの印が付いた）ら、そのユニットは行動を終えた
+    this.judge(!gone && this.done.has(report.unit) ? [report.unit] : []);
   }
 
-  /** 決着したか調べ、決着していたら戦闘を終える（選択を外し、行動済みの印を消して end で知らせる） */
-  private judge(): void {
+  /**
+   * 決着したか調べ、決着していたら戦闘を終える（選択を外し、行動済みの印を消して end で知らせる）。
+   * ended はいま行動を終えたユニット（防衛拠点にいる攻撃側のユニットなら入城）
+   */
+  private judge(ended: readonly UnitData[] = []): void {
     const map = this.map;
     if (!map || this.deployment || this.outcome) return;
-    const outcome = judgeBattle(map, this.stronghold, this.judged, this.turn);
+    const outcome = judgeBattle(map, this.stronghold, ended, this.judged, this.turn);
     if (!outcome) return;
     this.outcome = outcome;
     this.setSelected(null);
