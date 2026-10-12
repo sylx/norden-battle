@@ -10,7 +10,9 @@
  * - 描画負荷: FPS・解像度・森の描き方・深度プリパス・影の更新。
  * - セリフ: 喋る場面で必ず喋らせる（確率を無視）・選択中か調べているユニットに場面ごとのセリフを言わせる。
  *   ゲーム（nordencult）のセリフのデータがあればそれを使い（gameVoices.ts）、ユニットに喋らせる騎士を選べる。言ったセリフの記録。
- * - 退却: 軍ごとにダミーの退却先の拠点を渡すかどうか（渡さない軍は退却できない）・失敗する確率・退却した結果の記録。
+ * - 退却・捕縛: 軍ごとにダミーの退却先の拠点を渡すかどうか（渡さない軍は退却できない）・退却に失敗する確率と殲滅されて捕縛される確率・
+ *   退却と殲滅の結果の記録。
+ * 決着のウィンドウの「最初から」で、同じマップを読み込み直す。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cropBattleArea } from '@norden/map-runtime/core/battleArea';
@@ -26,10 +28,12 @@ import {
   BattleScreen,
   EXCHANGE_CHANCE,
   RETREAT_FAIL_CHANCE,
+  WIPEOUT_CAPTURE_CHANCE,
   type BattleApp,
   type RetreatDestination,
   type RetreatDestinations,
   type RetreatReport,
+  type WipeoutReport,
 } from '@norden/battle-runtime';
 import { gameVoices, type KnightCast } from './gameVoices';
 
@@ -39,7 +43,7 @@ const GAP = 6;
 
 type Tool = 'map' | 'perf' | 'bark' | 'retreat';
 
-const TOOLS: Record<Tool, string> = { map: 'マップ', perf: '描画負荷', bark: 'セリフ', retreat: '退却' };
+const TOOLS: Record<Tool, string> = { map: 'マップ', perf: '描画負荷', bark: 'セリフ', retreat: '退却・捕縛' };
 
 /** 表示確認用のダミーの退却先の拠点（ゲームでは戦場の拠点に街道でつながる自勢力の拠点を渡す） */
 const DUMMY_RETREATS: Record<'red' | 'blue', readonly RetreatDestination[]> = {
@@ -169,6 +173,8 @@ export default function EditorApp() {
       notice={notice ?? (cropError && <span className="err">戦闘の範囲を切り出せません: {cropError}</span>)}
       barks={gameVoices?.barks}
       retreats={retreats}
+      onEnd={() => setRestart((n) => n + 1)}
+      endLabel="最初から"
       onApp={setApp}
       className="editor-screen"
     >
@@ -516,15 +522,20 @@ function BarkTool({ app, cast }: { app: BattleApp; cast: KnightCast | null }) {
   );
 }
 
-/** 退却の記録に残す数 */
+/** 退却・殲滅の記録に残す数 */
 const RETREAT_LOG_SIZE = 8;
 
+/** 退却・殲滅の記録 1 件 */
+type LossLog = ({ kind: 'retreat' } & RetreatReport) | ({ kind: 'wipeout' } & WipeoutReport);
+
 function RetreatTool({ app, teams, onTeams }: { app: BattleApp; teams: ReadonlySet<TeamId>; onTeams: (teams: ReadonlySet<TeamId>) => void }) {
-  const [log, setLog] = useState<readonly RetreatReport[]>(() => [...app.retreated].reverse().slice(0, RETREAT_LOG_SIZE));
+  const [log, setLog] = useState<readonly LossLog[]>([]);
   useEffect(() => {
+    const add = (entry: LossLog) => setLog((list) => [entry, ...list].slice(0, RETREAT_LOG_SIZE));
     const offs = [
       app.on('load', () => setLog([])),
-      app.on('retreat', (report) => setLog((list) => [report, ...list].slice(0, RETREAT_LOG_SIZE))),
+      app.on('retreat', (report) => add({ kind: 'retreat', ...report })),
+      app.on('wipeout', (report) => add({ kind: 'wipeout', ...report })),
     ];
     return () => offs.forEach((off) => off());
   }, [app]);
@@ -535,6 +546,8 @@ function RetreatTool({ app, teams, onTeams }: { app: BattleApp; teams: ReadonlyS
     onTeams(next);
   };
   const percent = (p: number) => `${Math.round(p * 100)}%`;
+  const table = (chances: readonly number[]) =>
+    chances.map((p, n) => `${n}${n === chances.length - 1 ? ' 以上' : ''} ${percent(p)}`).join(' / ');
   return (
     <>
       <p className="hint">ダミーの退却先の拠点を渡す軍（渡さない軍は退却を選べない）。メニューを開き直すと反映される</p>
@@ -544,19 +557,24 @@ function RetreatTool({ app, teams, onTeams }: { app: BattleApp; teams: ReadonlyS
           {DUMMY_RETREATS[team].map((d) => d.name).join('・')}
         </label>
       ))}
-      <p className="hint">
-        失敗する確率（隣接する敵の数）:{' '}
-        {RETREAT_FAIL_CHANCE.map((p, n) => `${n}${n === RETREAT_FAIL_CHANCE.length - 1 ? ' 以上' : ''} ${percent(p)}`).join(' / ')}。失敗すると捕虜になる
-      </p>
+      <p className="hint">退却に失敗する確率（隣接する敵の数）: {table(RETREAT_FAIL_CHANCE)}。失敗すると捕虜になる</p>
+      <p className="hint">殲滅されて指揮官が捕縛される確率（隣接する敵の数）: {table(WIPEOUT_CAPTURE_CHANCE)}。捕縛されなければ落ち延びる</p>
       {log.length > 0 && (
         <ul className="bark-log">
           {log.map((r, i) => (
             <li key={i}>
               <span className="bark-log__who">
                 第 {r.turn} ターン {TEAM_DEFS[r.unit.team].name} {UNIT_DEFS[r.unit.type].name}
-                {r.troopId ? `（${r.troopId}）` : ''}・失敗 {percent(r.failChance)}（敵 {r.enemies}）
+                {r.troopId ? `（${r.troopId}）` : ''}・{r.kind === 'retreat' ? '失敗' : '捕縛'} {percent(r.kind === 'retreat' ? r.failChance : r.captureChance)}（敵{' '}
+                {r.enemies}）
               </span>
-              {r.captured ? `${r.to.name}への退却に失敗し、捕虜になった` : `${r.to.name}へ退却した`}
+              {r.kind === 'retreat'
+                ? r.captured
+                  ? `${r.to.name}への退却に失敗し、捕虜になった`
+                  : `${r.to.name}へ退却した`
+                : r.captured
+                  ? '殲滅され、指揮官が捕縛された'
+                  : '殲滅されたが、指揮官は落ち延びた'}
             </li>
           ))}
         </ul>

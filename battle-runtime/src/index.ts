@@ -21,6 +21,10 @@ export type { ActionId, MenuAction, MenuChild, SkillId } from './actions';
 export { adjacentEnemies, RETREAT_FAIL_CHANCE, retreatFailChance } from './retreat';
 export type { RetreatDestination, RetreatDestinations, RetreatReport } from './retreat';
 
+// 殲滅されたときの指揮官の捕縛（結果は WipeoutReport で受け取る）
+export { WIPEOUT_CAPTURE_CHANCE, wipeoutCaptureChance } from './wipeout';
+export type { WipeoutReport } from './wipeout';
+
 // 勝敗（決着は BattleScreen の onEnd・BattleApp の end で受け取る）
 export { BATTLE_END_REASON_NAMES, judgeBattle } from './victory';
 export type { BattleEndReason, BattleOutcome } from './victory';

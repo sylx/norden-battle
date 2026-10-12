@@ -7,6 +7,7 @@
  *   失敗したユニットは捕虜になる。成功しても失敗しても、そのユニットは戦場から消える。
  * - 結果は RetreatReport で知らせる（BattleApp の retreat のイベント・retreated）。捕虜をどう扱うかは使う側が決める。
  */
+import type { Offset } from '@norden/map-runtime/core/hex';
 import type { HexMap } from '@norden/map-runtime/core/mapData';
 import type { TeamId, UnitData } from '@norden/map-runtime/core/units';
 import type { UnitStatus } from './unitStatus';
@@ -49,10 +50,10 @@ export function retreatFailChance(enemies: number): number {
   return RETREAT_FAIL_CHANCE[Math.min(enemies, RETREAT_FAIL_CHANCE.length - 1)];
 }
 
-/** unit に隣接している敵ユニット */
-export function adjacentEnemies(map: HexMap, unit: UnitData): UnitData[] {
+/** unit が pos（省略時はいる HEX）にいるときに隣接している敵ユニット */
+export function adjacentEnemies(map: HexMap, unit: UnitData, pos: Offset = unit): UnitData[] {
   return map.layout
-    .neighbors(unit.col, unit.row)
+    .neighbors(pos.col, pos.row)
     .map((o) => map.unitAt(o.col, o.row))
     .filter((u): u is UnitData => !!u && u.team !== unit.team);
 }

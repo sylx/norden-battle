@@ -11,6 +11,7 @@
  * - 画面の上の中央に戦況（軍ごとの兵数の合計の比の帯）を出す。
  * - 攻撃・迎撃・鼓舞・殲滅などのとき、ユニットの頭上にセリフの吹き出しを出す（BattleApp・speechBubbles.ts）。何を喋るかは barks で差し替える。
  * - 退却先の拠点は軍ごとに retreats で渡す（無い軍は退却できない）。退却した・捕虜になったユニットは onRetreat で知らせる。
+ * - 殲滅されたユニット（指揮官が捕縛されたか）は onWipeout で知らせる。
  * - 決着すると（どちらかの陣営の全滅・退却、攻撃側の入城。victory.ts）決着のカットインを出し、終わったら画面の中央に
  *   決着のウィンドウ（BattleEndWindow.tsx）を出す。そのボタン（onEnd を渡したときだけ）で使う側に知らせる。
  *   カットインのテンプレートは CUTIN_TEMPLATES の battle-end（無ければ battle-start の見た目）。決着した後はターン表示を出さない。
@@ -26,6 +27,7 @@ import { BattleApp, type BattlePhase, type StatusFactory } from '../app';
 import { demoBarks, type BarkSource } from '../barks';
 import { SIDE_TEAM, type TroopFactory } from '../deployment';
 import type { RetreatDestinations, RetreatReport } from '../retreat';
+import type { WipeoutReport } from '../wipeout';
 import { BATTLE_END_REASON_NAMES, type BattleOutcome } from '../victory';
 import ActionMenu from './ActionMenu';
 import BattleEndWindow from './BattleEndWindow';
@@ -90,6 +92,8 @@ export interface BattleScreenProps {
   retreats?: RetreatDestinations;
   /** ユニットが退却した・退却に失敗して捕虜になったとき（この戦闘のすべては BattleApp.retreated にも残る） */
   onRetreat?: (report: RetreatReport) => void;
+  /** ユニットが殲滅されたとき（指揮官が捕縛されたかは report.captured。この戦闘のすべては BattleApp.wipedOut にも残る） */
+  onWipeout?: (report: WipeoutReport) => void;
   /** 決着のウィンドウのボタンを押したとき（渡さなければボタンを出さない。決着そのものは BattleApp の end でも受け取れる） */
   onEnd?: (outcome: BattleOutcome) => void;
   /** 決着のウィンドウのボタンの文字（既定は「戦闘を終える」） */
@@ -110,6 +114,7 @@ export default function BattleScreen({
   barks,
   retreats,
   onRetreat,
+  onWipeout,
   onEnd,
   endLabel = '戦闘を終える',
   notice,
@@ -130,8 +135,8 @@ export default function BattleScreen({
   /** 戦闘の決着（まだなら null）と、決着のカットインを終えて決着のウィンドウを出しているか */
   const [outcome, setOutcome] = useState<BattleOutcome | null>(null);
   const [endShown, setEndShown] = useState(false);
-  const latest = useRef({ statuses, troops, cutInTexts, onRetreat, onApp });
-  latest.current = { statuses, troops, cutInTexts, onRetreat, onApp };
+  const latest = useRef({ statuses, troops, cutInTexts, onRetreat, onWipeout, onApp });
+  latest.current = { statuses, troops, cutInTexts, onRetreat, onWipeout, onApp };
 
   useEffect(() => {
     const app = new BattleApp(viewportRef.current!);
@@ -161,6 +166,7 @@ export default function BattleScreen({
       app.on('targetReject', (reason) => setStatus(rejectStatus(reason))),
       app.on('execute', (report) => setStatus(executeStatus(report))),
       app.on('retreat', (report) => latest.current.onRetreat?.(report)),
+      app.on('wipeout', (report) => latest.current.onWipeout?.(report)),
       app.on('end', (o) => {
         setOutcome(o);
         setStatus(endStatus(o));

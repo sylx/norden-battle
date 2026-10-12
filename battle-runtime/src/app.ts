@@ -46,6 +46,8 @@
  *   拠点を選ぶとすぐに実行する。退却先の無い軍のユニットは選べない。隣接している敵ユニットの数で決まる確率で失敗し（retreat.ts）、
  *   失敗すると捕虜になる。成功したユニットは敵から離れる向きへ下がりながら消え、失敗したユニットは下がりかけたところで止められて消える。
  *   結果は retreat のイベントで知らせ、retreated に残す（捕虜をどう扱うかは使う側が決める）。
+ * - 兵数が 0 になった（殲滅された）ユニットの指揮官は、そのとき隣接している敵ユニットの数で決まる確率で捕縛される（wipeout.ts）。
+ *   捕縛されなければ落ち延びる。結果は wipeout のイベントで知らせ、wipedOut に残す。
  *
  * セリフ（barks.ts。吹き出しは speechBubbles.ts）:
  * - 攻撃: カメラが寄ったところで攻撃するユニットが確率で喋り、読み終えてから攻撃する。
@@ -91,6 +93,7 @@ import { LANCE_HIT_SEC, LanceEffects } from './lanceFx';
 import { applyMorale } from './morale';
 import { ActionMenuModel } from './menuModel';
 import { adjacentEnemies, retreatFailChance, type RetreatDestination, type RetreatDestinations, type RetreatReport } from './retreat';
+import { wipeoutCaptureChance, type WipeoutReport } from './wipeout';
 import { inEnemyZoc, movePath, moveRange, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
 import { SLASH_HIT_SEC, SlashEffects } from './slashFx';
@@ -228,6 +231,8 @@ export interface ExecuteReport {
   inspire?: number;
   /** 退却の結果（退却しなかったら無い） */
   retreat?: RetreatReport;
+  /** 殲滅されたユニット（自分・相手。指揮官が捕縛されたか） */
+  wipeouts: WipeoutReport[];
 }
 
 /**
@@ -275,6 +280,8 @@ export interface BattleEvents {
   execute: [report: ExecuteReport];
   /** ユニットが退却した・退却に失敗して捕虜になったとき（ユニットはもうマップにいない） */
   retreat: [report: RetreatReport];
+  /** ユニットが殲滅されたとき（ユニットはもうマップにいない。指揮官が捕縛されたかは report.captured） */
+  wipeout: [report: WipeoutReport];
   /** 戦闘が決着したとき（execute の後） */
   end: [outcome: BattleOutcome];
   /** ユニットがセリフを言うと決まったとき（掛け合いの 2 行目からなど、吹き出しを出すのは遅れることがある） */
@@ -394,6 +401,8 @@ export class BattleApp {
   retreats: RetreatDestinations = {};
   /** この戦闘で退却した・退却に失敗して捕虜になったユニット（順に。マップを読み込むと空にする） */
   readonly retreated: RetreatReport[] = [];
+  /** この戦闘で殲滅されたユニット（順に。マップを読み込むと空にする） */
+  readonly wipedOut: WipeoutReport[] = [];
   /** 配備したユニットの部隊の ID（戦闘が始まったときに配備から写す） */
   private troopIds = new Map<UnitData, string>();
   /** 防衛拠点の HEX（マップの stronghold。無ければ入城では決着しない） */
@@ -510,6 +519,7 @@ export class BattleApp {
     this.cameraFocus.stop();
     this.statuses = makeStatuses(map.allUnits());
     this.retreated.length = 0;
+    this.wipedOut.length = 0;
     this.troopIds = new Map();
     this.outcome = null;
     this.judged = new Set();
@@ -931,6 +941,7 @@ export class BattleApp {
       moveCost: BattleApp.moveCost(plan),
       cost: BattleApp.planCost(plan) + (end === 'inspire' ? SKILL_DEFS.inspire.cost : 0),
       intercepts: [],
+      wipeouts: [],
       lost: false,
       halted: false,
       intercept: end === 'intercept',
@@ -1144,8 +1155,10 @@ export class BattleApp {
     ss.intercepting = false;
     report.lost = plan.status.soldiers <= 0;
     report.intercepts.push({ unit: phase.shooter, result, targetLeft: Math.max(0, plan.status.soldiers), afterAttack: !!report.attack, halted: false });
+    // 移動していたユニットは、撃たれた HEX（at）で殲滅される
+    const w = report.lost ? this.wipeOut(report, plan.unit, plan.status, phase.at, phase.shooter, []) : null;
     const p = this.view.units.placements().find((x) => x.unit === plan.unit);
-    if (p) this.popups.show(p, report.lost ? `迎撃 -${result.damage} 壊滅` : `迎撃 -${result.damage}`, 'damage');
+    if (p) this.popups.show(p, `迎撃 -${result.damage}${wipeoutLabel(w)}`, 'damage');
   }
 
   /**
@@ -1340,6 +1353,27 @@ export class BattleApp {
     this.view.units.moveTo(unit, new THREE.Vector3(x, this.view.groundAt(x, z) + hop, z), b.x >= a.x ? 'right' : 'left');
   }
 
+  /**
+   * unit が pos で by に殲滅された。そのとき隣接している敵ユニット（exclude の同時に殲滅されたものを除く）の数で、
+   * 指揮官が捕縛されるかを決めて report に記録する
+   */
+  private wipeOut(report: ExecuteReport, unit: UnitData, status: UnitStatus, pos: Offset, by: UnitData, exclude: readonly UnitData[]): WipeoutReport {
+    const enemies = adjacentEnemies(this.map!, unit, pos).filter((u) => !exclude.includes(u)).length;
+    const captureChance = wipeoutCaptureChance(enemies);
+    const w: WipeoutReport = {
+      unit,
+      troopId: this.troopIds.get(unit) ?? null,
+      status,
+      turn: this.turn,
+      by,
+      enemies,
+      captureChance,
+      captured: Math.random() < captureChance,
+    };
+    report.wipeouts.push(w);
+    return w;
+  }
+
   /** 攻撃の結果（ランダム係数を振る）を兵数・士気に反映し、頭上に減った数を出す */
   private applyAttack(exec: Execution): void {
     const map = this.map!;
@@ -1369,14 +1403,19 @@ export class BattleApp {
       targetLeft: Math.max(0, ts.soldiers),
     };
 
+    // 殲滅されたユニットの指揮官の捕縛（相討ちなら、相手は隣接する敵に数えない）
+    const both = report.attack.targetDestroyed && report.attack.unitDestroyed;
+    const tw = report.attack.targetDestroyed ? this.wipeOut(report, attack.target, ts, attack.target, plan.unit, both ? [plan.unit] : []) : null;
+    const uw = report.attack.unitDestroyed ? this.wipeOut(report, plan.unit, plan.status, plan.unit, attack.target, both ? [attack.target] : []) : null;
+
     const placements = this.view.units.placements();
     const at = (u: UnitData) => placements.find((p) => p.unit === u);
     const tp = at(attack.target);
     const up = at(plan.unit);
     const label = result.supporters > 0 ? `一斉 -${result.damage}` : `-${result.damage}`;
-    if (tp) this.popups.show(tp, report.attack.targetDestroyed ? `${label} 壊滅` : label, 'damage');
+    if (tp) this.popups.show(tp, `${label}${wipeoutLabel(tw)}`, 'damage');
     // 突撃は当たる時点で相手と重なっているので、反撃の数字は駆け抜ける絵に付いていかせて、相手の数字から離す
-    const counterText = report.attack.unitDestroyed ? `-${result.counter} 壊滅` : `-${result.counter}`;
+    const counterText = `-${result.counter}${wipeoutLabel(uw)}`;
     if (up && result.direct) this.popups.show(up, counterText, 'counter', !!attack.landing);
   }
 
@@ -1422,6 +1461,10 @@ export class BattleApp {
     if (report.retreat) {
       this.retreated.push(report.retreat);
       this.emit('retreat', report.retreat);
+    }
+    for (const w of report.wipeouts) {
+      this.wipedOut.push(w);
+      this.emit('wipeout', w);
     }
     this.emit('execute', report);
     this.judge();
@@ -1654,6 +1697,11 @@ export class BattleApp {
     this.popups.update(this.ctx.camera);
     this.bubbles.update(placements, this.ctx.camera, this.view.display.units);
   }
+}
+
+/** 頭上の数字に付ける殲滅の印（殲滅されていなければ空。指揮官が捕縛されたら「捕縛」も） */
+function wipeoutLabel(w: WipeoutReport | null): string {
+  return w ? (w.captured ? ' 壊滅 捕縛' : ' 壊滅') : '';
 }
 
 /** 攻撃の踏み込み・跳ねる量（t は攻撃のアニメーションの 0〜1）。前半で踏み込んで戻る */

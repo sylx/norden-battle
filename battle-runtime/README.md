@@ -11,7 +11,7 @@ UI の部品は [norden-ui](https://github.com/sylx/norden-ui) を使う（地�
 import { BattleScreen } from '@norden/battle-runtime';
 
 // 親の要素いっぱいに広がる。map を変えると読み込み直す
-<BattleScreen map={mapData} statuses={makeStatuses} troops={makeTroops} retreats={retreats} onRetreat={onRetreat} onApp={setApp} notice={error}>
+<BattleScreen map={mapData} statuses={makeStatuses} troops={makeTroops} retreats={retreats} onRetreat={onRetreat} onEnd={onEnd} onApp={setApp} notice={error}>
   {/* 上に重ねるもの（エディタの道具・ゲームの見出しなど） */}
 </BattleScreen>
 ```
@@ -35,6 +35,13 @@ import { BattleScreen } from '@norden/battle-runtime';
 - `onRetreat`: ユニットが退却した・退却に失敗して捕虜になったとき（`RetreatReport`: ユニット・配備した部隊の ID `troopId`・
   退却したときの状態・退却先・隣接していた敵の数・失敗する確率・捕虜になったか `captured`）。この戦闘の分は `app.retreated` にも残る。
   ゲームは部隊の ID（騎士の ID で作る）から騎士を引いて、戦後処理に渡す。捕虜をどう扱うかは使う側が決める。
+- `onWipeout`: ユニットが殲滅されたとき（`WipeoutReport`: ユニット・`troopId`・殲滅されたときの状態・殲滅したユニット・
+  隣接していた敵の数・捕縛される確率・指揮官が捕縛されたか `captured`）。この戦闘の分は `app.wipedOut` にも残る。
+  ゲームは退却と同じく騎士を引いて戦後処理に渡す。
+- `onEnd`: 決着のウィンドウのボタンを押したとき（`BattleOutcome`: 勝った陣営 `winner`・決着の理由 `reason`・ターン・入城したユニット）。
+  渡さなければボタンを出さない。ボタンの文字は `endLabel`（既定は「戦闘を終える」）。決着そのものは `app.on('end', …)`・`app.outcome` でも受け取れる。
+  ゲームは勝った陣営と退却の結果を戦後処理に渡して結果の画面へ進む。
+- `cutInTexts.end`: 決着のカットインの文字（既定は「青軍の勝利」と決着の理由）。
 - `notice`: ステータス行に出す知らせ（マップを読めないときなど）。
 
 ## 戦闘の流れ
@@ -53,10 +60,21 @@ import { BattleScreen } from '@norden/battle-runtime';
    「特殊」の「退却」（ターンの初めだけ。行動力は使わない）は、行動メニューに退却先の拠点の一覧と失敗する確率を出し、拠点を選ぶと退却する
    （退却先が無い軍のユニット・ターンの初めでないときは選べない。2 階層目にはそのときも灰色で残し、理由を title に持たせる）。隣接している敵ユニットの数で失敗することがあり（0: 1%・1: 10%・2: 25%・3 以上: 50%。`RETREAT_FAIL_CHANCE`）、
    失敗すると捕虜になる。どちらでもそのユニットは戦場から消える（成功は敵から離れる向きへ下がりながら、失敗は下がりかけて止められてから）。
+   兵数が 0 になった（殲滅された）ユニットの指揮官は、そのとき隣接している敵ユニットの数で捕縛され捕虜になる
+   （0: 10%・1: 30%・2: 50%・3 以上: 75%。`WIPEOUT_CAPTURE_CHANCE`。相討ちの相手は数えない）。捕縛されなければ落ち延びる。
+   頭上の数字・戦闘記録に「捕縛」と出す。
    画面の上の中央の戦況のパネルに、軍ごとの兵数の合計の比を帯で出す。
    「ターン終了」で次の軍の番になり、その軍の行動力が戻る。両軍が 1 回ずつ行動したらターンの数が進む。
    いまはどちらの軍も人が操作する（CPU の操作はまだ無い）。
-3. セリフ: 次の場面で、ユニットの頭上に指揮官の顔付きの吹き出しを出す（`barks.ts`・`speechBubbles.ts`）。
+3. 決着（`victory.ts`）: 行動を実行し終えるたびに調べる。
+   - 攻撃側: すべての部隊が殲滅または退却した（捕虜になったものも含む）ら負け
+   - 防衛側: すべての部隊が殲滅または退却したら負け。防衛拠点（マップの `stronghold`。地面を金色に塗り、地形のウィンドウに「防衛拠点」の札）に
+     攻撃側のユニットが入ったら負け（入城）。入城は行動を終えたときに防衛拠点にいること（通り過ぎただけでは入城しない）
+   - 両軍が同時にいなくなったら防衛側の勝ち。戦闘が始まったときに部隊のいなかった陣営は、いなくなっても負けにしない
+
+   決着すると決着のカットイン（`CUTIN_TEMPLATES['battle-end']`。無ければ `battle-start` の見た目）の後に、画面の中央に決着のウィンドウを出す。
+   決着した後はユニットを選べず、ターンも終えられない。
+4. セリフ: 次の場面で、ユニットの頭上に指揮官の顔付きの吹き出しを出す（`barks.ts`・`speechBubbles.ts`）。
    （ランダム）の場面は確率（`BARK_CHANCE`・`EXCHANGE_CHANCE`）で喋らないこともある。
 
    | 場面 | いつ | 確率 |
@@ -90,6 +108,8 @@ src/
   morale.ts        士気の増減
   movement.ts      移動の範囲・経路・ZOC
   retreat.ts       退却（退却先の拠点の型・失敗する確率・結果の RetreatReport）
+  wipeout.ts       殲滅されたときの指揮官の捕縛（捕縛される確率・結果の WipeoutReport）
+  victory.ts       勝敗（全滅・退却と入城の判定。決着の BattleOutcome）
   unitStatus.ts    ユニットの戦闘中の状態（と表示確認用の仮の値）
   unitTags.ts      ユニットの頭上の情報札（HTML。毎フレーム置き直す）
   popups.ts        兵数の減少などを頭上に出す
@@ -100,6 +120,7 @@ src/
     BattleScreen.tsx     戦闘画面（BattleApp を置き、下の部品とカットインを重ねる）
     ActionMenu.tsx       行動メニュー（ユニットの横に毎フレーム追いかける。退却を選んだ後は退却先の拠点の一覧）
     DeployWindow.tsx     配備のウィンドウ（部隊の一覧・自動配置・配備完了）
+    BattleEndWindow.tsx  決着のウィンドウ（画面の中央。勝った陣営・決着の理由・戦闘を終えるボタン）
     SituationPanel.tsx   戦況のパネル（画面の上の中央。軍ごとの兵数の合計の比の帯）
     UnitInfoWindow.tsx   騎士のウィンドウ（地形の右に固定。カーソルの下・選択中のユニットの顔・兵数・士気・行動力・能力）
     StatusCard.tsx       情報札と同じ中身（騎士・配備のウィンドウで使う）

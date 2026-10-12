@@ -44,6 +44,9 @@ export interface AttackLogEntry {
   landing: Offset | null;
   /** 迎撃で相手の行動を止めたか */
   halted?: boolean;
+  /** 殲滅されて指揮官が捕縛されたか（攻撃したユニット・相手） */
+  attackerCaptured?: boolean;
+  targetCaptured?: boolean;
 }
 
 /** 下端からこれ以内にいれば「最新を見ている」とみなして自動でスクロールする（CSS ピクセル） */
@@ -184,9 +187,9 @@ function Entry({ entry: e }: { entry: AttackLogEntry }) {
         <span className="log-action">{e.actionName}</span>
       </div>
       <div className="log-result">
-        <Loss label="損害" kind="damage" n={e.damage} left={e.targetLeft} morale={e.morale.defender} />
+        <Loss label="損害" kind="damage" n={e.damage} left={e.targetLeft} morale={e.morale.defender} captured={e.targetCaptured} />
         {e.direct ? (
-          <Loss label="反撃" kind="counter" n={e.counter} left={e.attackerLeft} morale={e.morale.attacker} />
+          <Loss label="反撃" kind="counter" n={e.counter} left={e.attackerLeft} morale={e.morale.attacker} captured={e.attackerCaptured} />
         ) : (
           <span className="log-none">
             反撃なし
@@ -210,10 +213,10 @@ function Unit({ unit }: { unit: UnitData }) {
   );
 }
 
-/** 兵数の減少（減った数と残り。0 なら壊滅）と士気の増減 */
-function Loss({ label, kind, n, left, morale }: { label: string; kind: string; n: number; left: number; morale: number }) {
+/** 兵数の減少（減った数と残り。0 なら壊滅。指揮官が捕縛されたら捕縛も）と士気の増減 */
+function Loss({ label, kind, n, left, morale, captured }: { label: string; kind: string; n: number; left: number; morale: number; captured?: boolean }) {
   let rest: ReactNode;
-  if (left <= 0) rest = <span className="log-destroyed">壊滅</span>;
+  if (left <= 0) rest = <span className="log-destroyed">{captured ? '壊滅・捕縛' : '壊滅'}</span>;
   else
     rest = (
       <>
@@ -237,8 +240,9 @@ function Morale({ n }: { n: number }) {
 }
 
 /** 実行の結果から記録を作る（攻撃の前の移動で受けた迎撃 → 攻撃 → 攻撃の後の移動で受けた迎撃の順） */
-function logEntries(app: BattleApp, { unit, attack, intercepts }: ExecuteReport): AttackLogEntry[] {
+function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: ExecuteReport): AttackLogEntry[] {
   const out: AttackLogEntry[] = [];
+  const captured = (u: UnitData) => wipeouts.some((w) => w.unit === u && w.captured);
   const addIntercepts = (afterAttack: boolean) => {
     for (const i of intercepts) {
       if (i.afterAttack !== afterAttack) continue;
@@ -261,6 +265,7 @@ function logEntries(app: BattleApp, { unit, attack, intercepts }: ExecuteReport)
         targetLeft: i.targetLeft,
         landing: null,
         halted: i.halted,
+        targetCaptured: i.targetLeft <= 0 && captured(unit),
       });
     }
   };
@@ -284,6 +289,8 @@ function logEntries(app: BattleApp, { unit, attack, intercepts }: ExecuteReport)
       attackerLeft: attack.unitLeft,
       targetLeft: attack.targetLeft,
       landing: attack.landing,
+      attackerCaptured: captured(unit),
+      targetCaptured: captured(attack.target),
     });
   }
   addIntercepts(true);

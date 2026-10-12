@@ -95,7 +95,7 @@ export function deployStatus({ side, team, troops, picked, placed, limit }: Depl
 }
 
 /** 決定で予約を実行し終えたとき */
-export function executeStatus({ unit, from, moveCost, attack, intercepts, lost, halted, intercept, wait, inspire, retreat }: ExecuteReport): string {
+export function executeStatus({ unit, from, moveCost, attack, intercepts, wipeouts, lost, halted, intercept, wait, inspire, retreat }: ExecuteReport): string {
   const parts: string[] = [];
   if (retreat) {
     const odds = `失敗 ${Math.round(retreat.failChance * 100)}%・隣接する敵 ${retreat.enemies}`;
@@ -123,5 +123,9 @@ export function executeStatus({ unit, from, moveCost, attack, intercepts, lost, 
   else if (intercept && !lost) parts.push('迎撃の構えで待機（行動終了）');
   else if (wait && !lost) parts.push('待機（行動終了）');
   if (inspire !== undefined) parts.push(`鼓舞: 士気 +${inspire}`);
+  for (const w of wipeouts) {
+    const odds = `捕縛 ${Math.round(w.captureChance * 100)}%・隣接する敵 ${w.enemies}`;
+    parts.push(`${teamUnit(w.unit)}の指揮官は${w.captured ? '捕縛された' : '落ち延びた'}（${odds}）`);
+  }
   return `${unitLabel(unit)}: ${parts.join(' → ')}`;
 }
