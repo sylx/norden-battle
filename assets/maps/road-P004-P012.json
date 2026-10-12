@@ -24,13 +24,23 @@
       "row": 2
     }
   },
+  "strongholds": {
+    "P004": {
+      "col": 29,
+      "row": 3
+    },
+    "P012": {
+      "col": 2,
+      "row": 9
+    }
+  },
   "deployments": {
     "P012": {
       "attacker": [{"col":15,"row":14},{"col":14,"row":15},{"col":15,"row":15},{"col":14,"row":16},{"col":15,"row":16},{"col":14,"row":17},{"col":15,"row":17}],
       "defender": [{"col":5,"row":7},{"col":1,"row":8},{"col":2,"row":8},{"col":3,"row":8},{"col":4,"row":8},{"col":5,"row":8},{"col":6,"row":8},{"col":7,"row":8},{"col":1,"row":9},{"col":2,"row":9},{"col":3,"row":9},{"col":4,"row":9},{"col":6,"row":9},{"col":7,"row":9}]
     },
     "P004": {
-      "attacker": [{"col":16,"row":14},{"col":17,"row":14},{"col":18,"row":14},{"col":19,"row":14},{"col":16,"row":15},{"col":18,"row":15},{"col":19,"row":15},{"col":20,"row":15}],
+      "attacker": [{"col":16,"row":14},{"col":17,"row":14},{"col":18,"row":14},{"col":19,"row":14},{"col":16,"row":15},{"col":17,"row":15},{"col":18,"row":15},{"col":19,"row":15},{"col":20,"row":15}],
       "defender": [{"col":29,"row":2},{"col":28,"row":3},{"col":29,"row":3},{"col":30,"row":3},{"col":27,"row":4},{"col":28,"row":4},{"col":29,"row":4},{"col":30,"row":4},{"col":26,"row":5},{"col":27,"row":5},{"col":28,"row":5},{"col":29,"row":5},{"col":26,"row":6},{"col":27,"row":6},{"col":28,"row":6},{"col":29,"row":6},{"col":28,"row":7}]
     }
   },
