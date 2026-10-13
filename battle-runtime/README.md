@@ -107,7 +107,7 @@ src/
   menuModel.ts     行動メニューの状態（中身・2 階層目・毎フレームの位置の基準）
   actions.ts       行動の定義と行動メニューの項目の組み立て
   combat.ts        攻撃の種類・射程・相手・結果
-  damage.ts        ダメージの計算
+  damage.ts        ダメージの計算（ユニットそのものの力と戦う状況の倍率。基本攻撃力・基本防御力）
   morale.ts        士気の増減
   movement.ts      移動の範囲・経路・ZOC
   retreat.ts       退却（退却先の拠点の型・失敗する確率・結果の RetreatReport）

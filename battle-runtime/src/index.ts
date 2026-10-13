@@ -15,6 +15,11 @@ export type { DeployState, Troop, TroopFactory } from './deployment';
 // ユニットの戦闘中の状態
 export { demoStatus, demoStatuses, MAX_MORALE } from './unitStatus';
 export type { UnitStatus } from './unitStatus';
+
+// ユニットそのものの力（基本攻撃力・基本防御力。戦う前の比べ合いに使う）
+export { basicAttack, basicDefense, MAX_BASIC_DEFENSE, STANDARD_UNIT } from './damage';
+export type { UnitPower } from './damage';
+export { mightFor } from './combat';
 export type { ActionId, MenuAction, MenuChild, SkillId } from './actions';
 
 // 退却（退却先の拠点は軍ごとに使う側が渡し、結果は RetreatReport で受け取る）

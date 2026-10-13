@@ -58,9 +58,14 @@ export const COMBAT_DEFS: Record<UnitType, CombatDef> = {
 /** 隣接した相手へでも間接攻撃になる（反撃を受けない）攻撃の種類 */
 const INDIRECT_KINDS: readonly AttackKind[] = ['interceptFire', 'thunderfall'];
 
+/** type の兵種を率いる指揮官の、ダメージ・士気の増減に使う力: 武力（magic の兵種は知力） */
+export function mightFor(type: UnitType, commander: Pick<UnitStatus, 'strength' | 'intelligence'>): number {
+  return COMBAT_DEFS[type].magic ? commander.intelligence : commander.strength;
+}
+
 /** 指揮官の武力（magic の兵種は知力）。ダメージ・士気の増減に使う */
 export function mightOf(unit: UnitData, status: UnitStatus): number {
-  return COMBAT_DEFS[unit.type].magic ? status.intelligence : status.strength;
+  return mightFor(unit.type, status);
 }
 
 export function isAttack(id: ActionId): boolean {
