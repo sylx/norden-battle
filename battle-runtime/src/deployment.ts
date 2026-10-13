@@ -34,7 +34,7 @@ export interface Troop {
   status: UnitStatus;
 }
 
-/** 配備する部隊を配る（既定は表示確認用の仮の部隊。demoTroops） */
+/** 配備する部隊を配る（既定は表示確認用の仮の部隊。demoTroops。ゲームは兵種・兵数・士気・指揮官を troopStatus で渡す） */
 export type TroopFactory = (deploy: BattleDeployment) => Troop[];
 
 /** 配備の様子（変わるたびに作り直す） */

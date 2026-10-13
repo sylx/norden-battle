@@ -45,6 +45,7 @@ export default function UnitInfoWindow({ app }: { app: BattleApp }) {
       <div className="info-head">
         <span className="info-name">
           {team.name} {UNIT_DEFS[unit.type].name}
+          {status.commander && <span className="commander-mark">軍団長</span>}
         </span>
         <State app={app} unit={unit} status={status} />
       </div>

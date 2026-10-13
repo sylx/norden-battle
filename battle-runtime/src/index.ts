@@ -13,8 +13,8 @@ export { demoTroops, MAX_DEPLOY, SIDE_NAMES, SIDE_TEAM } from './deployment';
 export type { DeployState, Troop, TroopFactory } from './deployment';
 
 // ユニットの戦闘中の状態
-export { demoStatus, demoStatuses, MAX_MORALE } from './unitStatus';
-export type { UnitStatus } from './unitStatus';
+export { demoStatus, demoStatuses, FACE_COUNT, MAX_MORALE, troopStatus } from './unitStatus';
+export type { TroopInit, UnitStatus } from './unitStatus';
 
 // ユニットそのものの力（基本攻撃力・基本防御力。戦う前の比べ合いに使う）
 export { basicAttack, basicDefense, MAX_BASIC_DEFENSE, STANDARD_UNIT } from './damage';

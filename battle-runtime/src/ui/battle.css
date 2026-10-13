@@ -1557,3 +1557,14 @@
   border-color: rgba(240, 192, 48, 0.8);
   color: #f0c030;
 }
+
+/* 軍団長の部隊の印（配備のウィンドウ・騎士のウィンドウ） */
+.battle-screen .commander-mark {
+  padding: 0 5px;
+  border: 1px solid #d8b25a;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #ffe08a;
+  background: rgba(120, 80, 20, 0.5);
+}

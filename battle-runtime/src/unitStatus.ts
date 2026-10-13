@@ -30,6 +30,47 @@ export interface UnitStatus {
   justAttacked: boolean;
   /** 迎撃の構えで待機しているか（次に行動するか、間接ユニットが自動で攻撃するまで） */
   intercepting: boolean;
+  /** その陣営の軍団長（軍を率いる騎士）の部隊か */
+  commander?: boolean;
+}
+
+/** ゲームから渡す部隊の、戦闘に入る前の値（troopStatus で戦闘中の状態にする） */
+export interface TroopInit {
+  soldiers: number;
+  /** 兵数の上限（ゲージの満タン）。省略すると soldiers */
+  maxSoldiers?: number;
+  /** 0..MAX_MORALE */
+  morale: number;
+  /** 指揮官の統率・武力・知力（0..100） */
+  leadership: number;
+  strength: number;
+  intelligence: number;
+  /** 指揮官の顔（顔画像の通し番号）。省略すると 0 */
+  face?: number;
+  skills?: SkillId[];
+  /** その陣営の軍団長の部隊か */
+  commander?: boolean;
+}
+
+/** ゲームから渡された部隊の値を、戦闘に入るときの状態にする（行動力は兵種の満タン） */
+export function troopStatus(type: UnitType, init: TroopInit): UnitStatus {
+  return {
+    soldiers: init.soldiers,
+    maxSoldiers: init.maxSoldiers ?? init.soldiers,
+    morale: Math.min(MAX_MORALE, Math.max(0, init.morale)),
+    ap: MAX_AP[type],
+    maxAp: MAX_AP[type],
+    face: init.face ?? 0,
+    skills: init.skills ?? [],
+    leadership: init.leadership,
+    strength: init.strength,
+    intelligence: init.intelligence,
+    moved: false,
+    attacked: false,
+    justAttacked: false,
+    intercepting: false,
+    commander: init.commander ?? false,
+  };
 }
 
 export const MAX_MORALE = 100;

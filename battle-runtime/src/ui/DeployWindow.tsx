@@ -41,7 +41,10 @@ export default function DeployWindow({ app }: { app: BattleApp }) {
               className={`deploy-troop${t.id === picked ? ' picked' : ''}${at ? ' placed' : ''}${!at && full ? ' over' : ''}`}
               onClick={() => app.pickTroop(t.id)}
             >
-              <span className="troop-name">{UNIT_DEFS[t.type].name}</span>
+              <span className="troop-name">
+                {UNIT_DEFS[t.type].name}
+                {t.status.commander && <span className="commander-mark">軍団長</span>}
+              </span>
               <StatusCard status={t.status} className="in-list" />
               <span className="troop-at">{at ? `(${at.col}, ${at.row})` : '未配備'}</span>
               {at && (
