@@ -14,8 +14,10 @@ export interface UnitStatus {
   /** 残り行動力（0..maxAp） */
   ap: number;
   maxAp: number;
-  /** 指揮官の顔（顔画像の左上から行ごとの通し番号 0..FACE_COUNT-1） */
+  /** 指揮官の顔（顔画像の左上から行ごとの通し番号 0..FACE_COUNT-1）。portrait があればそちらを使う */
   face: number;
+  /** 指揮官の顔をゲームの画像から切り出すときの指定（ゲームの騎士の顔。無ければ face の仮の顔） */
+  portrait?: Portrait;
   /** 指揮官のスキル */
   skills: SkillId[];
   /** 指揮官の統率・武力・知力（0..100。ダメージ・士気の増減に効く。damage.ts・morale.ts）。魔術師は武力の代わりに知力を使う */
@@ -34,6 +36,16 @@ export interface UnitStatus {
   commander?: boolean;
 }
 
+/** 指揮官の顔を切り出す画像と範囲（大きさはどれも画像の px） */
+export interface Portrait {
+  url: string;
+  /** 画像全体の大きさ */
+  width: number;
+  height: number;
+  /** 顔の範囲（この範囲を顔の円に収める） */
+  rect: { x: number; y: number; width: number; height: number };
+}
+
 /** ゲームから渡す部隊の、戦闘に入る前の値（troopStatus で戦闘中の状態にする） */
 export interface TroopInit {
   soldiers: number;
@@ -45,8 +57,10 @@ export interface TroopInit {
   leadership: number;
   strength: number;
   intelligence: number;
-  /** 指揮官の顔（顔画像の通し番号）。省略すると 0 */
+  /** 指揮官の顔（顔画像の通し番号）。省略すると 0。portrait を渡せばそちらを使う */
   face?: number;
+  /** 指揮官の顔をゲームの画像から切り出すときの指定（騎士の顔） */
+  portrait?: Portrait;
   skills?: SkillId[];
   /** その陣営の軍団長の部隊か */
   commander?: boolean;
@@ -61,6 +75,7 @@ export function troopStatus(type: UnitType, init: TroopInit): UnitStatus {
     ap: MAX_AP[type],
     maxAp: MAX_AP[type],
     face: init.face ?? 0,
+    ...(init.portrait && { portrait: init.portrait }),
     skills: init.skills ?? [],
     leadership: init.leadership,
     strength: init.strength,

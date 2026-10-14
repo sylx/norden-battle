@@ -14,7 +14,7 @@ import * as THREE from 'three';
 import type { Offset } from '@norden/map-runtime/core/hex';
 import { TEAM_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
-import { FACE_GRID, FACE_SHEET_URL, MAX_MORALE, type UnitStatus } from './unitStatus';
+import { FACE_GRID, FACE_SHEET_URL, MAX_MORALE, type Portrait, type UnitStatus } from './unitStatus';
 
 /** 札の大きさ（CSS ピクセル。ui/battle.css の .unit-tag と合わせる） */
 const TAG_W = 124;
@@ -246,7 +246,7 @@ export class UnitTags {
   }
 
   private render(tag: Tag, s: UnitStatus, active: boolean): void {
-    const key = `${s.soldiers}/${s.maxSoldiers}/${s.morale}/${s.face}/${active}`;
+    const key = `${s.soldiers}/${s.maxSoldiers}/${s.morale}/${s.portrait?.url ?? s.face}/${active}`;
     if (key === tag.shown) return;
     tag.shown = key;
     tag.el.classList.toggle('active', active);
@@ -284,11 +284,15 @@ export function renderStatus(el: HTMLElement, s: UnitStatus): void {
   q('.morale .value').textContent = String(s.morale);
   q('.morale .fill').style.width = `${(100 * clamp01(s.morale / MAX_MORALE)).toFixed(1)}%`;
   el.classList.toggle('low-morale', s.morale < LOW_MORALE);
-  setFace(q('.face'), s.face, FACE_SIZE);
+  setFace(q('.face'), s, FACE_SIZE);
 }
 
-/** el の背景に顔（顔画像の通し番号 face）を入れる。並べた画像のうち 1 枚を、少し拡大して size の円の中に収める */
-export function setFace(el: HTMLElement, face: number, size: number): void {
+/**
+ * el の背景に指揮官の顔を入れる。portrait があればその範囲を size の円いっぱいに、
+ * 無ければ仮の顔画像（通し番号 face）のうち 1 枚を少し拡大して収める
+ */
+export function setFace(el: HTMLElement, { face, portrait }: Pick<UnitStatus, 'face' | 'portrait'>, size: number): void {
+  if (portrait) return setPortrait(el, portrait, size);
   const cell = size * FACE_ZOOM;
   const margin = (cell - size) / 2;
   const col = face % FACE_GRID;
@@ -296,6 +300,16 @@ export function setFace(el: HTMLElement, face: number, size: number): void {
   el.style.backgroundImage = `url("${FACE_SHEET_URL}")`;
   el.style.backgroundSize = `${cell * FACE_GRID}px ${cell * FACE_GRID}px`;
   el.style.backgroundPosition = `${-(col * cell + margin)}px ${-(row * cell + margin)}px`;
+}
+
+/** 顔の範囲（rect）の短い辺を size に合わせ、真ん中を円に収める */
+function setPortrait(el: HTMLElement, { url, width, height, rect }: Portrait, size: number): void {
+  const scale = size / Math.min(rect.width, rect.height);
+  const x = (rect.x + rect.width / 2) * scale - size / 2;
+  const y = (rect.y + rect.height / 2) * scale - size / 2;
+  el.style.backgroundImage = `url("${url}")`;
+  el.style.backgroundSize = `${width * scale}px ${height * scale}px`;
+  el.style.backgroundPosition = `${-x}px ${-y}px`;
 }
 
 /** 候補の位置に置いたときの札の範囲 */

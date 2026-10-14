@@ -13,6 +13,7 @@ import { TEAM_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import type { BarkTone } from './barks';
 import { setFace } from './unitTags';
+import type { UnitStatus } from './unitStatus';
 
 /** 1 秒に出す字数 */
 const TYPE_CPS: Record<BarkTone, number> = { shout: 30, calm: 24, weak: 12 };
@@ -78,10 +79,10 @@ export class SpeechBubbles {
   }
 
   /**
-   * unit の頭上に text を出す（face は指揮官の顔の番号）。
+   * unit の頭上に text を出す（status は喋る部隊の状態。指揮官の顔を出す）。
    * 戻り値は、今から読み終えるまでの秒数（全文を出し終えて少し間を置くまで。次の演出をこの後にする）
    */
-  say(unit: UnitData, face: number, text: string, { delay = 0, tone = 'calm', away = null }: SayOptions = {}): number {
+  say(unit: UnitData, status: UnitStatus, text: string, { delay = 0, tone = 'calm', away = null }: SayOptions = {}): number {
     for (const b of this.items.filter((x) => x.unit === unit)) this.remove(b);
     const el = document.createElement('div');
     el.className = `bark ${tone}`;
@@ -92,7 +93,7 @@ export class SpeechBubbles {
         <div class="bark-body"><div class="bark-face"></div><p class="bark-text"><span class="shown"></span><span class="rest"></span></p></div>
         <div class="bark-tail"></div>
       </div>`;
-    setFace(el.querySelector('.bark-face') as HTMLElement, face, FACE_SIZE);
+    setFace(el.querySelector('.bark-face') as HTMLElement, status, FACE_SIZE);
     const chars = [...text];
     const rest = el.querySelector('.rest') as HTMLSpanElement;
     rest.textContent = text;

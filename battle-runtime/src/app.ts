@@ -1509,7 +1509,7 @@ export class BattleApp {
     const text = this.barks.line(situation, speaker, other && this.speaker(other));
     if (!text) return 0;
     this.emit('bark', unit, situation, text);
-    return this.bubbles.say(unit, speaker.status.face, text, { delay, tone: BARK_TONE[situation], away: other });
+    return this.bubbles.say(unit, speaker.status, text, { delay, tone: BARK_TONE[situation], away: other });
   }
 
   /**
@@ -1527,7 +1527,7 @@ export class BattleApp {
       const s = speakers[who];
       if (!s) continue;
       this.emit('bark', s.unit, 'exchange', text);
-      at = this.bubbles.say(s.unit, s.status.face, text, { delay: at, tone: BARK_TONE.exchange, away: target });
+      at = this.bubbles.say(s.unit, s.status, text, { delay: at, tone: BARK_TONE.exchange, away: target });
     }
     return at;
   }

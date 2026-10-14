@@ -14,7 +14,7 @@ export type { DeployState, Troop, TroopFactory } from './deployment';
 
 // ユニットの戦闘中の状態
 export { demoStatus, demoStatuses, FACE_COUNT, MAX_MORALE, troopStatus } from './unitStatus';
-export type { TroopInit, UnitStatus } from './unitStatus';
+export type { Portrait, TroopInit, UnitStatus } from './unitStatus';
 
 // ユニットそのものの力（基本攻撃力・基本防御力。戦う前の比べ合いに使う）
 export { basicAttack, basicDefense, MAX_BASIC_DEFENSE, STANDARD_UNIT } from './damage';
