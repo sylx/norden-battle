@@ -12,7 +12,7 @@
  *   ゲーム（nordencult）のセリフのデータがあればそれを使い（gameVoices.ts）、ユニットに喋らせる騎士を選べる。言ったセリフの記録。
  * - 退却・捕縛: 軍ごとにダミーの退却先の拠点を渡すかどうか（渡さない軍は退却できない）・退却に失敗する確率と殲滅されて捕縛される確率・
  *   退却と殲滅の結果の記録。
- * 決着のカットインは青軍（攻撃側）をプレイヤーとして勝利・敗北を出す。決着のウィンドウの「最初から」で、同じマップを読み込み直す。
+ * 勢力は表示確認用の仮の勢力（demoFactions）。決着のカットインは攻撃側をプレイヤーとして勝利・敗北を出す。決着のウィンドウの「最初から」で、同じマップを読み込み直す。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cropBattleArea } from '@norden/map-runtime/core/battleArea';
@@ -20,14 +20,16 @@ import { MapParseError, parseMapData, type MapData } from '@norden/map-runtime/c
 import { listMapFiles, loadMapFile, type MapFileInfo } from '@norden/map-runtime/mapFiles';
 import type { ForestMode } from '@norden/map-runtime/render/foliage';
 import { DEFAULT_PIXEL_RATIO } from '@norden/map-runtime/render/scene';
-import { TEAM_DEFS, UNIT_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
+import { UNIT_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
 import {
   BARK_CHANCE,
   BARK_SITUATION_NAMES,
   BARK_SITUATIONS,
   BattleScreen,
+  demoFactions,
   EXCHANGE_CHANCE,
   RETREAT_FAIL_CHANCE,
+  teamName,
   WIPEOUT_CAPTURE_CHANCE,
   type BattleApp,
   type RetreatDestination,
@@ -175,7 +177,7 @@ export default function EditorApp() {
       retreats={retreats}
       onEnd={() => setRestart((n) => n + 1)}
       endLabel="最初から"
-      // 両軍を操作するが、決着のカットイン（勝利・敗北）は青軍（攻撃側）をプレイヤーとして出す
+      // 両軍を操作するが、決着のカットイン（勝利・敗北）は攻撃側をプレイヤーとして出す
       playerSide="attacker"
       onApp={setApp}
       className="editor-screen"
@@ -555,7 +557,7 @@ function RetreatTool({ app, teams, onTeams }: { app: BattleApp; teams: ReadonlyS
       <p className="hint">ダミーの退却先の拠点を渡す軍（渡さない軍は退却を選べない）。メニューを開き直すと反映される</p>
       {DUMMY_TEAMS.map((team) => (
         <label key={team} className="check">
-          <input type="checkbox" checked={teams.has(team)} onChange={(e) => toggle(team, e.target.checked)} /> {TEAM_DEFS[team].name}:{' '}
+          <input type="checkbox" checked={teams.has(team)} onChange={(e) => toggle(team, e.target.checked)} /> {teamName(demoFactions, team)}:{' '}
           {DUMMY_RETREATS[team].map((d) => d.name).join('・')}
         </label>
       ))}
@@ -566,7 +568,7 @@ function RetreatTool({ app, teams, onTeams }: { app: BattleApp; teams: ReadonlyS
           {log.map((r, i) => (
             <li key={i}>
               <span className="bark-log__who">
-                第 {r.turn} ターン {TEAM_DEFS[r.unit.team].name} {UNIT_DEFS[r.unit.type].name}
+                第 {r.turn} ターン {teamName(demoFactions, r.unit.team)} {UNIT_DEFS[r.unit.type].name}
                 {r.troopId ? `（${r.troopId}）` : ''}・{r.kind === 'retreat' ? '失敗' : '捕縛'} {percent(r.kind === 'retreat' ? r.failChance : r.captureChance)}（敵{' '}
                 {r.enemies}）
               </span>

@@ -8,15 +8,17 @@ import type { CSSProperties } from 'react';
 import { Button, ThinFrameWithTitle } from 'norden-ui';
 import { TEAM_DEFS } from '@norden/map-runtime/core/units';
 import { SIDE_NAMES, SIDE_TEAM } from '../deployment';
+import { useTeamName } from './factionsContext';
 import { BATTLE_END_REASON_NAMES, type BattleOutcome } from '../victory';
 
 export default function BattleEndWindow({ outcome, label, onEnd }: { outcome: BattleOutcome; label: string; onEnd?: () => void }) {
   const { winner, reason, turn, unit } = outcome;
   const def = TEAM_DEFS[SIDE_TEAM[winner]];
+  const teamName = useTeamName();
   return (
     <ThinFrameWithTitle title="決着" className="battle-window battle-end-window" style={{ '--team': def.color } as CSSProperties}>
       <p className="end-winner">
-        {def.name}（{SIDE_NAMES[winner]}）の勝利
+        {teamName(def.id)}（{SIDE_NAMES[winner]}）の勝利
       </p>
       <dl>
         <div className="row">

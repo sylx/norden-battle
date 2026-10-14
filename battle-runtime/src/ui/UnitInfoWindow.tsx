@@ -12,11 +12,13 @@ import { SKILL_DEFS } from '../actions';
 import type { BattleApp } from '../app';
 import { COMBAT_DEFS } from '../combat';
 import type { UnitStatus } from '../unitStatus';
+import { useTeamName } from './factionsContext';
 import StatusCard from './StatusCard';
 
 export default function UnitInfoWindow({ app }: { app: BattleApp }) {
   // 中身は app から毎回読む（状態は書き換えられるので、知らせを受けたら描き直す）
   const [, setVersion] = useState(0);
+  const teamName = useTeamName();
   useEffect(() => {
     const bump = () => setVersion((v) => v + 1);
     const offs = [
@@ -44,7 +46,7 @@ export default function UnitInfoWindow({ app }: { app: BattleApp }) {
     <ThinFrameWithTitle title="騎士" className="battle-window unit-info" style={{ '--team': team.color } as CSSProperties}>
       <div className="info-head">
         <span className="info-name">
-          {team.name} {UNIT_DEFS[unit.type].name}
+          {teamName(unit.team)} {UNIT_DEFS[unit.type].name}
           {status.commander && <span className="commander-mark">軍団長</span>}
         </span>
         <State app={app} unit={unit} status={status} />

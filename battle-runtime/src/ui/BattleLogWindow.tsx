@@ -3,7 +3,7 @@
  * 行動メニューより奥に表示する（battle.css の z-index）。
  *
  * - 枠は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）。
- * - ターン・行動する軍が変わって最初の記録の前に、飾り罫の区切り（第 n ターン 赤軍）を入れる。
+ * - ターン・行動する軍が変わって最初の記録の前に、飾り罫の区切り（第 n ターン 勢力の名前）を入れる。
  * - 新しい記録は下に足し、いちばん下までスクロールする（上を読んでいる間は動かさない）。
  * - 題名の横のボタンで畳める。マップを読み込み直すと空にする。
  * - 記録の一覧と畳むボタン以外（題名の札・枠）をつかんでドラッグで動かせる。画面の外へは出さない。
@@ -14,6 +14,7 @@ import type { Offset } from '@norden/map-runtime/core/hex';
 import { TEAM_DEFS, UNIT_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
 import type { BattleApp, ExecuteReport } from '../app';
 import type { MoraleChange } from '../morale';
+import { useTeamName } from './factionsContext';
 
 /** 攻撃 1 回分の記録 */
 export interface AttackLogEntry {
@@ -58,6 +59,7 @@ const MARGIN_TOP = 16;
 export default function BattleLogWindow({ app }: { app: BattleApp }) {
   const [entries, setEntries] = useState<AttackLogEntry[]>([]);
   const [collapsed, setCollapsed] = useState(false);
+  const teamName = useTeamName();
   const rootRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
   /** 足す前にいちばん下を見ていたか */
@@ -160,7 +162,7 @@ export default function BattleLogWindow({ app }: { app: BattleApp }) {
             {(e.turn !== entries[i - 1]?.turn || e.team !== entries[i - 1]?.team) && (
               <li className="log-turn">
                 <span>
-                  第 {e.turn} ターン {TEAM_DEFS[e.team].name}
+                  第 {e.turn} ターン {teamName(e.team)}
                 </span>
               </li>
             )}
@@ -206,9 +208,10 @@ function Entry({ entry: e }: { entry: AttackLogEntry }) {
 /** 軍の色の印を付けたユニット名 */
 function Unit({ unit }: { unit: UnitData }) {
   const team = TEAM_DEFS[unit.team];
+  const teamName = useTeamName();
   return (
     <span className="log-unit" style={{ '--team': team.color } as CSSProperties}>
-      {team.name} {UNIT_DEFS[unit.type].name}
+      {teamName(unit.team)} {UNIT_DEFS[unit.type].name}
     </span>
   );
 }

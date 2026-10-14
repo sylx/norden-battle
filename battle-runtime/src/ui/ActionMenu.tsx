@@ -14,6 +14,7 @@ import { ThinFrame } from 'norden-ui';
 import { TEAM_DEFS, UNIT_DEFS } from '@norden/map-runtime/core/units';
 import type { MenuAction, MenuEntry } from '../actions';
 import type { ActionMenuModel, MenuFrame, RetreatMenu } from '../menuModel';
+import { useTeamName } from './factionsContext';
 
 /** ユニットの絵とメニューの間隔（CSS ピクセル） */
 const GAP = 14;
@@ -28,6 +29,7 @@ export default function ActionMenu({ model }: { model: ActionMenuModel }) {
   const mainRef = useRef<HTMLDivElement>(null);
   const subRef = useRef<HTMLDivElement>(null);
   const items = useRef<(HTMLLIElement | null)[]>([]);
+  const teamName = useTeamName();
 
   useEffect(
     () =>
@@ -51,7 +53,7 @@ export default function ActionMenu({ model }: { model: ActionMenuModel }) {
         <div className="menu-body">
           <div className="menu-head">
             <div className="menu-title">
-              {team.name} {UNIT_DEFS[unit.type].name}
+              {teamName(unit.team)} {UNIT_DEFS[unit.type].name}
             </div>
             <div className="menu-ap">
               <span className="label">行動力</span>

@@ -16,7 +16,8 @@
  *   決着のウィンドウ（BattleEndWindow.tsx）を出す。そのボタン（onEnd を渡したときだけ）で使う側に知らせる。
  *   カットインは、プレイヤーの陣営（playerSide）が勝てば CUTIN_TEMPLATES の battle-win、負ければ battle-lose をテンプレートのまま出す
  *   （プレイヤーが戦闘にいないときは battle-win）。決着した後はターン表示を出さない。
- * - ターン表示には、いま行動している軍を出す（防衛側の赤軍 → 攻撃側の青軍の交互）。
+ * - ターン表示には、いま行動している軍を出す（防衛側 → 攻撃側の交互）。
+ * - 軍は色（赤・青）ではなく勢力の名前で呼ぶ。陣営ごとの勢力は factions で渡す（factions.ts。中の UI には FactionsContext で配る）。
  * - 画面の下に操作の案内・予約の中身・実行した結果のステータス行を出す（notice を渡すとそちらを出す）。
  * - 親の要素いっぱいに広がる。children はその上に重ねる（エディタの道具・ゲームの見出しなど）。
  */
@@ -28,6 +29,7 @@ import { BattleApp, type BattlePhase, type StatusFactory } from '../app';
 import { demoBarks, type BarkSource } from '../barks';
 import type { DeploySide } from '@norden/map-runtime/core/mapData';
 import type { TroopFactory } from '../deployment';
+import { demoFactions, teamName, type BattleFactions } from '../factions';
 import type { RetreatDestinations, RetreatReport } from '../retreat';
 import type { WipeoutReport } from '../wipeout';
 import type { BattleOutcome } from '../victory';
@@ -35,6 +37,7 @@ import ActionMenu from './ActionMenu';
 import BattleEndWindow from './BattleEndWindow';
 import BattleLogWindow from './BattleLogWindow';
 import DeployWindow from './DeployWindow';
+import { FactionsContext } from './factionsContext';
 import {
   actionStatus,
   battleStartStatus,
@@ -57,13 +60,13 @@ import './battle.css';
 export interface BattleCutInTexts {
   /** 戦闘開始（配備フェーズの前）。既定は「戦闘開始」とマップの名前 */
   start?: (map: MapData) => CutInPlayOptions;
-  /** 軍の番の始め。既定は「赤軍のターン」と「TURN  1」 */
+  /** 軍の番の始め。既定は「（勢力の名前）のターン」と「TURN  1」 */
   turn?: (turn: number, team: TeamId) => CutInPlayOptions;
 }
 
 const defaultStartText = (map: MapData): CutInPlayOptions => ({ text: '戦闘開始', subText: map.name });
-const defaultTurnText = (turn: number, team: TeamId): CutInPlayOptions => ({
-  text: `${TEAM_DEFS[team].name}のターン`,
+const defaultTurnText = (factions: BattleFactions, turn: number, team: TeamId): CutInPlayOptions => ({
+  text: `${teamName(factions, team)}のターン`,
   subText: `TURN  ${turn}`,
 });
 /** 決着のカットインのテンプレート。プレイヤーの陣営が負けたら battle-lose、ほかは battle-win */
@@ -83,7 +86,9 @@ export interface BattleScreenProps {
   statuses?: StatusFactory;
   /** 配備フェーズで置く部隊を配る（map に初期配置地点があるときに使う。既定は表示確認用の仮の部隊） */
   troops?: TroopFactory;
-  /** 戦闘開始・ターンのカットインの文字（ゲームでは戦場と日付・勢力の名前を渡す） */
+  /** 攻撃側・防衛側の勢力（軍をその名前で呼ぶ。既定は表示確認用の仮の勢力） */
+  factions?: BattleFactions;
+  /** 戦闘開始・ターンのカットインの文字（ゲームでは戦場と日付を渡す） */
   cutInTexts?: BattleCutInTexts;
   /** 何を喋るか（ゲームでは騎士の口調・性格から会話データを引くものを渡す。既定は表示確認用の決まったセリフ） */
   barks?: BarkSource;
@@ -111,6 +116,7 @@ export default function BattleScreen({
   map,
   statuses,
   troops,
+  factions = demoFactions,
   cutInTexts,
   barks,
   retreats,
@@ -137,8 +143,8 @@ export default function BattleScreen({
   /** 戦闘の決着（まだなら null）と、決着のカットインを終えて決着のウィンドウを出しているか */
   const [outcome, setOutcome] = useState<BattleOutcome | null>(null);
   const [endShown, setEndShown] = useState(false);
-  const latest = useRef({ statuses, troops, cutInTexts, onRetreat, onWipeout, onApp, playerSide });
-  latest.current = { statuses, troops, cutInTexts, onRetreat, onWipeout, onApp, playerSide };
+  const latest = useRef({ statuses, troops, factions, cutInTexts, onRetreat, onWipeout, onApp, playerSide });
+  latest.current = { statuses, troops, factions, cutInTexts, onRetreat, onWipeout, onApp, playerSide };
 
   useEffect(() => {
     const app = new BattleApp(viewportRef.current!);
@@ -152,26 +158,27 @@ export default function BattleScreen({
       }),
       app.on('phase', (p) => {
         setPhase(p);
-        if (p === 'battle') setStatus(battleStartStatus(app.activeTeam));
+        if (p === 'battle') setStatus(battleStartStatus(latest.current.factions, app.activeTeam));
       }),
-      app.on('deploy', (state) => setStatus(deployStatus(state))),
+      app.on('deploy', (state) => setStatus(deployStatus(latest.current.factions, state))),
       app.on('turn', (turn, team) => {
         setTurn({ turn, team });
-        void playCutIn(queue, 'turn', (latest.current.cutInTexts?.turn ?? defaultTurnText)(turn, team));
+        const { cutInTexts, factions } = latest.current;
+        void playCutIn(queue, 'turn', cutInTexts?.turn ? cutInTexts.turn(turn, team) : defaultTurnText(factions, turn, team));
       }),
       app.on('select', (unit) => {
-        if (unit && unit === app.inspected) setStatus(inspectStatus(unit));
+        if (unit && unit === app.inspected) setStatus(inspectStatus(latest.current.factions, unit));
       }),
-      app.on('action', (u, a) => setStatus(actionStatus(u, a))),
-      app.on('planChange', (plan) => setStatus(planStatus(plan))),
+      app.on('action', (u, a) => setStatus(actionStatus(latest.current.factions, u, a))),
+      app.on('planChange', (plan) => setStatus(planStatus(latest.current.factions, plan))),
       app.on('targetCancel', () => setStatus(IDLE_STATUS)),
       app.on('targetReject', (reason) => setStatus(rejectStatus(reason))),
-      app.on('execute', (report) => setStatus(executeStatus(report))),
+      app.on('execute', (report) => setStatus(executeStatus(latest.current.factions, report))),
       app.on('retreat', (report) => latest.current.onRetreat?.(report)),
       app.on('wipeout', (report) => latest.current.onWipeout?.(report)),
       app.on('end', (o) => {
         setOutcome(o);
-        setStatus(endStatus(o));
+        setStatus(endStatus(latest.current.factions, o));
         // 読み込み直したら（outcome が変わったら）前の決着のウィンドウは出さない
         void playCutIn(queue, endCutIn(o.winner, latest.current.playerSide)).then(() => {
           if (app.outcome === o) setEndShown(true);
@@ -207,40 +214,42 @@ export default function BattleScreen({
   }, [app, retreats]);
 
   const endTurn = () => {
-    if (app?.endTurn()) setStatus(turnStatus(app.turn, app.activeTeam));
+    if (app?.endTurn()) setStatus(turnStatus(factions, app.turn, app.activeTeam));
   };
 
   return (
-    <div className={`battle-screen ${className}`}>
-      <div ref={viewportRef} className="battle-viewport" />
-      {app && (
-        <>
-          {map && <SituationPanel app={app} />}
-          <TerrainWindow app={app} />
-          <UnitInfoWindow app={app} />
-          {phase === 'deploy' && !intro && <DeployWindow app={app} />}
-          {phase === 'battle' && <BattleLogWindow app={app} />}
-          <ActionMenu model={app.menu} />
-          {map && phase === 'battle' && !intro && !outcome && (
-            <div className="battle-turn-bar" style={{ '--team': TEAM_DEFS[turn.team].color } as CSSProperties}>
-              <ThinFrame />
-              <span className="turn">
-                ターン <output>{turn.turn}</output>
-              </span>
-              <span className="turn-team">{TEAM_DEFS[turn.team].name}の番</span>
-              <Button variant="primary" size="small" onClick={endTurn}>
-                ターン終了
-              </Button>
-            </div>
-          )}
-        </>
-      )}
-      <div className="battle-status" role="status">
-        {notice ?? status}
+    <FactionsContext.Provider value={factions}>
+      <div className={`battle-screen ${className}`}>
+        <div ref={viewportRef} className="battle-viewport" />
+        {app && (
+          <>
+            {map && <SituationPanel app={app} />}
+            <TerrainWindow app={app} />
+            <UnitInfoWindow app={app} />
+            {phase === 'deploy' && !intro && <DeployWindow app={app} />}
+            {phase === 'battle' && <BattleLogWindow app={app} />}
+            <ActionMenu model={app.menu} />
+            {map && phase === 'battle' && !intro && !outcome && (
+              <div className="battle-turn-bar" style={{ '--team': TEAM_DEFS[turn.team].color } as CSSProperties}>
+                <ThinFrame />
+                <span className="turn">
+                  ターン <output>{turn.turn}</output>
+                </span>
+                <span className="turn-team">{teamName(factions, turn.team)}の番</span>
+                <Button variant="primary" size="small" onClick={endTurn}>
+                  ターン終了
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+        <div className="battle-status" role="status">
+          {notice ?? status}
+        </div>
+        <CutInLayer cutIn={cutIn} />
+        {app && outcome && endShown && <BattleEndWindow outcome={outcome} label={endLabel} onEnd={onEnd && (() => onEnd(outcome))} />}
+        {children}
       </div>
-      <CutInLayer cutIn={cutIn} />
-      {app && outcome && endShown && <BattleEndWindow outcome={outcome} label={endLabel} onEnd={onEnd && (() => onEnd(outcome))} />}
-      {children}
-    </div>
+    </FactionsContext.Provider>
   );
 }

@@ -20,11 +20,14 @@ import { BattleScreen } from '@norden/battle-runtime';
   初期配置地点（`deploy`）が付いて配備フェーズから始まる。
 - `troops`: 配備フェーズで置く部隊（`Troop`: 陣営・兵種・戦闘中の状態）を配る関数。省略すると表示確認用の仮の部隊（`demoTroops`。陣営ごとに 8 部隊）。
   ゲームでは騎士・兵の数から作って渡す。
+- `factions`: 攻撃側・防衛側の勢力（`BattleFactions`: `{ attacker: { name }, defender: { name } }`）。画面では軍を色（赤・青）ではなく
+  勢力の名前で呼ぶ（ターン表示・カットイン・戦況・配備・騎士・戦闘記録・ステータス行・決着）。省略すると表示確認用の仮の勢力（`demoFactions`）。
+  攻撃側・防衛側のどちらでもない軍は「第三勢力」（`OTHER_FACTION_NAME`）。ゲームでは戦闘する勢力の名前を渡す。
 - `statuses`: マップに最初から置いてあるユニット（`units`）に戦闘中の状態（兵士数・士気・行動力・指揮官）を配る関数。
   省略すると表示確認用の仮の値（`demoStatuses`）。
 - `onApp`: `BattleApp` を作った・破棄した（null）とき。描画の設定（解像度・森の描き方など）を変えるときに使う。
 - `cutInTexts`: 戦闘開始・ターンのカットインの文字（`{ start: (map) => ({ text, subText }), turn: (turn, team) => ({ text, subText }) }`）。
-  省略すると「戦闘開始」とマップの名前、「赤軍のターン」と「TURN  1」。ゲームでは戦場と日付・勢力の名前を渡す。
+  省略すると「戦闘開始」とマップの名前、「（勢力の名前）のターン」と「TURN  1」。ゲームでは戦場の名前を渡す。
 - `barks`: 何を喋るか（`BarkSource`。場面ごとのセリフ `line` と一斉攻撃の掛け合い `exchange`）。
   省略すると表示確認用の決まったセリフ（`demoBarks`）。ゲームでは騎士の口調・性格からセリフのデータ（nordencult の `src/data/voiceLines.json`）を引くものを
   `lineBarks` で作って渡す。データの場面の ID は `battle.` + 場面（`lineSituationId`）。一斉攻撃の掛け合いは、攻撃する部隊の
@@ -42,7 +45,7 @@ import { BattleScreen } from '@norden/battle-runtime';
   渡さなければボタンを出さない。ボタンの文字は `endLabel`（既定は「戦闘を終える」）。決着そのものは `app.on('end', …)`・`app.outcome` でも受け取れる。
   ゲームは勝った陣営と退却の結果を戦後処理に渡して結果の画面へ進む。
 - `playerSide`: プレイヤーの陣営（`'attacker'`・`'defender'`）。決着のカットインを、勝てば `CUTIN_TEMPLATES['battle-win']`（勝利）、
-  負ければ `battle-lose`（敗北）にする（文字はテンプレートのまま）。プレイヤーが戦闘にいないなら省略し、そのときは `battle-win`（battle-editor は青軍＝攻撃側をプレイヤーとして渡す）。
+  負ければ `battle-lose`（敗北）にする（文字はテンプレートのまま）。プレイヤーが戦闘にいないなら省略し、そのときは `battle-win`（battle-editor は攻撃側をプレイヤーとして渡す）。
 - `notice`: ステータス行に出す知らせ（マップを読めないときなど）。
 
 ## 戦闘の流れ
@@ -50,11 +53,11 @@ import { BattleScreen } from '@norden/battle-runtime';
 0. 戦闘開始のカットイン（norden-ui の `CUTIN_TEMPLATES['battle-start']`）。マップを読み込むたびに出し、終わるまで配備のウィンドウ・ターン表示を出さない。
    画面を押すと飛ばせる。カットインの書体（Shippori Mincho B1・Cinzel・Cinzel Decorative・Noto Serif JP）は使う側の HTML で読み込む
    （battle-editor の index.html を参照）。
-1. 配備フェーズ（マップに `deploy` があるとき）: 防衛側（赤軍）→ 攻撃側（青軍）の順に、配備のウィンドウの一覧から部隊を選び、
+1. 配備フェーズ（マップに `deploy` があるとき）: 防衛側 → 攻撃側の順に、配備のウィンドウの一覧から部隊を選び、
    軍の色で塗った配置地点をクリックして置く。置いた部隊はクリックで選び直して動かせる（部隊の上に置くと入れ替え）。
    「自動配置」で空いている配置地点へ順に置ける。「配備完了」で次の陣営へ。置かなかった部隊は戦闘に出ない。
    1 つの陣営が置けるのは 6 部隊まで（`MAX_DEPLOY`）。
-2. 戦闘: 軍ごとの交互のターン（赤軍 → 青軍。`TURN_ORDER`）。軍の番が変わるたびに、ターンのカットイン（`CUTIN_TEMPLATES['turn']`）を出す。いまの番の軍のユニットだけを選んで行動させられる。
+2. 戦闘: 軍ごとの交互のターン（防衛側 → 攻撃側。`TURN_ORDER`）。軍の番が変わるたびに、ターンのカットイン（`CUTIN_TEMPLATES['turn']`）を出す。いまの番の軍のユニットだけを選んで行動させられる。
    相手方のユニットは暗く描き、クリックすると次の番に動ける範囲（青）と攻撃できる範囲（赤）を出す。
    もう移動・攻撃・迎撃・鼓舞のどれもできないユニットは、絵を暗くして右上に E の印を付ける。
    行動力が余ったら「待機」（行動力 0）で行動を終えられる（待機・迎撃で行動を終えた後は選べない）。指揮官のスキル「鼓舞」（行動力 2）は自分の士気を 10〜20 回復する。
@@ -114,6 +117,7 @@ src/
   wipeout.ts       殲滅されたときの指揮官の捕縛（捕縛される確率・結果の WipeoutReport）
   victory.ts       勝敗（全滅・退却と入城の判定。決着の BattleOutcome）
   unitStatus.ts    ユニットの戦闘中の状態（と表示確認用の仮の値）
+  factions.ts      陣営ごとの勢力（軍を勢力の名前で呼ぶ teamName と、表示確認用の demoFactions）
   unitTags.ts      ユニットの頭上の情報札（HTML。毎フレーム置き直す）
   popups.ts        兵数の減少などを頭上に出す
   barks.ts         セリフの場面・確率・吹き出しの調子と、何を喋るか（BarkSource。セリフのデータから選ぶ lineBarks、表示確認用の demoBarks）
@@ -130,5 +134,6 @@ src/
     TerrainWindow.tsx    カーソルの HEX の地形のウィンドウ（移動・攻撃の予測も出す）
     BattleLogWindow.tsx  戦闘記録のウィンドウ（畳む・ドラッグで動かす）
     statusText.tsx       ステータス行の案内
+    factionsContext.ts   BattleScreen に渡された勢力を中の UI に配る（useTeamName）
     battle.css           戦闘画面のスタイル（すべて .battle-screen の中）
 ```

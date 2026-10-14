@@ -1232,7 +1232,8 @@
 
 .battle-screen .deploy-window .deploy-troop {
   display: grid;
-  grid-template-columns: 3.6em auto 1fr auto;
+  /* 名前（軍団長の印も）・情報札・外すボタン。ボタンの列は未配備でも空けて、情報札の位置を揃える */
+  grid-template-columns: minmax(0, 1fr) auto 20px;
   align-items: center;
   gap: 8px;
   padding: 4px 6px;
@@ -1257,8 +1258,10 @@
 
 .battle-screen .deploy-window .troop-name {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px 6px;
+  min-width: 0;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -1279,19 +1282,8 @@
   will-change: auto;
 }
 
-.battle-screen .deploy-window .troop-at {
-  font-size: 11px;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.battle-screen .deploy-window .deploy-troop.placed .troop-at {
-  color: var(--text);
-}
-
 .battle-screen .deploy-window .troop-remove {
-  grid-column: 4;
+  grid-column: 3;
   width: 20px;
   height: 20px;
   padding: 0;

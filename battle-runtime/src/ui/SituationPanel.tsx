@@ -1,8 +1,8 @@
 /**
  * 戦況のパネル（画面の上の中央）。将棋の形勢のグラフのように、軍ごとの兵数の合計の比を 1 本の帯で出す。
  *
- * - 帯は軍の色で、兵数の合計に比例して分ける（攻撃側の青軍が左、防衛側の赤軍が右。PANEL_ORDER）。真ん中に互角の目印を引く。
- * - 帯の上に、軍の名前・陣営・兵数の合計・割合・部隊数を文字で出す（色だけに頼らない）。帯にカーソルを乗せても出る。
+ * - 帯は軍の色で、兵数の合計に比例して分ける（攻撃側が左、防衛側が右。PANEL_ORDER）。真ん中に互角の目印を引く。
+ * - 帯の上に、勢力の名前・陣営・兵数の合計・割合・部隊数を文字で出す（色だけに頼らない）。帯にカーソルを乗せても出る。
  * - 配備・攻撃・迎撃で兵数が変わるたびに、帯がなめらかに動く。
  * - 枠は norden-ui の ThinFrame（細いベゼル）。
  */
@@ -11,6 +11,7 @@ import { ThinFrame } from 'norden-ui';
 import { TEAM_DEFS, type TeamId } from '@norden/map-runtime/core/units';
 import type { BattleApp } from '../app';
 import { SIDE_NAMES, SIDE_TEAM } from '../deployment';
+import { useTeamName } from './factionsContext';
 
 /** 帯に並べる軍の順（攻撃側が左） */
 const PANEL_ORDER: readonly TeamId[] = [SIDE_TEAM.attacker, SIDE_TEAM.defender, 'green'];
@@ -25,6 +26,7 @@ interface Force {
 
 export default function SituationPanel({ app }: { app: BattleApp }) {
   const [, setVersion] = useState(0);
+  const teamName = useTeamName();
   useEffect(() => {
     const bump = () => setVersion((v) => v + 1);
     const offs = [app.on('load', bump), app.on('phase', bump), app.on('deploy', bump), app.on('execute', bump), app.on('turn', bump)];
@@ -42,7 +44,7 @@ export default function SituationPanel({ app }: { app: BattleApp }) {
         {forces.map((f) => (
           <div key={f.team} className="situation-side" style={{ '--team': TEAM_DEFS[f.team].color } as CSSProperties}>
             <span className="name">
-              {TEAM_DEFS[f.team].name}
+              {teamName(f.team)}
               {sideName(f.team) && <small>{sideName(f.team)}</small>}
             </span>
             <span className="total">
@@ -58,7 +60,7 @@ export default function SituationPanel({ app }: { app: BattleApp }) {
           <i
             key={f.team}
             style={{ flexGrow: f.soldiers, background: TEAM_DEFS[f.team].color }}
-            title={`${TEAM_DEFS[f.team].name}: 兵数 ${f.soldiers.toLocaleString()}（${f.percent}%）・${f.units} 部隊`}
+            title={`${teamName(f.team)}: 兵数 ${f.soldiers.toLocaleString()}（${f.percent}%）・${f.units} 部隊`}
           />
         ))}
         <span className="situation-even" />
