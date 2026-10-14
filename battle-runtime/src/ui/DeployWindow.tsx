@@ -44,7 +44,7 @@ export default function DeployWindow({ app }: { app: BattleApp }) {
               onClick={() => app.pickTroop(t.id)}
             >
               <span className="troop-name">
-                {UNIT_DEFS[t.type].name}
+                <span className="troop-type">{UNIT_DEFS[t.type].name}</span>
                 {t.status.commander && <span className="commander-mark">軍団長</span>}
               </span>
               <StatusCard status={t.status} className="in-list" />

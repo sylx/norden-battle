@@ -58,7 +58,7 @@ export interface DeployState {
 /** 表示確認用の仮の部隊の兵種の並び */
 const DEMO_PATTERN: readonly UnitType[] = ['infantry', 'infantry', 'archer', 'cavalry', 'infantry', 'mage', 'archer', 'cavalry'];
 
-/** 表示確認用の仮の部隊。配置地点のある陣営ごとに 8 部隊（顔は陣営ごとに順に、兵士数・士気は決まったばらつき） */
+/** 表示確認用の仮の部隊。配置地点のある陣営ごとに 8 部隊（顔は陣営ごとに順に、兵士数・士気は決まったばらつき。先頭の部隊が軍団長） */
 export function demoTroops(deploy: BattleDeployment): Troop[] {
   return DEPLOY_ORDER.flatMap((side, s) =>
     deploy[side].length === 0
@@ -67,7 +67,7 @@ export function demoTroops(deploy: BattleDeployment): Troop[] {
           id: `${side}-${i + 1}`,
           side,
           type,
-          status: demoStatus(type, (s * 4 + i) % FACE_COUNT, hash(i, s, 1), hash(i, s, 2)),
+          status: { ...demoStatus(type, (s * 4 + i) % FACE_COUNT, hash(i, s, 1), hash(i, s, 2)), commander: i === 0 },
         })),
   );
 }

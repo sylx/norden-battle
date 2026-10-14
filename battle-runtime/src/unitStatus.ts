@@ -137,7 +137,7 @@ const FACE_ABILITIES: [leadership: number, strength: number, intelligence: numbe
   [76, 70, 84],
 ];
 
-/** 表示確認用の仮の状態。兵士数・士気は HEX の位置から決まるばらつき、行動力は満タン、顔は軍ごとに順に割り当てる */
+/** 表示確認用の仮の状態。兵士数・士気は HEX の位置から決まるばらつき、行動力は満タン、顔は軍ごとに順に割り当てる（軍の最初のユニットが軍団長） */
 export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStatus> {
   const out = new Map<UnitData, UnitStatus>();
   const perTeam = new Map<string, number>();
@@ -151,7 +151,7 @@ export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStat
     }
     const i = perTeam.get(u.team)!;
     perTeam.set(u.team, i + 1);
-    out.set(u, demoStatus(u.type, (teamOffset + i) % FACE_COUNT, hash(u.col, u.row, 1), hash(u.col, u.row, 2)));
+    out.set(u, { ...demoStatus(u.type, (teamOffset + i) % FACE_COUNT, hash(u.col, u.row, 1), hash(u.col, u.row, 2)), commander: i === 0 });
   }
   return out;
 }

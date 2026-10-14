@@ -18,13 +18,13 @@ import { BattleScreen } from '@norden/battle-runtime';
 
 - `map`: 戦場のマップ（`MapData`）。null の間は何も載せない。街道マップから `cropBattleArea` で切り出すと、
   初期配置地点（`deploy`）が付いて配備フェーズから始まる。
-- `troops`: 配備フェーズで置く部隊（`Troop`: 陣営・兵種・戦闘中の状態）を配る関数。省略すると表示確認用の仮の部隊（`demoTroops`。陣営ごとに 8 部隊）。
+- `troops`: 配備フェーズで置く部隊（`Troop`: 陣営・兵種・戦闘中の状態）を配る関数。省略すると表示確認用の仮の部隊（`demoTroops`。陣営ごとに 8 部隊で、先頭の部隊が軍団長）。
   ゲームでは騎士・兵の数から作って渡す。
 - `factions`: 攻撃側・防衛側の勢力（`BattleFactions`: `{ attacker: { name }, defender: { name } }`）。画面では軍を色（赤・青）ではなく
   勢力の名前で呼ぶ（ターン表示・カットイン・戦況・配備・騎士・戦闘記録・ステータス行・決着）。省略すると表示確認用の仮の勢力（`demoFactions`）。
   攻撃側・防衛側のどちらでもない軍は「第三勢力」（`OTHER_FACTION_NAME`）。ゲームでは戦闘する勢力の名前を渡す。
 - `statuses`: マップに最初から置いてあるユニット（`units`）に戦闘中の状態（兵士数・士気・行動力・指揮官）を配る関数。
-  省略すると表示確認用の仮の値（`demoStatuses`）。
+  省略すると表示確認用の仮の値（`demoStatuses`。軍ごとに最初のユニットが軍団長）。
 - `onApp`: `BattleApp` を作った・破棄した（null）とき。描画の設定（解像度・森の描き方など）を変えるときに使う。
 - `cutInTexts`: 戦闘開始・ターンのカットインの文字（`{ start: (map) => ({ text, subText }), turn: (turn, team) => ({ text, subText }) }`）。
   省略すると「戦闘開始」とマップの名前、「（勢力の名前）のターン」と「TURN  1」。ゲームでは戦場の名前を渡す。
