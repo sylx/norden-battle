@@ -235,7 +235,7 @@ export default function BattleScreen({
                 <span className="turn">
                   ターン <output>{turn.turn}</output>
                 </span>
-                <span className="turn-team">{teamName(factions, turn.team)}の番</span>
+                <span className="turn-team">{teamName(factions, turn.team)}のターン</span>
                 <Button variant="primary" size="small" onClick={endTurn}>
                   ターン終了
                 </Button>

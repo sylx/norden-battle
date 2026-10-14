@@ -54,7 +54,7 @@ export function planStatus(f: BattleFactions, plan: Plan): string {
 
 /** 相手方のユニットを調べたとき */
 export function inspectStatus(f: BattleFactions, u: UnitData): string {
-  return `${unitLabel(f, u)}: 次の番に動ける範囲（青。橙の斜線は ZOC で止まる）と攻撃できる範囲（赤）/ もう一度クリック・Esc: 閉じる`;
+  return `${unitLabel(f, u)}: 次のターンに動ける範囲（青。橙の斜線は ZOC で止まる）と攻撃できる範囲（赤）/ もう一度クリック・Esc: 閉じる`;
 }
 
 /** 選べない攻撃の相手を選んだとき */
@@ -67,13 +67,12 @@ export function rejectStatus(reason: string): ReactNode {
 }
 
 export function turnStatus(f: BattleFactions, turn: number, team: TeamId): string {
-  const name = teamName(f, team);
-  return `ターン ${turn} ${name}の番 — ${name}の全ユニットの行動力が回復しました / ${IDLE_STATUS}`;
+  return `ターン ${turn} ${teamName(f, team)}のターン — 全ユニットの行動力が回復しました / ${IDLE_STATUS}`;
 }
 
 /** 配備を終えて戦闘が始まったとき（配備フェーズの無いマップは読み込んだとき） */
 export function battleStartStatus(f: BattleFactions, team: TeamId): string {
-  return `戦闘開始 — ${teamName(f, team)}の番 / ${LOADED_STATUS}`;
+  return `戦闘開始 — ${teamName(f, team)}のターン / ${LOADED_STATUS}`;
 }
 
 /** 戦闘が決着したとき */
