@@ -6,7 +6,8 @@
  * - 軍の番が変わるたびに（戦闘が始まったときも）、その軍のターンのカットインを出す。
  *   カットインは norden-ui の CutInLayer（テンプレートは CUTIN_TEMPLATES の battle-start・turn）。文字は cutInTexts で差し替える。
  * - 初期配置地点のあるマップは配備フェーズから始まる。その間は戦闘記録・ターン表示の代わりに配備のウィンドウを出す。
- * - 地形の右に、カーソルの下・選択中のユニットの騎士の情報を固定で出す（行動メニューは名前・行動力と項目だけ）。
+ * - 画面の右上に、カーソルの下・選択中のユニットの騎士の情報を固定で出す（行動メニューは名前・行動力と項目だけ）。
+ *   その下に、未行動の部隊を順に選ぶナビゲーション（UnitNavigator.tsx）を出す。
  * - 地形・騎士・戦闘記録・配備は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）、行動メニュー・ターン表示は ThinFrame で囲む。
  * - 画面の上の中央に戦況（軍ごとの兵数の合計の比の帯）を出す。
  * - 攻撃・迎撃・鼓舞・殲滅などのとき、ユニットの頭上にセリフの吹き出しを出す（BattleApp・speechBubbles.ts）。何を喋るかは barks で差し替える。
@@ -58,6 +59,7 @@ import {
 import SituationPanel from './SituationPanel';
 import TerrainWindow from './TerrainWindow';
 import UnitInfoWindow from './UnitInfoWindow';
+import UnitNavigator from './UnitNavigator';
 import './battle.css';
 
 /** カットインの文字（text: メイン、subText: サブ。'' でサブを消す）。省略した項目は既定の文字 */
@@ -242,7 +244,10 @@ export default function BattleScreen({
           <>
             {map && <SituationPanel app={app} />}
             <TerrainWindow app={app} />
-            <UnitInfoWindow app={app} />
+            <div className="battle-unit-column">
+              <UnitInfoWindow app={app} />
+              {phase === 'battle' && !intro && <UnitNavigator app={app} />}
+            </div>
             {phase === 'deploy' && !intro && <DeployWindow app={app} />}
             {phase === 'battle' && <BattleLogWindow app={app} />}
             <ActionMenu model={app.menu} />

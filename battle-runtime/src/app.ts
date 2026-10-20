@@ -33,6 +33,7 @@
  * 相手方のユニットは暗くし、クリックするとそのユニットが次の番に動ける範囲（青）と攻撃できる範囲（赤）を出す（inspect）。
  * いまの番の軍で、もう移動・攻撃・迎撃のどれもできないユニットは行動済みとして、絵を暗くして右上に E の印を付ける。
  * その軍のユニットがすべて行動済みになったら allDone のイベントで知らせる（画面はターン終了のボタンを目立たせる）。
+ * 未行動のユニット（行動済みでない、いまの番の軍のユニット）は、画面のナビゲーションから順に選べる（selectPending。カメラも寄せる）。
  * ターン終了で次の軍の番になり、その軍の全ユニットの行動力が最大まで戻る（全軍が 1 回ずつ行動したらターンの数が進む）。
  * 敵の ZOC の中のユニットは、その番にまだ移動も攻撃もしていなければ動き出せる。
  *
@@ -557,6 +558,47 @@ export class BattleApp {
     } else {
       this.startBattle();
     }
+  }
+
+  /** いまの番の軍のユニット（上の行から、同じ行なら左から。配備フェーズ・決着の後・強制退却の間は空） */
+  teamUnits(): UnitData[] {
+    const map = this.map;
+    if (!map || this.deployment || this.outcome || this.rout) return [];
+    return map
+      .allUnits()
+      .filter((u) => u.team === this.activeTeam)
+      .sort((a, b) => a.row - b.row || a.col - b.col);
+  }
+
+  /** いまの番の軍の、まだ行動済みでないユニット（teamUnits の順） */
+  pendingUnits(): UnitData[] {
+    return this.teamUnits().filter((u) => !this.done.has(u));
+  }
+
+  /**
+   * 未行動のユニットを順に選ぶ（dir = 1 で次、-1 で前。選択中のユニットから teamUnits の順にたどり、端では反対の端へ戻る）。
+   * 選んだユニットへカメラを動かす。選んだら true（実行中・未行動のユニットがいなければ false）
+   */
+  selectPending(dir: 1 | -1): boolean {
+    if (this.exec) return false;
+    const all = this.teamUnits();
+    const pending = all.filter((u) => !this.done.has(u));
+    if (pending.length === 0) return false;
+    const current = this.plan?.unit ?? null;
+    const start = current ? all.indexOf(current) : -1;
+    let next: UnitData | undefined;
+    if (start < 0) next = dir > 0 ? pending[0] : pending[pending.length - 1];
+    else {
+      for (let k = 1; k <= all.length && !next; k++) {
+        const u = all[(start + dir * k + all.length * k) % all.length];
+        if (!this.done.has(u)) next = u;
+      }
+    }
+    if (!next) return false;
+    if (next !== current) this.setSelected({ col: next.col, row: next.row });
+    const p = this.view.units.placements().find((x) => x.unit === next);
+    if (p) this.cameraFocus.panTo(p.foot);
+    return true;
   }
 
   /** 部隊のウィンドウに出すユニット（カーソルの下 → 選択中 → 調べている相手方の順。どれも無ければ null） */

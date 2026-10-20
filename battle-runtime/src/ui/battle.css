@@ -767,12 +767,49 @@
 }
 
 /* --- 部隊（騎士）のウィンドウ（UnitInfoWindow.tsx。画面の左下、地形のウィンドウの右） --- */
+/* 画面の右上の列: 騎士のウィンドウと、その下の未行動の部隊のナビゲーション（UnitNavigator.tsx） */
+.battle-screen .battle-unit-column {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  /* 情報札（1）より手前・行動メニュー（3）より奥 */
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(250px, calc(100% - 24px));
+  /* 列の隙間はマップへ通す（ナビゲーションのボタンだけ受ける） */
+  pointer-events: none;
+}
+
 .battle-screen .unit-info {
-  left: calc(12px + min(260px, calc(100% - 24px)) + 10px);
-  bottom: 50px;
-  width: 250px;
+  position: relative;
   /* 表示するだけなので、マウスは下のマップへ通す */
   pointer-events: none;
+}
+
+.battle-screen .unit-nav {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.battle-screen .unit-nav-count {
+  color: var(--text-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-screen .unit-nav-count output {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
 }
 
 .battle-screen .unit-info .info-head {
