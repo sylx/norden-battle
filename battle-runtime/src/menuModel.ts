@@ -149,14 +149,7 @@ export class ActionMenuModel {
     avoid: readonly (readonly THREE.Vector3[])[] = [],
   ): void {
     if (!this.state.ctx || this.frameListeners.size === 0) return;
-    const v = new THREE.Vector3();
-    const screenLines = avoid.map((line) =>
-      line.flatMap((p) => {
-        v.copy(p).project(camera);
-        return v.z > 1 ? [] : [{ x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height }];
-      }),
-    );
-    const frame: MenuFrame = { sprite: anchor && spriteRect(anchor, camera, width, height), avoid: screenLines, width, height };
+    const frame: MenuFrame = { sprite: anchor && spriteRect(anchor, camera, width, height), avoid: projectLines(avoid, camera, width, height), width, height };
     for (const fn of this.frameListeners) fn(frame);
   }
 
@@ -166,8 +159,39 @@ export class ActionMenuModel {
   }
 }
 
-/** 画面上のユニットの絵の範囲（足元・頭・幅から求める） */
-function spriteRect(p: UnitPlacement, camera: THREE.PerspectiveCamera, w: number, h: number): ScreenRect | null {
+/** ワールドの折れ線を画面上の折れ線にする（カメラの後ろの点は除く） */
+export function projectLines(lines: readonly (readonly THREE.Vector3[])[], camera: THREE.PerspectiveCamera, w: number, h: number): ScreenPoint[][] {
+  const v = new THREE.Vector3();
+  return lines.map((line) =>
+    line.flatMap((p) => {
+      v.copy(p).project(camera);
+      return v.z > 1 ? [] : [{ x: ((v.x + 1) / 2) * w, y: ((1 - v.y) / 2) * h }];
+    }),
+  );
+}
+
+/** 画面上の折れ線（lines）のうち rect に入る部分の長さ（step ピクセル刻みで数える） */
+export function lengthInRect(rect: ScreenRect, lines: readonly (readonly ScreenPoint[])[], step = 4): number {
+  let inside = 0;
+  for (const line of lines) {
+    for (let i = 1; i < line.length; i++) {
+      const a = line[i - 1];
+      const b = line[i];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      const n = Math.max(1, Math.ceil(len / step));
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) / n;
+        const x = a.x + (b.x - a.x) * t;
+        const y = a.y + (b.y - a.y) * t;
+        if (x >= rect.l && x <= rect.r && y >= rect.t && y <= rect.b) inside += len / n;
+      }
+    }
+  }
+  return inside;
+}
+
+/** 画面上のユニットの絵の範囲（足元・頭・幅から求める。カメラの後ろなら null） */
+export function spriteRect(p: UnitPlacement, camera: THREE.PerspectiveCamera, w: number, h: number): ScreenRect | null {
   const v = new THREE.Vector3();
   const toScreen = (q: THREE.Vector3) => {
     v.copy(q).project(camera);

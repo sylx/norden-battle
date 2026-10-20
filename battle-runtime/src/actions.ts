@@ -3,7 +3,7 @@
  *
  * メニューは 2 階層。1 階層目は常に全部並べ、選べないものは無効にする。
  * 2 階層目（攻撃の種類・指揮官のスキルと退却）は選べるものだけを並べる。ただし退却は選べないときも灰色で残す（keepDisabled）。
- * 2 階層目に何か並ぶ（灰色だけでも）1 階層目の項目は開ける。
+ * 2 階層目に選べるものが 1 つでもあれば 1 階層目の項目は開ける。灰色のものしか無ければ、1 階層目の項目も選べない（理由は灰色の項目の理由）。
  * 選べるかどうかは残り行動力・兵種・指揮官のスキルで決まる。コスト・兵種の制限は仮の値。
  *
  * 行動は予約してから最後にまとめて実行する。移動・攻撃を予約すると、残り行動力は予約した分を引いたものになり、
@@ -189,7 +189,8 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
       if (reason === null) return [c];
       return keepDisabled ? [{ ...c, reason }] : [];
     });
-    if (children.length === 0) return { name: def.name, enabled: false, reason: childReason(cands[0])! };
+    // 選べるものが無ければ選べない（灰色で残したものの理由を先に出す）
+    if (!children.some((c) => !c.reason)) return { name: def.name, enabled: false, reason: children[0]?.reason ?? childReason(cands[0])! };
     return { name: def.name, enabled: true, children };
   });
   if (planned) entries.push(...[CONFIRM, CANCEL].map((action) => ({ name: action.name, enabled: true, action })));

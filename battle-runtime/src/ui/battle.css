@@ -359,10 +359,6 @@
   font-weight: 600;
 }
 
-.battle-screen .action-menu .menu-item.cancel {
-  color: var(--text-dim);
-}
-
 .battle-screen .action-menu .menu-item.back {
   margin-top: 4px;
   border-top: 1px solid rgba(138, 106, 58, 0.6);
@@ -385,6 +381,23 @@
   font-weight: 600;
   color: #ff8a70;
   font-variant-numeric: tabular-nums;
+}
+
+/* 行動終了（選べる行動が無い。行動済みの E の印と同じ赤） */
+.battle-screen .action-menu .menu-ended {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 2px 0 4px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 244, 208, 0.7);
+  border-radius: 2px;
+  background: linear-gradient(#c23a2a, #7e1d14);
+  color: #fff4d0;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  white-space: nowrap;
 }
 
 .battle-screen .action-menu .menu-item.disabled {

@@ -9,13 +9,14 @@
  *   選べない項目（退却先の無い退却など）は灰色で出し、理由を title に持たせる。
  * - 退却を選んだ後は、項目の代わりに退却先の拠点の一覧と失敗する確率を出す（「戻る」で項目に戻る）。
  *   強制退却（負けた陣営に残った部隊）は「強制退却」と出し、「戻る」を出さない。
+ * - 選べる行動が無い（行動済みの E の印が付く。待機は数えない）ときは、項目の上に赤い「行動終了」の帯を出す。
  * - パネルは norden-ui の細いベゼル（ThinFrame）で囲む。
  */
 import { useEffect, useRef, useSyncExternalStore, type CSSProperties } from 'react';
 import { ThinFrame } from 'norden-ui';
 import { TEAM_DEFS, UNIT_DEFS } from '@norden/map-runtime/core/units';
-import type { MenuAction, MenuEntry } from '../actions';
-import type { ActionMenuModel, MenuFrame, RetreatMenu, ScreenPoint, ScreenRect } from '../menuModel';
+import { canAct, type MenuAction, type MenuEntry } from '../actions';
+import { lengthInRect, type ActionMenuModel, type MenuFrame, type RetreatMenu, type ScreenRect } from '../menuModel';
 import { useTeamName } from './factionsContext';
 
 /** ユニットの絵とメニューの間隔（CSS ピクセル） */
@@ -75,6 +76,11 @@ export default function ActionMenu({ model }: { model: ActionMenuModel }) {
               </span>
             </div>
           </div>
+          {!retreat && !ctx.planned && !canAct(ctx) && (
+            <div className="menu-ended" title="移動・攻撃・迎撃・特殊のどれも選べない">
+              行動終了
+            </div>
+          )}
           {retreat ? (
             <RetreatList retreat={retreat} model={model} />
           ) : (
@@ -236,7 +242,7 @@ function place(
     const { right, top } = slots[i];
     if (right ? !fitsRight && fitsLeft : !fitsLeft) continue;
     const rect = menuRect(sprite, right, top, mw, mh, w, h);
-    const cost = hiddenLength(rect, frame.avoid) + SLOT_BIAS[i] - (i === prev ? KEEP_BONUS : 0);
+    const cost = lengthInRect(rect, frame.avoid, AVOID_STEP) + SLOT_BIAS[i] - (i === prev ? KEEP_BONUS : 0);
     if (cost < bestCost) {
       best = i;
       bestCost = cost;
@@ -263,24 +269,4 @@ function menuRect(sprite: ScreenRect, right: boolean, top: boolean, mw: number, 
   const x = Math.min(Math.max(right ? sprite.r + GAP : sprite.l - GAP - mw, MARGIN), w - MARGIN - mw);
   const y = Math.min(Math.max(top ? sprite.t : sprite.b - mh, MARGIN), h - MARGIN - mh);
   return { l: x, t: y, r: x + mw, b: y + mh };
-}
-
-/** 折れ線（lines）のうち rect に入る部分の長さ（AVOID_STEP 刻みで数える） */
-function hiddenLength(rect: ScreenRect, lines: readonly (readonly ScreenPoint[])[]): number {
-  let hidden = 0;
-  for (const line of lines) {
-    for (let i = 1; i < line.length; i++) {
-      const a = line[i - 1];
-      const b = line[i];
-      const len = Math.hypot(b.x - a.x, b.y - a.y);
-      const n = Math.max(1, Math.ceil(len / AVOID_STEP));
-      for (let k = 0; k < n; k++) {
-        const t = (k + 0.5) / n;
-        const x = a.x + (b.x - a.x) * t;
-        const y = a.y + (b.y - a.y) * t;
-        if (x >= rect.l && x <= rect.r && y >= rect.t && y <= rect.b) hidden += len / n;
-      }
-    }
-  }
-  return hidden;
 }
