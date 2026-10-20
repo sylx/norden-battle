@@ -4,6 +4,8 @@
  *
  * ユニットと同じく深度テストをせずに地形・木より手前に描く。ユニットより奥か手前かは描画順（style.order）で決める。
  * 縁取り用に一回り大きい帯を後ろに重ね、本体には進む向きへ流れる山形の縞を付ける。
+ * ユニットより奥に描く矢印は、ユニットの絵より手前に本体の薄い写しを重ねられる（style.xray）。ユニットに隠れたところも透けて見える
+ * （隠れていないところは下の同じ色の本体と重なるので見た目が変わらない。縁取りは写さない。写すと本体が暗くくすむため）。
  */
 import * as THREE from 'three';
 import type { HexLayout, Offset, Vec2 } from '../core/hex.ts';
@@ -30,10 +32,14 @@ export interface ArrowStyle {
   order: number;
   /** 帯と矢じりの太さの倍率（縁取りの太さは変えない） */
   width: number;
+  /** ユニットの絵より手前に重ねる薄い写しの不透明度（0 なら重ねない） */
+  xray: number;
 }
 
 /** 移動ルートの矢印（金色、ユニットより奥） */
-const DEFAULT_STYLE: ArrowStyle = { fill: 0xffd451, stripe: 0xfff6d8, outline: 0x2a1a0c, order: 7, width: 1 };
+const DEFAULT_STYLE: ArrowStyle = { fill: 0xffd451, stripe: 0xfff6d8, outline: 0x2a1a0c, order: 7, width: 1, xray: 0 };
+/** 薄い写しの描画順。ユニットの絵（10）・選択中のユニットとその光（11・12）より手前で、手前に描く攻撃の矢印（13）より奥 */
+const XRAY_ORDER = 12.5;
 
 /**
  * 矢印の各点の高さ。(x, z) は位置、d は経路に沿った距離、total は経路の長さ（d は両端で少しはみ出すことがある）
@@ -46,6 +52,8 @@ export class PathArrow {
   readonly time: THREE.IUniform<number> = { value: 0 };
   private readonly fill: THREE.ShaderMaterial;
   private readonly outline: THREE.ShaderMaterial;
+  /** 本体の薄い写し（xray が 0 なら null） */
+  private readonly xray: THREE.ShaderMaterial | null;
   private readonly order: number;
   private readonly width: number;
 
@@ -54,6 +62,7 @@ export class PathArrow {
     this.group.name = 'path-arrow';
     this.fill = arrowMaterial(st.fill, st.stripe, this.time, true);
     this.outline = arrowMaterial(st.outline, st.stripe, this.time, false);
+    this.xray = st.xray > 0 ? arrowMaterial(st.fill, st.stripe, this.time, true, st.xray) : null;
     this.order = st.order;
     this.width = st.width;
   }
@@ -72,6 +81,7 @@ export class PathArrow {
     if (!path || path.length < 2) return;
     const s = layout.size;
     this.fill.uniforms.uHexSize.value = s;
+    if (this.xray) this.xray.uniforms.uHexSize.value = s;
     const line = smoothPath(path.map((o) => layout.offsetToWorld(o.col, o.row)));
     const outline = OUTLINE * s;
     const gap = endGap * s;
@@ -86,20 +96,29 @@ export class PathArrow {
     const front = new THREE.Mesh(arrowGeometry(line, s, heightAt, { shaft, head, headLen, extend: 0, gap }), this.fill);
     front.renderOrder = this.order + 1;
     this.group.add(back, front);
+    if (this.xray) {
+      // 本体と同じ形をユニットより手前に薄く重ねる（形は使い回す）
+      const xray = new THREE.Mesh(front.geometry, this.xray);
+      xray.renderOrder = XRAY_ORDER;
+      this.group.add(xray);
+    }
   }
 
   dispose(): void {
     this.clear();
     this.fill.dispose();
     this.outline.dispose();
+    this.xray?.dispose();
   }
 
   /** 矢印を消す */
   clear(): void {
+    const geometries = new Set<THREE.BufferGeometry>();
     for (const child of [...this.group.children]) {
       this.group.remove(child);
-      (child as THREE.Mesh).geometry.dispose();
+      geometries.add((child as THREE.Mesh).geometry);
     }
+    for (const g of geometries) g.dispose();
   }
 }
 
@@ -168,6 +187,7 @@ function arrowMaterial(
   stripe: THREE.ColorRepresentation,
   time: THREE.IUniform<number>,
   stripes: boolean,
+  opacity = 1,
 ): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -175,6 +195,7 @@ function arrowMaterial(
       uStripe: { value: new THREE.Color(stripe) },
       uTime: time,
       uHexSize: { value: 1 },
+      uOpacity: { value: opacity },
     },
     defines: stripes ? { STRIPES: '' } : {},
     vertexShader: /* glsl */ `
@@ -192,6 +213,7 @@ function arrowMaterial(
       uniform vec3 uStripe;
       uniform float uTime;
       uniform float uHexSize;
+      uniform float uOpacity;
       varying float vAlong;
       varying float vAcross;
       void main() {
@@ -205,7 +227,7 @@ function arrowMaterial(
       #else
         a = 0.85;
       #endif
-        gl_FragColor = vec4(c, a);
+        gl_FragColor = vec4(c, a * uOpacity);
         #include <colorspace_fragment>
       }`,
     transparent: true,

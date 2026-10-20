@@ -22,6 +22,8 @@ const ATTACK_END_GAP = 0.3;
 /** 遠隔攻撃の放物線の高さ（距離比）と、飛び出す高さ（hexSize 比） */
 const ATTACK_ARC_RISE = 0.3;
 const ATTACK_ARC_LIFT = 0.35;
+/** 移動ルートの矢印の、ユニットに隠れたところを透かす薄い写しの不透明度 */
+const ROUTE_XRAY = 0.45;
 
 export interface MapDisplay {
   grid: boolean;
@@ -51,10 +53,10 @@ export class MapView {
     units: true,
   };
   readonly units = new UnitLayer();
-  /** 経路の矢印（移動ルートなど） */
-  readonly pathArrow = new PathArrow();
+  /** 経路の矢印（移動ルートなど）。ユニットより奥に描き、ユニットに隠れたところは手前の薄い写しで透かす */
+  readonly pathArrow = new PathArrow({ xray: ROUTE_XRAY });
   /** 2 本目の経路の矢印（攻撃の後の移動など、1 本目とつながらない経路） */
-  readonly afterPathArrow = new PathArrow();
+  readonly afterPathArrow = new PathArrow({ xray: ROUTE_XRAY });
   /** 攻撃の対象を指す赤い矢印（遠隔攻撃は放物線。ユニットより手前に描く） */
   readonly attackArrow = new PathArrow({ fill: 0xe0402e, stripe: 0xffc8b0, outline: 0x2a0c08, order: 13 });
   /** 攻撃に加わる味方から対象へ伸ばす、細い赤い矢印（一斉攻撃など。何本でも） */
