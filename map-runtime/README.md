@@ -32,6 +32,7 @@ src/
     hex.ts           HEX 座標系（オフセット/軸座標/ワールド座標の変換）
     mapData.ts       マップ JSON の型・パース・書き出し
     battleArea.ts    街道マップから戦闘の範囲を切り出す（cropMap・cropBattleArea）
+    geoMap.ts        地理情報（戦略マップの地形と街道）から街道マップを作る（generateGeoRoadMap）
     features.ts      人工物の定義・橋の向き・城/砦の領域判定
     roads.ts         街道の接続データ・中心線（ベジェ曲線）・距離検索
     terrainTypes.ts  地形タイプ定義（色・高さオフセット・木の密度）
@@ -127,6 +128,9 @@ A→B の侵攻では B を含む範囲 `battleAreas.B`、B→A では `battleAr
 - `cropBattleArea(data, city)`（`core/battleArea.ts`）は `battleAreas[city]` を切り出し、`deployments[city]`・`strongholds[city]` を
   切り出したマップの座標にして `deploy`・`stronghold` に付ける
 - map-editor の「街道マップ」欄で両端の都市と範囲・初期配置地点・防衛拠点を設定できる
+- `generateGeoRoadMap`（`core/geoMap.ts`）は、地理情報（`GeoSource`: 地点ごとの標高・川と湖・山岳度・森・乾燥度と、街道の経路）から街道マップを作る。
+  北を上にして、2 つの都市が内側に収まる縮尺で 32×20（横長）か 20×32（縦長）にする。両端の都市はテンプレートの城・砦と村。
+  範囲・初期配置地点・防衛拠点は仮の値を入れるので、map-editor で手直しする。ゲームの街道マップは nordencult の `npm run road-maps` で作る
 
 ## 地形生成の仕組み
 
