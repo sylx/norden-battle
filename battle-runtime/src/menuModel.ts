@@ -1,7 +1,8 @@
 /**
  * 選択中のユニットの行動メニューの状態（DOM を持たない）。描画は ui/ActionMenu.tsx。
  *
- * - BattleApp が開け閉めし、毎フレーム、メニューを添えるユニットの絵の画面上の範囲を渡す。
+ * - BattleApp が開け閉めし、毎フレーム、メニューを添えるユニットの絵の画面上の範囲と、メニューで隠したくない線
+ *   （予約した移動のルート・攻撃の矢印）の画面上の位置を渡す。
  * - React の側は subscribe / getState（useSyncExternalStore）で中身の変化を受け取り、
  *   onFrame で毎フレームの位置の更新を受け取る（位置は再描画せずに DOM を直接動かす）。
  * - 2 階層目の開け閉めもここで持つ（Esc で BattleApp から閉じるため）。
@@ -44,9 +45,17 @@ export interface MenuState {
   retreat: RetreatMenu | null;
 }
 
+/** 画面上の点（コンテナの左上からの CSS ピクセル） */
+export interface ScreenPoint {
+  x: number;
+  y: number;
+}
+
 /** 毎フレームの位置の基準。sprite はユニットの絵の範囲（画面の外・カメラの後ろなら null） */
 export interface MenuFrame {
   sprite: ScreenRect | null;
+  /** メニューで隠したくない折れ線（予約した移動のルート・攻撃の矢印。カメラの後ろの点は除く） */
+  avoid: ScreenPoint[][];
   /** コンテナの大きさ */
   width: number;
   height: number;
@@ -128,10 +137,26 @@ export class ActionMenuModel {
     if (unit) this.onAction(unit, action);
   }
 
-  /** 毎フレーム、描画の後に呼ぶ。anchor（メニューを添えるユニットの絵の位置と大きさ）の画面上の範囲を知らせる */
-  update(anchor: UnitPlacement | null, camera: THREE.PerspectiveCamera, width: number, height: number): void {
+  /**
+   * 毎フレーム、描画の後に呼ぶ。anchor（メニューを添えるユニットの絵の位置と大きさ）と、avoid（メニューで隠したくない
+   * ワールドの折れ線）の画面上の位置を知らせる
+   */
+  update(
+    anchor: UnitPlacement | null,
+    camera: THREE.PerspectiveCamera,
+    width: number,
+    height: number,
+    avoid: readonly (readonly THREE.Vector3[])[] = [],
+  ): void {
     if (!this.state.ctx || this.frameListeners.size === 0) return;
-    const frame: MenuFrame = { sprite: anchor && spriteRect(anchor, camera, width, height), width, height };
+    const v = new THREE.Vector3();
+    const screenLines = avoid.map((line) =>
+      line.flatMap((p) => {
+        v.copy(p).project(camera);
+        return v.z > 1 ? [] : [{ x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height }];
+      }),
+    );
+    const frame: MenuFrame = { sprite: anchor && spriteRect(anchor, camera, width, height), avoid: screenLines, width, height };
     for (const fn of this.frameListeners) fn(frame);
   }
 

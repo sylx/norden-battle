@@ -1,8 +1,9 @@
 /**
  * 選択中のユニットの近くに出す行動メニュー。中身は ActionMenuModel（menuModel.ts）が持つ。
  *
- * - ユニットの絵（移動を予約したら予約した移動先に置いた絵）の右（入らなければ左）に置き、
- *   カメラを動かしても毎フレーム追いかける（位置は再描画せずに DOM を直接動かす）。
+ * - ユニットの絵（移動を予約したら予約した移動先に置いた絵）の横に置き、カメラを動かしても毎フレーム追いかける
+ *   （位置は再描画せずに DOM を直接動かす）。置く位置は、絵の右・左に上端をそろえる・下端をそろえるの 4 通りのうち、
+ *   予約した移動のルート・攻撃の矢印をいちばん隠さないところ（同じくらいなら右に上端をそろえる・前のフレームと同じ位置）。
  * - 上部はユニットの名前と残り行動力だけ（顔・兵士数・士気・指揮官の能力は、地形の横の部隊のウィンドウ UnitInfoWindow.tsx に出す）。
  * - 2 階層目は 1 階層目の項目の横に開く。マウスは項目に乗せる、タッチはタップで開く。
  *   選べない項目（退却先の無い退却など）は灰色で出し、理由を title に持たせる。
@@ -14,7 +15,7 @@ import { useEffect, useRef, useSyncExternalStore, type CSSProperties } from 'rea
 import { ThinFrame } from 'norden-ui';
 import { TEAM_DEFS, UNIT_DEFS } from '@norden/map-runtime/core/units';
 import type { MenuAction, MenuEntry } from '../actions';
-import type { ActionMenuModel, MenuFrame, RetreatMenu } from '../menuModel';
+import type { ActionMenuModel, MenuFrame, RetreatMenu, ScreenPoint, ScreenRect } from '../menuModel';
 import { useTeamName } from './factionsContext';
 
 /** ユニットの絵とメニューの間隔（CSS ピクセル） */
@@ -23,6 +24,12 @@ const GAP = 14;
 const MARGIN = 8;
 /** 1 階層目と 2 階層目の間隔 */
 const SUB_GAP = 4;
+/** ルート・矢印を隠す長さを測るときの刻み（CSS ピクセル） */
+const AVOID_STEP = 4;
+/** 置く位置の候補ごとの、ルート・矢印を隠す長さに足す量（右に上端をそろえるのを優先する） */
+const SLOT_BIAS = [0, 6, 12, 18];
+/** 前のフレームと同じ位置の候補から引く量（カメラを動かしたときに行き来しないように） */
+const KEEP_BONUS = 24;
 
 export default function ActionMenu({ model }: { model: ActionMenuModel }) {
   const { ctx, entries, openIndex, retreat } = useSyncExternalStore(model.subscribe, model.getState);
@@ -192,13 +199,14 @@ function Cost({ n }: { n: number }) {
 
 /** メニューをユニットの絵の横へ動かす。絵が画面の外か、メニューを隠している間は隠す */
 function place(
-  { sprite, width: w, height: h }: MenuFrame,
+  frame: MenuFrame,
   model: ActionMenuModel,
   root: HTMLElement,
   main: HTMLElement,
   sub: HTMLElement | null,
   items: readonly (HTMLLIElement | null)[],
 ): void {
+  const { sprite, width: w, height: h } = frame;
   const offscreen = !sprite || sprite.r < 0 || sprite.l > w || sprite.b < 0 || sprite.t > h;
   const hidden = offscreen || model.suspended;
   root.style.visibility = hidden ? 'hidden' : 'visible';
@@ -209,11 +217,35 @@ function place(
   const mw = main.offsetWidth;
   const mh = main.offsetHeight;
   const sw = openItem && sub ? sub.offsetWidth + SUB_GAP : 0;
-  // 1 階層目は絵の右に入れば右、だめなら左。2 階層目の開け閉めではメニューを動かさない（逃げるように見えるため）
-  const onRight = sprite.r + GAP + mw <= w - MARGIN || sprite.l - GAP - mw < MARGIN;
-  let x = onRight ? sprite.r + GAP : sprite.l - GAP - mw;
-  x = Math.min(Math.max(x, MARGIN), w - MARGIN - mw);
-  const y = Math.min(Math.max(sprite.t, MARGIN), h - MARGIN - mh);
+  // 1 階層目は絵の右・左に上端・下端をそろえる 4 通りから、画面に入るもののうちルート・矢印をいちばん隠さないところ
+  // （どれも入らなければ右に上端をそろえる）。2 階層目の開け閉めではメニューを動かさない（逃げるように見えるため）
+  const fitsRight = sprite.r + GAP + mw <= w - MARGIN;
+  const fitsLeft = sprite.l - GAP - mw >= MARGIN;
+  const slots = [
+    { right: true, top: true },
+    { right: false, top: true },
+    { right: true, top: false },
+    { right: false, top: false },
+  ];
+  // 前のフレームの位置を優先するのは、避ける線があるときだけ（予約が無くなったら右に上端をそろえる位置へ戻る）
+  const prev = frame.avoid.length > 0 ? Number(root.dataset.slot ?? 0) : -1;
+  let best = 0;
+  let bestCost = Infinity;
+  let bestRect = menuRect(sprite, true, true, mw, mh, w, h);
+  for (let i = 0; i < slots.length; i++) {
+    const { right, top } = slots[i];
+    if (right ? !fitsRight && fitsLeft : !fitsLeft) continue;
+    const rect = menuRect(sprite, right, top, mw, mh, w, h);
+    const cost = hiddenLength(rect, frame.avoid) + SLOT_BIAS[i] - (i === prev ? KEEP_BONUS : 0);
+    if (cost < bestCost) {
+      best = i;
+      bestCost = cost;
+      bestRect = rect;
+    }
+  }
+  root.dataset.slot = String(best);
+  const { l: x, t: y } = bestRect;
+  const onRight = slots[best].right;
   root.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
 
   if (openItem && sub) {
@@ -224,4 +256,31 @@ function place(
     const top = openItem.offsetTop - (body?.offsetTop ?? 0);
     sub.style.top = `${Math.min(Math.max(top, MARGIN - y), h - MARGIN - y - sub.offsetHeight)}px`;
   }
+}
+
+/** 絵の右（right）・左に、上端（top）・下端をそろえて置いたメニューの範囲（画面に収まるようにずらす） */
+function menuRect(sprite: ScreenRect, right: boolean, top: boolean, mw: number, mh: number, w: number, h: number): ScreenRect {
+  const x = Math.min(Math.max(right ? sprite.r + GAP : sprite.l - GAP - mw, MARGIN), w - MARGIN - mw);
+  const y = Math.min(Math.max(top ? sprite.t : sprite.b - mh, MARGIN), h - MARGIN - mh);
+  return { l: x, t: y, r: x + mw, b: y + mh };
+}
+
+/** 折れ線（lines）のうち rect に入る部分の長さ（AVOID_STEP 刻みで数える） */
+function hiddenLength(rect: ScreenRect, lines: readonly (readonly ScreenPoint[])[]): number {
+  let hidden = 0;
+  for (const line of lines) {
+    for (let i = 1; i < line.length; i++) {
+      const a = line[i - 1];
+      const b = line[i];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      const n = Math.max(1, Math.ceil(len / AVOID_STEP));
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) / n;
+        const x = a.x + (b.x - a.x) * t;
+        const y = a.y + (b.y - a.y) * t;
+        if (x >= rect.l && x <= rect.r && y >= rect.t && y <= rect.b) hidden += len / n;
+      }
+    }
+  }
+  return hidden;
 }

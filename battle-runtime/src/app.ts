@@ -435,6 +435,8 @@ export class BattleApp {
   };
   private targeting: Targeting | null = null;
   private exec: Execution | null = null;
+  /** 行動メニューで隠したくない、予約した移動のルートと攻撃の矢印（ワールドの折れ線。予約が無ければ空） */
+  private menuAvoid: THREE.Vector3[][] = [];
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
@@ -926,8 +928,22 @@ export class BattleApp {
     const path = (legs: MoveStep[]) => (legs.length > 0 ? movePath(legs) : null);
     this.view.setPath(path(plan.legs.slice(0, split)), path(plan.legs.slice(split)));
     this.showAttackArrow(plan);
+    this.menuAvoid = this.planLines(plan, split);
     this.openMenu();
     this.emit('planChange', plan);
+  }
+
+  /** 予約した移動のルート（攻撃の前・後）と攻撃の矢印を、HEX の中心を結んだワールドの折れ線にする（行動メニューが避ける） */
+  private planLines(plan: Plan, split: number): THREE.Vector3[][] {
+    const map = this.map!;
+    const at = (o: Offset) => {
+      const c = map.layout.offsetToWorld(o.col, o.row);
+      return new THREE.Vector3(c.x, this.view.groundAt(c.x, c.z), c.z);
+    };
+    const lines = [plan.legs.slice(0, split), plan.legs.slice(split)].filter((legs) => legs.length > 0).map((legs) => movePath(legs));
+    const attack = plan.attack;
+    if (attack) lines.push([BattleApp.attackPos(plan), attack.target, ...(attack.landing ? [attack.landing] : [])]);
+    return lines.map((line) => line.map(at));
   }
 
   /** 攻撃の矢印。一斉攻撃は、加わる味方からも細い矢印を出す */
@@ -1698,6 +1714,7 @@ export class BattleApp {
     this.selected = o;
     this.view.setFocus(o);
     this.view.setPath(null);
+    this.menuAvoid = [];
     this.showAttackArrow(null);
     const unit = this.cellAndUnit(o)[1];
     const status = unit && this.statuses.get(unit);
@@ -1748,7 +1765,7 @@ export class BattleApp {
     this.view.render();
     const placements = this.view.units.placements();
     this.tags.update(placements, this.ctx.camera, this.view.display.units, this.hovered, this.selected);
-    this.menu.update(this.menuAnchor(placements), this.ctx.camera, this.container.clientWidth, this.container.clientHeight);
+    this.menu.update(this.menuAnchor(placements), this.ctx.camera, this.container.clientWidth, this.container.clientHeight, this.menuAvoid);
     this.popups.update(this.ctx.camera);
     this.bubbles.update(placements, this.ctx.camera, this.view.display.units);
   }
