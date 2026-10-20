@@ -1427,9 +1427,12 @@
   margin-bottom: 6px;
 }
 
+/* 軍の欄は枠の幅を分け合って縮み、名前は入らなければ折り返す（兵数の合計は折り返さない） */
 .battle-screen .battle-situation .situation-side {
+  flex: 1 1 0;
+  min-width: 0;
   display: grid;
-  grid-template-columns: auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
   gap: 0 8px;
 }
@@ -1440,17 +1443,24 @@
   text-align: right;
 }
 
+.battle-screen .battle-situation .situation-side:last-child:not(:first-child) .name {
+  justify-content: flex-end;
+}
+
 .battle-screen .battle-situation .situation-side .name {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
+  gap: 0 5px;
+  min-width: 0;
   font-weight: 600;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 /* 軍の色の菱形（色は文字ではなく印に付ける） */
 .battle-screen .battle-situation .situation-side .name::before {
   content: '';
+  flex: none;
   width: 8px;
   height: 8px;
   background: var(--team);
@@ -1459,6 +1469,7 @@
 }
 
 .battle-screen .battle-situation .situation-side .name small {
+  white-space: nowrap;
   font-size: 10px;
   font-weight: 400;
   color: var(--text-dim);

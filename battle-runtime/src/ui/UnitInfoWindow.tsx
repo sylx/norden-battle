@@ -83,7 +83,7 @@ function State({ app, unit, status }: { app: BattleApp; unit: UnitData; status: 
         <b>E</b>行動済み
       </span>
     );
-  return <span className="info-state">行動できる</span>;
+  return <span className="info-state">行動可能</span>;
 }
 
 /** 指揮官の能力の値とグラフ */
