@@ -32,6 +32,7 @@
  * ターンは軍ごとの交互（防衛側の red → 攻撃側の blue。TURN_ORDER）。いまの番の軍のユニットだけを選んで行動させられる。
  * 相手方のユニットは暗くし、クリックするとそのユニットが次の番に動ける範囲（青）と攻撃できる範囲（赤）を出す（inspect）。
  * いまの番の軍で、もう移動・攻撃・迎撃のどれもできないユニットは行動済みとして、絵を暗くして右上に E の印を付ける。
+ * その軍のユニットがすべて行動済みになったら allDone のイベントで知らせる（画面はターン終了のボタンを目立たせる）。
  * ターン終了で次の軍の番になり、その軍の全ユニットの行動力が最大まで戻る（全軍が 1 回ずつ行動したらターンの数が進む）。
  * 敵の ZOC の中のユニットは、その番にまだ移動も攻撃もしていなければ動き出せる。
  *
@@ -280,6 +281,8 @@ export interface BattleEvents {
   select: [unit: UnitData | null];
   /** 行動する軍が変わったとき（戦闘が始まったときも） */
   turn: [turn: number, team: TeamId];
+  /** 行動済みの印を数え直したとき。allDone はいまの番の軍のユニットがすべて行動済みか（配備フェーズ・強制退却の間は false） */
+  allDone: [allDone: boolean];
   /** 決定で予約を実行し終えたとき（退却も。そのときは retreat の後） */
   execute: [report: ExecuteReport];
   /** ユニットが退却した・退却に失敗して捕虜になったとき（ユニットはもうマップにいない） */
@@ -670,6 +673,8 @@ export class BattleApp {
     }
     this.view.units.setDimmed((u) => u.team !== team || this.done.has(u));
     this.tags.setMarks(this.done);
+    const own = map && !this.deployment && !this.rout ? map.allUnits().filter((u) => u.team === team) : [];
+    this.emit('allDone', own.length > 0 && own.every((u) => this.done.has(u)));
   }
 
   /** team の全ユニットの行動力を最大まで戻し、移動済み・攻撃済みを消す（番の初め） */

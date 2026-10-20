@@ -383,21 +383,16 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 行動終了（選べる行動が無い。行動済みの E の印と同じ赤） */
+/* 行動終了（選べる行動が無い）。押せるものと見間違えないよう、枠も背景も無い小さな文字にする */
 .battle-screen .action-menu .menu-ended {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin: 2px 0 4px;
-  padding: 4px 8px;
-  border: 1px solid rgba(255, 244, 208, 0.7);
-  border-radius: 2px;
-  background: linear-gradient(#c23a2a, #7e1d14);
-  color: #fff4d0;
-  font-weight: 700;
+  margin: 0 0 2px;
+  padding: 2px 4px;
+  font-size: 11px;
+  color: rgba(232, 140, 120, 0.85);
   letter-spacing: 0.2em;
+  text-align: center;
   white-space: nowrap;
+  cursor: default;
 }
 
 .battle-screen .action-menu .menu-item.disabled {
@@ -1246,6 +1241,35 @@
   background: var(--team);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
   transform: rotate(45deg);
+}
+
+/* いまの番の軍のユニットがすべて行動済み: 知らせの文字と、ターン終了のボタンを脈打つ光で目立たせる */
+.battle-screen .battle-turn-bar .turn-hint {
+  font-size: 12px;
+  color: var(--accent);
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.battle-screen .battle-turn-bar.all-done .end-turn {
+  animation: battle-end-turn-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes battle-end-turn-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(255, 214, 110, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 9px rgba(255, 214, 110, 0.95)) brightness(1.2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battle-screen .battle-turn-bar.all-done .end-turn {
+    animation: none;
+    filter: drop-shadow(0 0 6px rgba(255, 214, 110, 0.85));
+  }
 }
 
 /* --- 配備のウィンドウ（DeployWindow.tsx。画面の右下、ステータス行の上） --- */

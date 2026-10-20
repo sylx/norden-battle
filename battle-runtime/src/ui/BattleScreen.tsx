@@ -18,7 +18,8 @@
  *   決着のウィンドウ（BattleEndWindow.tsx）を出す。そのボタン（onEnd を渡したときだけ）で使う側に知らせる。
  *   カットインは、プレイヤーの陣営（playerSide）が勝てば CUTIN_TEMPLATES の battle-win、負ければ battle-lose をテンプレートのまま出す
  *   （プレイヤーが戦闘にいないときは battle-win）。決着した後はターン表示を出さない。
- * - ターン表示には、いま行動している軍を出す（防衛側 → 攻撃側の交互）。
+ * - ターン表示には、いま行動している軍を出す（防衛側 → 攻撃側の交互）。その軍のユニットがすべて行動済みになったら
+ *   「全部隊 行動終了」と出して、ターン終了のボタンを脈打つ光で目立たせる（BattleApp の allDone）。
  * - 軍は色（赤・青）ではなく勢力の名前で呼ぶ。陣営ごとの勢力は factions で渡す（factions.ts。中の UI には FactionsContext で配る）。
  * - 画面の下に操作の案内・予約の中身・実行した結果のステータス行を出す（notice を渡すとそちらを出す）。
  * - 親の要素いっぱいに広がる。children はその上に重ねる（エディタの道具・ゲームの見出しなど）。
@@ -148,6 +149,8 @@ export default function BattleScreen({
   const [endShown, setEndShown] = useState(false);
   /** 負けた陣営の残りの部隊を強制退却させている */
   const [routing, setRouting] = useState(false);
+  /** いまの番の軍のユニットがすべて行動済み（ターン終了を目立たせる） */
+  const [allDone, setAllDone] = useState(false);
   const latest = useRef({ statuses, troops, factions, cutInTexts, onRetreat, onWipeout, onApp, playerSide });
   latest.current = { statuses, troops, factions, cutInTexts, onRetreat, onWipeout, onApp, playerSide };
 
@@ -167,6 +170,7 @@ export default function BattleScreen({
         if (p === 'battle') setStatus(battleStartStatus(latest.current.factions, app.activeTeam));
       }),
       app.on('deploy', (state) => setStatus(deployStatus(latest.current.factions, state))),
+      app.on('allDone', setAllDone),
       app.on('turn', (turn, team) => {
         setTurn({ turn, team });
         const { cutInTexts, factions } = latest.current;
@@ -243,13 +247,14 @@ export default function BattleScreen({
             {phase === 'battle' && <BattleLogWindow app={app} />}
             <ActionMenu model={app.menu} />
             {map && phase === 'battle' && !intro && !outcome && !routing && (
-              <div className="battle-turn-bar" style={{ '--team': TEAM_DEFS[turn.team].color } as CSSProperties}>
+              <div className={`battle-turn-bar${allDone ? ' all-done' : ''}`} style={{ '--team': TEAM_DEFS[turn.team].color } as CSSProperties}>
                 <ThinFrame />
                 <span className="turn">
                   ターン <output>{turn.turn}</output>
                 </span>
                 <span className="turn-team">{teamName(factions, turn.team)}のターン</span>
-                <Button variant="primary" size="small" onClick={endTurn}>
+                {allDone && <span className="turn-hint">全部隊 行動終了</span>}
+                <Button variant="primary" size="small" className="end-turn" onClick={endTurn}>
                   ターン終了
                 </Button>
               </div>
