@@ -8,7 +8,8 @@ import faceSheetUrl from '../../assets/units/character_face.webp?url';
 
 export interface UnitStatus {
   soldiers: number;
-  maxSoldiers: number;
+  /** 戦闘が始まったときの兵数（兵数のゲージの満タン） */
+  initialSoldiers: number;
   /** 0..MAX_MORALE */
   morale: number;
   /** 残り行動力（0..maxAp） */
@@ -48,9 +49,8 @@ export interface Portrait {
 
 /** ゲームから渡す部隊の、戦闘に入る前の値（troopStatus で戦闘中の状態にする） */
 export interface TroopInit {
+  /** 戦闘に入るときの兵数（これが兵数のゲージの満タンになる） */
   soldiers: number;
-  /** 兵数の上限（ゲージの満タン）。省略すると soldiers */
-  maxSoldiers?: number;
   /** 0..MAX_MORALE */
   morale: number;
   /** 指揮官の統率・武力・知力（0..100） */
@@ -70,7 +70,7 @@ export interface TroopInit {
 export function troopStatus(type: UnitType, init: TroopInit): UnitStatus {
   return {
     soldiers: init.soldiers,
-    maxSoldiers: init.maxSoldiers ?? init.soldiers,
+    initialSoldiers: init.soldiers,
     morale: Math.min(MAX_MORALE, Math.max(0, init.morale)),
     ap: MAX_AP[type],
     maxAp: MAX_AP[type],
@@ -103,7 +103,7 @@ const MAX_AP: Record<UnitType, number> = {
   mage: 4,
 };
 
-/** 兵種ごとの最大兵士数（仮） */
+/** 表示確認用の仮の部隊の、兵種ごとの兵数の目安（実際の兵数はこれをばらつかせる） */
 const MAX_SOLDIERS: Record<UnitType, number> = {
   infantry: 1000,
   archer: 800,
@@ -156,12 +156,12 @@ export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStat
   return out;
 }
 
-/** 表示確認用の仮の状態 1 つ分。兵士数・士気は 0..1 の r1・r2 でばらつかせ、行動力は満タン */
+/** 表示確認用の仮の状態 1 つ分。兵士数・士気は 0..1 の r1・r2 でばらつかせ（兵数のゲージは満タン）、行動力は満タン */
 export function demoStatus(type: UnitType, face: number, r1: number, r2: number): UnitStatus {
-  const max = MAX_SOLDIERS[type];
+  const soldiers = Math.round((MAX_SOLDIERS[type] * (0.3 + 0.7 * r1)) / 10) * 10;
   return {
-    maxSoldiers: max,
-    soldiers: Math.round((max * (0.3 + 0.7 * r1)) / 10) * 10,
+    initialSoldiers: soldiers,
+    soldiers,
     morale: Math.round(20 + 80 * r2),
     ap: MAX_AP[type],
     maxAp: MAX_AP[type],

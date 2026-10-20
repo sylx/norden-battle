@@ -139,8 +139,10 @@
   grid-column: 1 / -1;
   height: 5px;
   margin-top: 1px;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.6);
   border-radius: 3px;
+  /* 空のところも見えるように、溝の縁を薄く出す */
+  box-shadow: inset 0 0 0 1px rgba(255, 244, 208, 0.14);
   overflow: hidden;
 }
 
@@ -149,8 +151,17 @@
   border-radius: 3px;
 }
 
+/* 兵数のゲージは両軍で同じ色（軍は札の縁の色で分かる）。100 以下は赤 */
 .battle-screen .unit-tag .soldiers .fill {
-  background: var(--team);
+  background: linear-gradient(90deg, #4f9a3c, #9fdc6a);
+}
+
+.battle-screen .unit-tag.low-soldiers .soldiers .fill {
+  background: linear-gradient(90deg, #9a2a1e, #e8553a);
+}
+
+.battle-screen .unit-tag.low-soldiers .soldiers .value {
+  color: #ff8a70;
 }
 
 .battle-screen .unit-tag .morale .fill {
@@ -767,7 +778,7 @@
 }
 
 /* --- 部隊（騎士）のウィンドウ（UnitInfoWindow.tsx。画面の左下、地形のウィンドウの右） --- */
-/* 画面の右上の列: 騎士のウィンドウと、その下の未行動の部隊のナビゲーション（UnitNavigator.tsx） */
+/* 画面の右上の列: 未行動の部隊のナビゲーション（UnitNavigator.tsx。いちばん上に固定）と、その下の騎士のウィンドウ */
 .battle-screen .battle-unit-column {
   position: absolute;
   top: 12px;

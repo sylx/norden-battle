@@ -1,5 +1,5 @@
 /**
- * 部隊（騎士）のウィンドウ（画面の右上に固定。下に未行動の部隊のナビゲーション UnitNavigator.tsx が並ぶ）。
+ * 部隊（騎士）のウィンドウ（画面の右上、未行動の部隊のナビゲーション UnitNavigator.tsx の下）。
  *
  * - カーソルの下のユニット → 選択中のユニット → 調べている相手方のユニットの順に、1 部隊の情報を出す。どれも無ければ隠す。
  * - 顔・兵士数・士気（情報札と同じ中身）、残り行動力、指揮官の統率・武力・知力とスキル、いまの様子（行動済み・迎撃の構えなど）。
@@ -53,8 +53,8 @@ export default function UnitInfoWindow({ app }: { app: BattleApp }) {
       </div>
       <StatusCard status={status} className="in-info" />
       <dl>
-        <dt>最大兵数</dt>
-        <dd>{status.maxSoldiers}</dd>
+        <dt>初期兵数</dt>
+        <dd>{status.initialSoldiers}</dd>
         <dt>行動力</dt>
         <dd>
           <b>{status.ap}</b> / {status.maxAp}

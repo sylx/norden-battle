@@ -46,6 +46,8 @@ const MARK_INSET_Y = 0.12;
 const OFFSCREEN_MARGIN = 80;
 /** 士気がこれ未満なら低い色にする */
 const LOW_MORALE = 30;
+/** 兵数がこれ以下なら赤くする */
+const LOW_SOLDIERS = 100;
 
 interface Point {
   x: number;
@@ -261,7 +263,7 @@ export class UnitTags {
   }
 
   private render(tag: Tag, s: UnitStatus, active: boolean): void {
-    const key = `${s.soldiers}/${s.maxSoldiers}/${s.morale}/${s.portrait?.url ?? s.face}/${active}`;
+    const key = `${s.soldiers}/${s.initialSoldiers}/${s.morale}/${s.portrait?.url ?? s.face}/${active}`;
     if (key === tag.shown) return;
     tag.shown = key;
     tag.el.classList.toggle('active', active);
@@ -296,10 +298,12 @@ export const STATUS_HTML = `
 export function renderStatus(el: HTMLElement, s: UnitStatus): void {
   const q = (sel: string) => el.querySelector(sel) as HTMLElement;
   q('.soldiers .value').textContent = String(s.soldiers);
-  q('.soldiers .fill').style.width = `${(100 * clamp01(s.soldiers / s.maxSoldiers)).toFixed(1)}%`;
+  // 兵数のゲージは戦闘が始まったときの兵数を満タンにする
+  q('.soldiers .fill').style.width = `${(100 * clamp01(s.soldiers / s.initialSoldiers)).toFixed(1)}%`;
   q('.morale .value').textContent = String(s.morale);
   q('.morale .fill').style.width = `${(100 * clamp01(s.morale / MAX_MORALE)).toFixed(1)}%`;
   el.classList.toggle('low-morale', s.morale < LOW_MORALE);
+  el.classList.toggle('low-soldiers', s.soldiers <= LOW_SOLDIERS);
   setFace(q('.face'), s, FACE_SIZE);
 }
 
