@@ -40,6 +40,8 @@ export class SceneContext {
    */
   onShadowPass: (active: boolean) => void = () => {};
   private readonly container: HTMLElement;
+  /** カメラの注視点を収める範囲（fitTo で渡されたマップの範囲。まだ無ければ null） */
+  private panBounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
   private fpsFrames = 0;
   /** シャドウマップだけを更新するときの描画先（本体の描画結果は捨てる） */
   private readonly shadowDummy = new THREE.WebGLRenderTarget(1, 1);
@@ -160,8 +162,9 @@ export class SceneContext {
     this.camera.updateProjectionMatrix();
   }
 
-  /** マップ範囲に合わせてカメラ・影の範囲を調整する */
+  /** マップ範囲に合わせてカメラ・影の範囲を調整する（カメラの注視点はこの範囲の外へ動かせなくなる） */
   fitTo(box: { minX: number; maxX: number; minZ: number; maxZ: number }, resetCamera: boolean): void {
+    this.panBounds = { ...box };
     const cx = (box.minX + box.maxX) / 2;
     const cz = (box.minZ + box.maxZ) / 2;
     const w = box.maxX - box.minX;
@@ -204,6 +207,7 @@ export class SceneContext {
       this.fpsStart = now;
     }
     this.controls.update();
+    this.clampPan();
     const r = this.renderer;
     const sm = r.shadowMap;
     if (sm.autoUpdate || sm.needsUpdate) this.renderShadows();
@@ -216,6 +220,23 @@ export class SceneContext {
     r.render(this.overlay, this.camera);
     r.autoClear = true;
     sm.autoUpdate = autoUpdate;
+  }
+
+  /**
+   * ドラッグでマップの外へ際限なく動かせないよう、注視点をマップの範囲（panBounds）に押し戻す。
+   * カメラも同じだけ動かして、向き・距離は変えない
+   */
+  private clampPan(): void {
+    const b = this.panBounds;
+    if (!b) return;
+    const t = this.controls.target;
+    const dx = THREE.MathUtils.clamp(t.x, b.minX, b.maxX) - t.x;
+    const dz = THREE.MathUtils.clamp(t.z, b.minZ, b.maxZ) - t.z;
+    if (dx === 0 && dz === 0) return;
+    t.x += dx;
+    t.z += dz;
+    this.camera.position.x += dx;
+    this.camera.position.z += dz;
   }
 
   /** シャドウマップだけを描き直す（1×1 の捨てるターゲットに描くついでに更新させる） */
