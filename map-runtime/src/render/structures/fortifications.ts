@@ -6,13 +6,13 @@
  * 城の地面の石畳は地形のシェーダで描く（HexOverlay.setPaved）。
  */
 import * as THREE from 'three';
-import { castleWard, featureRegions } from '../../core/features';
-import type { Offset, Vec2 } from '../../core/hex';
-import type { HexCell } from '../../core/mapData';
-import { TERRAIN_DEFS } from '../../core/terrainTypes';
-import { PAT } from './material';
-import { box, structureRng, cone, cylinder, footprint, Frame, groundRange, pyramidRoof, terrainWall, vary, type BuildCtx, type Rng } from './shapes';
-import { house, ROOF_SLATE, ROOF_THATCH, ROOF_TILE } from './village';
+import { castleWard, featureRegions } from '../../core/features.ts';
+import type { Offset, Vec2 } from '../../core/hex.ts';
+import type { HexCell } from '../../core/mapData.ts';
+import { TERRAIN_DEFS } from '../../core/terrainTypes.ts';
+import { PAT } from './material.ts';
+import { box, structureRng, cone, cylinder, footprint, Frame, groundRange, pyramidRoof, terrainWall, vary, type BuildCtx, type Rng } from './shapes.ts';
+import { house, ROOF_SLATE, ROOF_THATCH, ROOF_TILE } from './village.ts';
 
 interface Edge {
   cell: HexCell;

@@ -7,9 +7,9 @@
  * 向きはゲームの概念として持たない（データにも保存しない）。見た目のためだけに、
  * 配置から「敵のいる側を向く」ように毎回決める（unitFacings）。
  */
-import type { Offset } from './hex';
-import type { HexCell, HexMap } from './mapData';
-import { TERRAIN_DEFS } from './terrainTypes';
+import type { Offset } from './hex.ts';
+import type { HexCell, HexMap } from './mapData.ts';
+import { TERRAIN_DEFS } from './terrainTypes.ts';
 
 export const UNIT_TYPES = ['infantry', 'archer', 'cavalry', 'mage'] as const;
 export type UnitType = (typeof UNIT_TYPES)[number];

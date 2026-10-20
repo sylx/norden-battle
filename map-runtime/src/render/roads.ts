@@ -2,9 +2,9 @@
  * 街道のメッシュ。道の中心線に沿って地形に貼り付く帯を作り、縁はアルファでぼかす。
  */
 import * as THREE from 'three';
-import type { Vec2 } from '../core/hex';
-import { ROAD_WIDTH } from '../core/roads';
-import type { Heightmap } from '../core/terrainGen';
+import type { Vec2 } from '../core/hex.ts';
+import { ROAD_WIDTH } from '../core/roads.ts';
+import type { Heightmap } from '../core/terrainGen.ts';
 
 const FADE = 0.03;
 const LIFT = 0.006;

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
-import { ParchmentEffect } from './parchment';
+import { ParchmentEffect } from './parchment.ts';
 
 /**
  * カメラの俯角（水平からの角度, 度）の初期値。

@@ -17,10 +17,10 @@
  *     テクスチャに焼いて 1 本 1 枚の板で描く。頂点数も重なりも桁違いに減る（Forest の ForestMode を参照）
  */
 import * as THREE from 'three';
-import { mulberry32 } from '../core/noise';
-import { TreeKind, type TreeInstance } from '../core/terrainGen';
-import { GeoBuilder } from './geoBuilder';
-import { LIGHTS } from './scene';
+import { mulberry32 } from '../core/noise.ts';
+import { TreeKind, type TreeInstance } from '../core/terrainGen.ts';
+import { GeoBuilder } from './geoBuilder.ts';
+import { LIGHTS } from './scene.ts';
 
 // ---- 風 -------------------------------------------------------------------
 

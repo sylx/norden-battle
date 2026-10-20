@@ -2,8 +2,8 @@
  * TerrainData（純粋データ）→ three.js のメッシュ群。
  */
 import * as THREE from 'three';
-import type { TerrainData } from '../core/terrainGen';
-import type { HexOverlay } from './hexOverlay';
+import type { TerrainData } from '../core/terrainGen.ts';
+import type { HexOverlay } from './hexOverlay.ts';
 
 export interface TerrainMeshes {
   group: THREE.Group;

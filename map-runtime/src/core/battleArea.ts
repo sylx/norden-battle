@@ -2,8 +2,8 @@
  * 街道マップ（戦略マップの街道 A–B の両端の都市を描いた大きなマップ）から、
  * 侵攻方向ごとの戦闘の範囲を切り出す。範囲は防衛する都市の ID で引く（A→B の侵攻なら battleAreas[B]）。
  */
-import type { Offset } from './hex';
-import { BATTLE_AREA_SIZE, DEPLOY_SIDES, HexMap, isAlignedOrigin, type BattleDeployment, type MapData } from './mapData';
+import type { Offset } from './hex.ts';
+import { BATTLE_AREA_SIZE, DEPLOY_SIDES, HexMap, isAlignedOrigin, type BattleDeployment, type MapData } from './mapData.ts';
 
 export { BATTLE_AREA_SIZE, isAlignedOrigin };
 

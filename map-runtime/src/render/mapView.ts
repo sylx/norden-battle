@@ -4,18 +4,18 @@
  * パラメータ（params・overlay のユニフォームなど）は map-editor の初期値で始まる。
  */
 import * as THREE from 'three';
-import type { Offset } from '../core/hex';
-import type { HexMap } from '../core/mapData';
-import { buildRoadPaths, RoadIndex } from '../core/roads';
-import { DEFAULT_TERRAIN_PARAMS, generateTerrain, Heightmap, placeVegetation, type TerrainData, type TerrainParams } from '../core/terrainGen';
-import { Forest, windUniforms, type ForestMode } from './foliage';
-import { HexOverlay, type RangeCell } from './hexOverlay';
-import { PathArrow } from './pathArrow';
-import { buildRoadMesh } from './roads';
-import type { SceneContext } from './scene';
-import { buildStructures } from './structures';
-import { buildTerrainMeshes, disposeObject, type TerrainMeshes } from './terrainMeshes';
-import { BRIDGE_DECK, UnitLayer } from './units';
+import type { Offset } from '../core/hex.ts';
+import type { HexMap } from '../core/mapData.ts';
+import { buildRoadPaths, RoadIndex } from '../core/roads.ts';
+import { DEFAULT_TERRAIN_PARAMS, generateTerrain, Heightmap, placeVegetation, type TerrainData, type TerrainParams } from '../core/terrainGen.ts';
+import { Forest, windUniforms, type ForestMode } from './foliage.ts';
+import { HexOverlay, type RangeCell } from './hexOverlay.ts';
+import { PathArrow } from './pathArrow.ts';
+import { buildRoadMesh } from './roads.ts';
+import type { SceneContext } from './scene.ts';
+import { buildStructures } from './structures/index.ts';
+import { buildTerrainMeshes, disposeObject, type TerrainMeshes } from './terrainMeshes.ts';
+import { BRIDGE_DECK, UnitLayer } from './units.ts';
 
 /** 攻撃の矢印を相手の HEX の中心の手前で止める量（hexSize 比。足元に刺さるように） */
 const ATTACK_END_GAP = 0.3;

@@ -9,8 +9,8 @@
  *   GET maps/<file>         マップ JSON
  *   PUT maps/<file>         保存（開発サーバーのみ）
  */
-import { parseMapData, stringifyMapData, type MapData } from './core/mapData';
-import type { GridSpec } from './core/hex';
+import { parseMapData, stringifyMapData, type MapData } from './core/mapData.ts';
+import type { GridSpec } from './core/hex.ts';
 
 export const MAPS_URL = 'maps/';
 export const MAP_INDEX_FILE = 'index.json';

@@ -2,9 +2,9 @@
  * 村: HEX 内に家々を散らして置く。たまに教会、編み垣の畑、干し草の山。
  */
 import * as THREE from 'three';
-import type { HexCell } from '../../core/mapData';
-import { ROAD_WIDTH } from '../../core/roads';
-import { PAT, type Pattern } from './material';
+import type { HexCell } from '../../core/mapData.ts';
+import { ROAD_WIDTH } from '../../core/roads.ts';
+import { PAT, type Pattern } from './material.ts';
 import {
   box,
   structureRng,
@@ -19,7 +19,7 @@ import {
   vary,
   type BuildCtx,
   type Rng,
-} from './shapes';
+} from './shapes.ts';
 
 export type WallStyle = 'plaster' | 'stone' | 'wood';
 

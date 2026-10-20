@@ -4,15 +4,15 @@
  * そのため人工物の配置だけが変わったときは地形を作り直さずにこれだけ呼べばよい。
  */
 import * as THREE from 'three';
-import type { HexMap } from '../../core/mapData';
-import type { RoadIndex } from '../../core/roads';
-import { Heightmap, type TerrainData } from '../../core/terrainGen';
-import { GeoBuilder } from '../geoBuilder';
-import { buildBridge } from './bridge';
-import { buildFortifications } from './fortifications';
-import { createStructureMaterial } from './material';
-import type { BuildCtx } from './shapes';
-import { buildVillage } from './village';
+import type { HexMap } from '../../core/mapData.ts';
+import type { RoadIndex } from '../../core/roads.ts';
+import { Heightmap, type TerrainData } from '../../core/terrainGen.ts';
+import { GeoBuilder } from '../geoBuilder.ts';
+import { buildBridge } from './bridge.ts';
+import { buildFortifications } from './fortifications.ts';
+import { createStructureMaterial } from './material.ts';
+import type { BuildCtx } from './shapes.ts';
+import { buildVillage } from './village.ts';
 
 export function buildStructures(map: HexMap, data: TerrainData, roads: RoadIndex): THREE.Group {
   const group = new THREE.Group();

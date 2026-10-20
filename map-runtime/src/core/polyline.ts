@@ -2,7 +2,7 @@
  * 折れ線の補助。HEX の中心を結んだ経路の角を丸めて、距離で位置と向きを引けるようにする
  * （経路の矢印と、経路に沿ったユニットの移動で同じ線を使う）。
  */
-import type { Vec2 } from './hex';
+import type { Vec2 } from './hex.ts';
 
 /** HEX の中心を結んだ折れ線の角を丸める（Chaikin。両端は動かさない） */
 export function smoothPath(points: Vec2[]): Vec2[] {

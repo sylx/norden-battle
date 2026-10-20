@@ -9,9 +9,9 @@
  *   辺の中点での接線は辺に垂直になるので、隣の HEX の道と滑らかにつながる。
  *   さらに両端を固定したまま横方向に少し揺らして自然な道にする。
  */
-import type { Offset, Vec2 } from './hex';
-import type { HexCell, HexMap } from './mapData';
-import { Noise } from './noise';
+import type { Offset, Vec2 } from './hex.ts';
+import type { HexCell, HexMap } from './mapData.ts';
+import { Noise } from './noise.ts';
 
 /** 道の幅（hexSize 比）。描画・木の除外・建物の配置で共通に使う */
 export const ROAD_WIDTH = 0.14;

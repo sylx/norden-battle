@@ -8,8 +8,8 @@
  * - プレースホルダーは 100×100 の座標系で右向きに描き、下端（y = 100）が足元。軍ごとに服の色を変える。
  */
 import * as THREE from 'three';
-import { TEAM_DEFS, type Facing, type TeamId, type UnitType } from '../core/units';
-import { cleanupSprite } from './spriteCleanup';
+import { TEAM_DEFS, type Facing, type TeamId, type UnitType } from '../core/units.ts';
+import { cleanupSprite } from './spriteCleanup.ts';
 
 const CANVAS_SIZE = 256;
 

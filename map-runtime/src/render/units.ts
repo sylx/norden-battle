@@ -6,11 +6,11 @@
  * スプライト同士は奥から順に描かれるので、手前のユニットが奥のユニットに重なる。
  */
 import * as THREE from 'three';
-import type { Offset } from '../core/hex';
-import type { HexMap } from '../core/mapData';
-import { Heightmap, type TerrainData } from '../core/terrainGen';
-import { unitFacings, type Facing, type UnitData } from '../core/units';
-import { UnitArt, type UnitImage } from './unitArt';
+import type { Offset } from '../core/hex.ts';
+import type { HexMap } from '../core/mapData.ts';
+import { Heightmap, type TerrainData } from '../core/terrainGen.ts';
+import { unitFacings, type Facing, type UnitData } from '../core/units.ts';
+import { UnitArt, type UnitImage } from './unitArt.ts';
 
 /** スプライトの高さ（hexSize 比） */
 const UNIT_HEIGHT = 0.95;

@@ -6,8 +6,8 @@
  * 縁取り用に一回り大きい帯を後ろに重ね、本体には進む向きへ流れる山形の縞を付ける。
  */
 import * as THREE from 'three';
-import type { HexLayout, Offset, Vec2 } from '../core/hex';
-import { Polyline, smoothPath } from '../core/polyline';
+import type { HexLayout, Offset, Vec2 } from '../core/hex.ts';
+import { Polyline, smoothPath } from '../core/polyline.ts';
 
 /** 帯の半幅・矢じりの半幅・矢じりの長さ・出発点の HEX 中心からの離し（hexSize 比） */
 const SHAFT_HALF = 0.11;

@@ -3,13 +3,13 @@
  * 面の法線はフラット。向きは「内側の点」から自動で外向きにそろえる。
  */
 import * as THREE from 'three';
-import type { Vec2 } from '../../core/hex';
-import type { HexMap } from '../../core/mapData';
-import { mulberry32 } from '../../core/noise';
-import type { RoadIndex } from '../../core/roads';
-import type { Heightmap } from '../../core/terrainGen';
-import type { GeoBuilder } from '../geoBuilder';
-import type { Pattern } from './material';
+import type { Vec2 } from '../../core/hex.ts';
+import type { HexMap } from '../../core/mapData.ts';
+import { mulberry32 } from '../../core/noise.ts';
+import type { RoadIndex } from '../../core/roads.ts';
+import type { Heightmap } from '../../core/terrainGen.ts';
+import type { GeoBuilder } from '../geoBuilder.ts';
+import type { Pattern } from './material.ts';
 
 export interface BuildCtx {
   b: GeoBuilder;

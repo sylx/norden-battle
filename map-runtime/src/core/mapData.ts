@@ -1,8 +1,8 @@
-import { HexLayout, type GridSpec, type Offset, type Vec2 } from './hex';
-import { isFeatureId, MAX_WARD, type FeatureId } from './features';
-import { normalizeRoads } from './roads';
-import { isTerrainId, type TerrainId } from './terrainTypes';
-import { isTeamId, isUnitType, type UnitData } from './units';
+import { HexLayout, type GridSpec, type Offset, type Vec2 } from './hex.ts';
+import { isFeatureId, MAX_WARD, type FeatureId } from './features.ts';
+import { normalizeRoads } from './roads.ts';
+import { isTerrainId, type TerrainId } from './terrainTypes.ts';
+import { isTeamId, isUnitType, type UnitData } from './units.ts';
 
 /**
  * マップ JSON のフォーマット (version 1)

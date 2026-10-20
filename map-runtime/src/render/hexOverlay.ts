@@ -10,7 +10,7 @@
  * 石畳の HEX（城の中）も cols×rows のテクスチャで渡し、地形のシェーダで敷石の模様を描く。
  */
 import * as THREE from 'three';
-import type { HexLayout, Offset } from '../core/hex';
+import type { HexLayout, Offset } from '../core/hex.ts';
 
 /** 範囲の HEX。mark は印（斜線）を付け、weak は薄く塗る。alt は 2 つ目の色で塗る（移動範囲の外の攻撃範囲など） */
 export type RangeCell = Offset & { mark?: boolean; weak?: boolean; alt?: boolean };

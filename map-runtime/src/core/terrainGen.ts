@@ -11,10 +11,10 @@
  *      地形の境目は HEX の直線ではなく有機的な形になる（HEX グリッド自体は規則的なまま）。
  *   3. 標高レベルと地形ごとのオフセット・色を重みで混ぜて高さと色を作る（高さにノイズは乗せない）。
  */
-import type { HexMap } from './mapData';
-import { Noise, hash2, lerp, smoothstep } from './noise';
-import { ROAD_WIDTH, type RoadIndex } from './roads';
-import { TERRAIN_DEFS, TERRAIN_IDS, TERRAIN_INDEX, type RGB } from './terrainTypes';
+import type { HexMap } from './mapData.ts';
+import { Noise, hash2, lerp, smoothstep } from './noise.ts';
+import { ROAD_WIDTH, type RoadIndex } from './roads.ts';
+import { TERRAIN_DEFS, TERRAIN_IDS, TERRAIN_INDEX, type RGB } from './terrainTypes.ts';
 
 export interface TerrainParams {
   /** ワールド 1 単位あたりの頂点数 */

@@ -7,9 +7,9 @@
  * - castle : 陸の HEX に置く。隣接する castle HEX は 1 つの城になり、外周に城壁・塔・門ができる。
  *            HEX ごとの郭の段（ward 1..3）が違う HEX の境にも城壁が立ち、二重・三重の城壁になる。地面は石畳
  */
-import type { Offset } from './hex';
-import type { HexCell, HexMap } from './mapData';
-import { TERRAIN_DEFS } from './terrainTypes';
+import type { Offset } from './hex.ts';
+import type { HexCell, HexMap } from './mapData.ts';
+import { TERRAIN_DEFS } from './terrainTypes.ts';
 
 export const FEATURE_IDS = ['bridge', 'village', 'fort', 'castle'] as const;
 

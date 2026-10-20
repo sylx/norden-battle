@@ -2,11 +2,11 @@
  * 石のアーチ橋。川の HEX を、指定した軸の両隣の陸へ渡す。
  */
 import * as THREE from 'three';
-import { bridgeAxis } from '../../core/features';
-import type { Vec2 } from '../../core/hex';
-import type { HexCell } from '../../core/mapData';
-import { PAT } from './material';
-import { structureRng, hexahedron, quad, vary, type BuildCtx } from './shapes';
+import { bridgeAxis } from '../../core/features.ts';
+import type { Vec2 } from '../../core/hex.ts';
+import type { HexCell } from '../../core/mapData.ts';
+import { PAT } from './material.ts';
+import { structureRng, hexahedron, quad, vary, type BuildCtx } from './shapes.ts';
 
 const WIDTH = 0.3;
 const PARAPET_T = 0.022;

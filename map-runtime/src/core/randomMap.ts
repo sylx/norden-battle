@@ -2,10 +2,10 @@
  * テスト用のランダム HEX マップ生成。
  * 地形生成の見た目確認用なので、ゲームバランス的な配慮はしていない。
  */
-import { HexLayout, axialDistance, type Axial, type Orientation } from './hex';
-import type { HexCell, MapData } from './mapData';
-import { Noise, mulberry32 } from './noise';
-import type { TerrainId } from './terrainTypes';
+import { HexLayout, axialDistance, type Axial, type Orientation } from './hex.ts';
+import type { HexCell, MapData } from './mapData.ts';
+import { Noise, mulberry32 } from './noise.ts';
+import type { TerrainId } from './terrainTypes.ts';
 
 export interface RandomMapOptions {
   name?: string;
