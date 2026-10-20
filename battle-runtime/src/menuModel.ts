@@ -6,6 +6,7 @@
  *   onFrame で毎フレームの位置の更新を受け取る（位置は再描画せずに DOM を直接動かす）。
  * - 2 階層目の開け閉めもここで持つ（Esc で BattleApp から閉じるため）。
  * - 退却を選んだ後は、項目の代わりに退却先の拠点の一覧を出す（openRetreat。Esc・「戻る」で項目に戻る）。
+ *   強制退却（forced）のときは項目に戻れない（BattleApp が Esc を受け付けず、「戻る」も出さない）。
  */
 import * as THREE from 'three';
 import type { UnitData } from '@norden/map-runtime/core/units';
@@ -27,6 +28,8 @@ export interface RetreatMenu {
   /** 隣接している敵ユニットの数と、退却に失敗する確率（0〜1） */
   enemies: number;
   failChance: number;
+  /** 負けた陣営の強制退却か（項目に戻れない） */
+  forced: boolean;
 }
 
 export interface MenuState {

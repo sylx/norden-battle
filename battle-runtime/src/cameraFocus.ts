@@ -2,6 +2,7 @@
  * 攻撃の演出でカメラを寄せる。指定したユニットがすべて画面に収まるところまで寄り、決めた時間そのままにして、
  * 元の位置へ戻る。その間はカメラの操作を止める。俯角・向きは変えない（注視点と距離だけを動かす）。
  * 当たったときにカメラを小さく揺らす（shake）。
+ * 注視点だけを滑らかに動かすこともできる（panTo。強制退却で退却先を選ぶユニットを画面に入れるときなど）。
  */
 import * as THREE from 'three';
 import type { SceneContext } from '@norden/map-runtime/render/scene';
@@ -11,6 +12,8 @@ import type { UnitPlacement } from '@norden/map-runtime/render/units';
 const FILL = 0.6;
 /** 揺れの時間（秒） */
 const SHAKE_SEC = 0.28;
+/** panTo で注視点を動かす時間（秒） */
+const PAN_SEC = 0.5;
 
 /** 寄る・そのまま・戻るの時間（秒） */
 export interface FocusTiming {
@@ -33,6 +36,8 @@ export class CameraFocus {
   private start = 0;
   private shakeStart = -Infinity;
   private shakeAmount = 0;
+  /** panTo で動かしている注視点（動かしていなければ null）。from は動かし始めたときの注視点、delta は動かす量 */
+  private pan: { from: View; delta: THREE.Vector3; start: number } | null = null;
 
   constructor(ctx: SceneContext) {
     this.ctx = ctx;
@@ -78,6 +83,16 @@ export class CameraFocus {
     this.home = home;
     this.timing = timing;
     this.start = performance.now();
+    this.pan = null;
+    controls.enabled = false;
+  }
+
+  /** 注視点を point の真上へ滑らかに動かす（距離・向きは変えない。寄っている間は何もしない） */
+  panTo(point: THREE.Vector3): void {
+    if (this.home) return;
+    const { camera, controls } = this.ctx;
+    const delta = point.clone().sub(controls.target).setY(0);
+    this.pan = { from: { target: controls.target.clone(), position: camera.position.clone() }, delta, start: performance.now() };
     controls.enabled = false;
   }
 
@@ -95,15 +110,23 @@ export class CameraFocus {
   /** 寄るのをやめる（元の位置へは戻さない。マップを読み直したときなど） */
   stop(): void {
     this.home = null;
+    this.pan = null;
     this.shakeStart = -Infinity;
     this.ctx.controls.enabled = true;
   }
 
   /** 毎フレーム、描画の前に呼ぶ */
   update(now: number): void {
+    const { camera, controls } = this.ctx;
+    const pan = this.pan;
+    if (pan) {
+      const k = easeInOut(Math.min((now - pan.start) / 1000 / PAN_SEC, 1));
+      controls.target.copy(pan.from.target).addScaledVector(pan.delta, k);
+      camera.position.copy(pan.from.position).addScaledVector(pan.delta, k);
+      if (k >= 1) this.stop();
+    }
     const home = this.home;
     if (!home) return;
-    const { camera, controls } = this.ctx;
     const t = (now - this.start) / 1000;
     const { in: tin, hold, out } = this.timing;
     let k = 0;

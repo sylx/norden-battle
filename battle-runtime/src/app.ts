@@ -36,9 +36,12 @@
  * 敵の ZOC の中のユニットは、その番にまだ移動も攻撃もしていなければ動き出せる。
  *
  * 勝敗（victory.ts）: 行動を実行し終えるたびと軍の番を終えるときに調べる。どちらかの陣営の部隊がすべて殲滅・退却するか、攻撃側のユニットが
- * 防衛拠点（マップの stronghold。地面を金色に塗る）で行動を終える（もう行動できなくなる・拠点にいるまま番を終える。入城）と決着し、
- * 戦闘を終える（end のイベント。outcome に残す）。
- * 決着した後はユニットを選べず、ターンも終えられない。
+ * 防衛拠点（マップの stronghold。地面を金色に塗る）で行動を終える（もう行動できなくなる・拠点にいるまま番を終える。入城）か、
+ * どちらかの陣営の軍団長の部隊が殲滅される（軍団長部隊の全滅）と決着し、戦闘を終える（end のイベント。outcome に残す）。
+ * 軍団長部隊の全滅・入城で決着したときは、負けた陣営に残っている部隊を強制退却させてから戦闘を終える（rout のイベント。routing）:
+ * 1 部隊ずつ選んでカメラを寄せ、行動メニューに退却先の拠点の一覧を出す（「戻る」は無く、Esc も効かない）。拠点を選ぶと
+ * 退却と同じように実行し（失敗すると捕虜になる。RetreatReport の forced）、次の部隊へ進む。負けた陣営に退却先が無ければすぐに終える。
+ * 決着した後（強制退却の間も）はユニットを選べず、ターンも終えられない。
  *
  * - 待機は選んだらすぐに実行する。予約した行動があれば実行してから、残りの行動力を捨てて行動を終える（行動力は 0 になる）。
  * - 鼓舞（指揮官のスキル。行動力 2）は選んだらすぐに実行する。予約した行動があれば実行してから、自分の士気を 10〜20 回復する。
@@ -102,7 +105,7 @@ import { SpeechBubbles } from './speechBubbles';
 import { THUNDER_HIT_SEC, ThunderEffects } from './thunderFx';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
-import { judgeBattle, sideUnits, type BattleOutcome } from './victory';
+import { judgeBattle, loserOf, sideUnits, type BattleOutcome } from './victory';
 
 /** 移動できる HEX の色と、そのうち敵の ZOC で止まる HEX の印の色 */
 const MOVE_RANGE_COLOR = 0x4aa8ff;
@@ -283,7 +286,9 @@ export interface BattleEvents {
   retreat: [report: RetreatReport];
   /** ユニットが殲滅されたとき（ユニットはもうマップにいない。指揮官が捕縛されたかは report.captured） */
   wipeout: [report: WipeoutReport];
-  /** 戦闘が決着したとき（execute の後） */
+  /** 軍団長部隊の全滅・入城で決着し、負けた陣営に残った部隊（units）の強制退却を始めるとき（execute の後。終えたら end） */
+  rout: [outcome: BattleOutcome, units: readonly UnitData[]];
+  /** 戦闘が決着したとき（execute の後。強制退却があれば、すべて退却し終えた後） */
   end: [outcome: BattleOutcome];
   /** ユニットがセリフを言うと決まったとき（掛け合いの 2 行目からなど、吹き出しを出すのは遅れることがある） */
   bark: [unit: UnitData, situation: BarkSituation | 'exchange', text: string];
@@ -412,11 +417,15 @@ export class BattleApp {
   outcome: BattleOutcome | null = null;
   /** 全滅で負けにする陣営（戦闘が始まったときに部隊のいた陣営） */
   private judged = new Set<DeploySide>();
+  /** 軍団長の部隊が殲滅された陣営と、そのユニット */
+  private fallen = new Map<DeploySide, UnitData>();
+  /** 強制退却の最中なら、その決着と、まだ退却先を選んでいない部隊（順に。退却先を選んでいる部隊は含まない） */
+  private rout: { outcome: BattleOutcome; team: TeamId; queue: UnitData[] } | null = null;
 
   private readonly listeners = new Map<keyof BattleEvents, Set<(...args: never[]) => void>>();
   private readonly container: HTMLElement;
   private readonly onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape' || this.exec || this.outcome) return;
+    if (e.key !== 'Escape' || this.exec || this.outcome || this.rout) return;
     if (this.deployment) this.pickTroop(null);
     else if (this.targeting) this.cancelTargeting();
     else if (this.menu.closeRetreat()) this.emit('targetCancel');
@@ -524,6 +533,8 @@ export class BattleApp {
     this.troopIds = new Map();
     this.outcome = null;
     this.judged = new Set();
+    this.fallen = new Map();
+    this.rout = null;
     this.stronghold = data.stronghold ?? null;
     const troops = data.deploy ? makeTroops(data.deploy) : [];
     this.deployment = data.deploy ? new Deployment(map, data.deploy, troops, this.statuses) : null;
@@ -615,11 +626,11 @@ export class BattleApp {
    * 移動済み・攻撃済みを消す。全軍が 1 回ずつ行動したらターンの数を進める（実行中・配備フェーズは何もしない）
    */
   endTurn(): boolean {
-    if (this.exec || !this.map || this.deployment || this.outcome) return false;
+    if (this.exec || !this.map || this.deployment || this.outcome || this.rout) return false;
     this.setSelected(null);
     // 番を終えると、その軍のユニットは行動を終える（防衛拠点にいれば入城）
     this.judge(this.map.allUnits().filter((u) => u.team === this.activeTeam));
-    if (this.outcome) return false;
+    if (this.outcome || this.rout) return false;
     const next = this.nextTeam(this.activeTeam);
     if (TURN_ORDER.indexOf(next) <= TURN_ORDER.indexOf(this.activeTeam)) this.turn++;
     this.activeTeam = next;
@@ -642,13 +653,14 @@ export class BattleApp {
 
   /**
    * 行動済みのユニット（done）を数え直して絵の右上に E の印を付け、行動済みのユニットと相手方のユニット
-   * （配備フェーズでは配備していない陣営のユニット）の絵を暗くする（情報札は暗くしない）
+   * （配備フェーズでは配備していない陣営のユニット、強制退却の間は退却する陣営のほかのユニット）の絵を暗くする（情報札は暗くしない）
    */
   private refreshMarks(): void {
     const map = this.map;
-    const team = this.deployState?.team ?? this.activeTeam;
+    // 強制退却の間は、退却する陣営のほかを暗くして、E の印は付けない
+    const team = this.rout?.team ?? this.deployState?.team ?? this.activeTeam;
     this.done.clear();
-    if (map && !this.deployment) {
+    if (map && !this.deployment && !this.rout) {
       for (const [unit, status] of this.statuses) {
         if (unit.team !== team) continue;
         if (!canAct(this.menuContext({ unit, status, legs: [], attack: null }))) this.done.add(unit);
@@ -745,7 +757,7 @@ export class BattleApp {
   }
 
   private click(o: Offset | null): void {
-    if (this.outcome) return;
+    if (this.outcome || this.rout) return;
     if (this.deployment) {
       this.deployment.click(o);
       return this.deployChanged();
@@ -821,12 +833,12 @@ export class BattleApp {
     return this.retreats[unit.team] ?? [];
   }
 
-  /** 行動メニューに退却先の拠点の一覧と、退却に失敗する確率を出す */
-  private openRetreat(unit: UnitData): void {
+  /** 行動メニューに退却先の拠点の一覧と、退却に失敗する確率を出す（forced: 負けた陣営の強制退却） */
+  private openRetreat(unit: UnitData, forced = false): void {
     const destinations = this.retreatDestinations(unit);
     if (!this.map || destinations.length === 0) return;
     const enemies = adjacentEnemies(this.map, unit).length;
-    this.menu.openRetreat({ destinations, enemies, failChance: retreatFailChance(enemies) });
+    this.menu.openRetreat({ destinations, enemies, failChance: retreatFailChance(enemies), forced });
   }
 
   /** 移動できる HEX を出して、移動先を選ぶ状態にする */
@@ -932,13 +944,15 @@ export class BattleApp {
   /**
    * 予約を実行する。攻撃の前の移動 → 攻撃 → 攻撃の後の移動（騎兵）の順に進め、最後に end のこと（迎撃の構え・待機・鼓舞）をする。
    * 決定（confirm）は予約が無ければ何もしない。迎撃は攻撃を予約していないときだけ選べる。
-   * 退却（retreat）は予約の無いターンの初めだけで、to へ退却する（成否はここで決める）。
+   * 退却（retreat）は予約の無いターンの初めだけで、to へ退却する（成否はここで決める）。強制退却はいつでも退却する。
    */
   private execute(end: ExecuteEnd, to?: RetreatDestination): void {
     const map = this.map;
     const plan = this.plan;
     if (!map || !plan || (end === 'confirm' && !BattleApp.planned(plan))) return;
-    if (end === 'retreat' && (!to || !BattleApp.turnStart(plan) || plan.status.ap < plan.status.maxAp)) return;
+    // 強制退却の間は退却しかしない
+    if (this.rout && end !== 'retreat') return;
+    if (end === 'retreat' && (!to || (!this.rout && (!BattleApp.turnStart(plan) || plan.status.ap < plan.status.maxAp)))) return;
     const report: ExecuteReport = {
       unit: plan.unit,
       from: { col: plan.unit.col, row: plan.unit.row },
@@ -968,6 +982,7 @@ export class BattleApp {
         enemies,
         failChance,
         captured: Math.random() < failChance,
+        forced: !!this.rout,
       };
       phases.splice(0, phases.length, { kind: 'retreat', away: this.awayFromEnemies(plan.unit), lead: 0 });
       // 去っていくユニットに選択の光を残さない
@@ -1468,6 +1483,8 @@ export class BattleApp {
     }
     for (const w of report.wipeouts) {
       this.wipedOut.push(w);
+      const side = DEPLOY_SIDES.find((s) => SIDE_TEAM[s] === w.unit.team);
+      if (w.status.commander && side && !this.fallen.has(side)) this.fallen.set(side, w.unit);
       this.emit('wipeout', w);
     }
     this.emit('execute', report);
@@ -1476,14 +1493,44 @@ export class BattleApp {
   }
 
   /**
-   * 決着したか調べ、決着していたら戦闘を終える（選択を外し、行動済みの印を消して end で知らせる）。
+   * 決着したか調べ、決着していたら戦闘を終える。軍団長部隊の全滅・入城で負けた陣営に部隊が残っていて退却先もあれば、
+   * 先に強制退却させる（強制退却の間は、1 部隊が退却し終えるたびに次の部隊へ進む）。
    * ended はいま行動を終えたユニット（防衛拠点にいる攻撃側のユニットなら入城）
    */
   private judge(ended: readonly UnitData[] = []): void {
     const map = this.map;
     if (!map || this.deployment || this.outcome) return;
-    const outcome = judgeBattle(map, this.stronghold, ended, this.judged, this.turn);
+    if (this.rout) return this.nextRout();
+    const outcome = judgeBattle(map, this.stronghold, ended, this.judged, this.turn, this.fallen);
     if (!outcome) return;
+    const team = SIDE_TEAM[loserOf(outcome)];
+    const left = map.allUnits().filter((u) => u.team === team);
+    if (left.length === 0 || !this.retreats[team]?.length) return this.endBattle(outcome);
+    this.rout = { outcome, team, queue: left };
+    this.setSelected(null);
+    this.refreshMarks();
+    this.emit('rout', outcome, left);
+    this.nextRout();
+  }
+
+  /** 強制退却で、次の部隊を選んで退却先の拠点の一覧を出す（カメラをその部隊へ動かす）。残っていなければ戦闘を終える */
+  private nextRout(): void {
+    const rout = this.rout!;
+    const map = this.map!;
+    let unit = rout.queue.shift();
+    while (unit && !map.allUnits().includes(unit)) unit = rout.queue.shift();
+    if (!unit) {
+      this.rout = null;
+      return this.endBattle(rout.outcome);
+    }
+    this.setSelected({ col: unit.col, row: unit.row });
+    this.openRetreat(unit, true);
+    const p = this.view.units.placements().find((x) => x.unit === unit);
+    if (p) this.cameraFocus.panTo(p.foot);
+  }
+
+  /** 戦闘を終える（選択を外し、行動済みの印を消して end で知らせる） */
+  private endBattle(outcome: BattleOutcome): void {
     this.outcome = outcome;
     this.setSelected(null);
     this.done.clear();

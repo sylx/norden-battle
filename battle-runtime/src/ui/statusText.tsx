@@ -9,7 +9,7 @@ import { BattleApp, type ExecuteReport, type Plan } from '../app';
 import { isAttack } from '../combat';
 import { SIDE_NAMES, SIDE_TEAM, type DeployState } from '../deployment';
 import { teamName, type BattleFactions } from '../factions';
-import { BATTLE_END_REASON_NAMES, type BattleOutcome } from '../victory';
+import { BATTLE_END_REASON_NAMES, loserOf, type BattleOutcome } from '../victory';
 
 export const IDLE_STATUS = 'クリック: 味方のユニットを選択 / Esc: 予約を 1 つ戻す・選択を外す';
 const BACK = 'Esc・範囲外クリック: メニューに戻る';
@@ -80,6 +80,15 @@ export function endStatus(f: BattleFactions, { winner, reason, turn }: BattleOut
   return `決着 — ターン ${turn}、${BATTLE_END_REASON_NAMES[reason]}で${teamName(f, SIDE_TEAM[winner])}（${SIDE_NAMES[winner]}）の勝利`;
 }
 
+/** 軍団長部隊の全滅・入城で決着し、負けた陣営の残りの部隊（count 部隊）の強制退却を始めたとき */
+export function routStatus(f: BattleFactions, outcome: BattleOutcome, count: number): string {
+  const loser = loserOf(outcome);
+  return (
+    `${BATTLE_END_REASON_NAMES[outcome.reason]} — ${teamName(f, SIDE_TEAM[loser])}（${SIDE_NAMES[loser]}）の敗北。` +
+    `残りの ${count} 部隊は強制退却: 部隊ごとに退却先の拠点を選んでください（隣接する敵が多いほど失敗しやすく、失敗すると捕虜になる）`
+  );
+}
+
 /** 配備の様子が変わったとき */
 export function deployStatus(f: BattleFactions, { side, team, troops, picked, placed, limit }: DeployState): string {
   const who = `${teamName(f, team)}（${SIDE_NAMES[side]}）の配備`;
@@ -100,7 +109,8 @@ export function executeStatus(f: BattleFactions, { unit, from, moveCost, attack,
   const parts: string[] = [];
   if (retreat) {
     const odds = `失敗 ${Math.round(retreat.failChance * 100)}%・隣接する敵 ${retreat.enemies}`;
-    parts.push(retreat.captured ? `${retreat.to.name}への退却に失敗し、捕虜になった（${odds}）` : `${retreat.to.name}へ退却した（${odds}）`);
+    const kind = retreat.forced ? '強制退却' : '退却';
+    parts.push(retreat.captured ? `${retreat.to.name}への${kind}に失敗し、捕虜になった（${odds}）` : `${retreat.to.name}へ${kind}した（${odds}）`);
   }
   if (moveCost > 0) parts.push(`(${from.col}, ${from.row}) から移動（行動力 ${moveCost}）`);
   // 移動の途中で受けた迎撃（攻撃の前の移動・後の移動）

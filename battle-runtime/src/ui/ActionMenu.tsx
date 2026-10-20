@@ -7,6 +7,7 @@
  * - 2 階層目は 1 階層目の項目の横に開く。マウスは項目に乗せる、タッチはタップで開く。
  *   選べない項目（退却先の無い退却など）は灰色で出し、理由を title に持たせる。
  * - 退却を選んだ後は、項目の代わりに退却先の拠点の一覧と失敗する確率を出す（「戻る」で項目に戻る）。
+ *   強制退却（負けた陣営に残った部隊）は「強制退却」と出し、「戻る」を出さない。
  * - パネルは norden-ui の細いベゼル（ThinFrame）で囲む。
  */
 import { useEffect, useRef, useSyncExternalStore, type CSSProperties } from 'react';
@@ -155,11 +156,11 @@ function Item({
 
 /** 退却先の拠点の一覧（項目の代わりに出す） */
 function RetreatList({ retreat, model }: { retreat: RetreatMenu; model: ActionMenuModel }) {
-  const { destinations, enemies, failChance } = retreat;
+  const { destinations, enemies, failChance, forced } = retreat;
   return (
     <>
       <div className="menu-note">
-        退却先を選択
+        {forced ? '強制退却' : '退却先を選択'}
         <span className="fail" title={`隣接する敵 ${enemies} 部隊`}>
           失敗 {Math.round(failChance * 100)}%
         </span>
@@ -170,9 +171,11 @@ function RetreatList({ retreat, model }: { retreat: RetreatMenu; model: ActionMe
             <span className="name">{d.name}</span>
           </li>
         ))}
-        <li className="menu-item back" onClick={() => model.closeRetreat()}>
-          <span className="name">戻る</span>
-        </li>
+        {!forced && (
+          <li className="menu-item back" onClick={() => model.closeRetreat()}>
+            <span className="name">戻る</span>
+          </li>
+        )}
       </ul>
     </>
   );

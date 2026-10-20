@@ -12,7 +12,9 @@
  * - 攻撃・迎撃・鼓舞・殲滅などのとき、ユニットの頭上にセリフの吹き出しを出す（BattleApp・speechBubbles.ts）。何を喋るかは barks で差し替える。
  * - 退却先の拠点は軍ごとに retreats で渡す（無い軍は退却できない）。退却した・捕虜になったユニットは onRetreat で知らせる。
  * - 殲滅されたユニット（指揮官が捕縛されたか）は onWipeout で知らせる。
- * - 決着すると（どちらかの陣営の全滅・退却、攻撃側の入城。victory.ts）決着のカットインを出し、終わったら画面の中央に
+ * - 軍団長部隊の全滅・入城で決着したら、負けた陣営の残りの部隊の強制退却を先にする（BattleApp の rout）。そのときに決着の理由と
+ *   「（勢力の名前）退却」のカットイン（テンプレートは turn）を出し、ターン表示を消す。部隊ごとに行動メニューで退却先を選ぶ。
+ * - 決着すると（どちらかの陣営の全滅・退却、攻撃側の入城、軍団長部隊の全滅。victory.ts）決着のカットインを出し、終わったら画面の中央に
  *   決着のウィンドウ（BattleEndWindow.tsx）を出す。そのボタン（onEnd を渡したときだけ）で使う側に知らせる。
  *   カットインは、プレイヤーの陣営（playerSide）が勝てば CUTIN_TEMPLATES の battle-win、負ければ battle-lose をテンプレートのまま出す
  *   （プレイヤーが戦闘にいないときは battle-win）。決着した後はターン表示を出さない。
@@ -28,11 +30,11 @@ import { TEAM_DEFS, type TeamId } from '@norden/map-runtime/core/units';
 import { BattleApp, type BattlePhase, type StatusFactory } from '../app';
 import { demoBarks, type BarkSource } from '../barks';
 import type { DeploySide } from '@norden/map-runtime/core/mapData';
-import type { TroopFactory } from '../deployment';
+import { SIDE_TEAM, type TroopFactory } from '../deployment';
 import { demoFactions, teamName, type BattleFactions } from '../factions';
 import type { RetreatDestinations, RetreatReport } from '../retreat';
 import type { WipeoutReport } from '../wipeout';
-import type { BattleOutcome } from '../victory';
+import { BATTLE_END_REASON_NAMES, loserOf, type BattleOutcome } from '../victory';
 import ActionMenu from './ActionMenu';
 import BattleEndWindow from './BattleEndWindow';
 import BattleLogWindow from './BattleLogWindow';
@@ -49,6 +51,7 @@ import {
   LOADED_STATUS,
   planStatus,
   rejectStatus,
+  routStatus,
   turnStatus,
 } from './statusText';
 import SituationPanel from './SituationPanel';
@@ -143,6 +146,8 @@ export default function BattleScreen({
   /** 戦闘の決着（まだなら null）と、決着のカットインを終えて決着のウィンドウを出しているか */
   const [outcome, setOutcome] = useState<BattleOutcome | null>(null);
   const [endShown, setEndShown] = useState(false);
+  /** 負けた陣営の残りの部隊を強制退却させている */
+  const [routing, setRouting] = useState(false);
   const latest = useRef({ statuses, troops, factions, cutInTexts, onRetreat, onWipeout, onApp, playerSide });
   latest.current = { statuses, troops, factions, cutInTexts, onRetreat, onWipeout, onApp, playerSide };
 
@@ -155,6 +160,7 @@ export default function BattleScreen({
         setStatus(LOADED_STATUS);
         setOutcome(null);
         setEndShown(false);
+        setRouting(false);
       }),
       app.on('phase', (p) => {
         setPhase(p);
@@ -176,7 +182,14 @@ export default function BattleScreen({
       app.on('execute', (report) => setStatus(executeStatus(latest.current.factions, report))),
       app.on('retreat', (report) => latest.current.onRetreat?.(report)),
       app.on('wipeout', (report) => latest.current.onWipeout?.(report)),
+      app.on('rout', (o, units) => {
+        const { factions } = latest.current;
+        setRouting(true);
+        setStatus(routStatus(factions, o, units.length));
+        void playCutIn(queue, 'turn', { text: BATTLE_END_REASON_NAMES[o.reason], subText: `${teamName(factions, SIDE_TEAM[loserOf(o)])} 退却` });
+      }),
       app.on('end', (o) => {
+        setRouting(false);
         setOutcome(o);
         setStatus(endStatus(latest.current.factions, o));
         // 読み込み直したら（outcome が変わったら）前の決着のウィンドウは出さない
@@ -229,7 +242,7 @@ export default function BattleScreen({
             {phase === 'deploy' && !intro && <DeployWindow app={app} />}
             {phase === 'battle' && <BattleLogWindow app={app} />}
             <ActionMenu model={app.menu} />
-            {map && phase === 'battle' && !intro && !outcome && (
+            {map && phase === 'battle' && !intro && !outcome && !routing && (
               <div className="battle-turn-bar" style={{ '--team': TEAM_DEFS[turn.team].color } as CSSProperties}>
                 <ThinFrame />
                 <span className="turn">

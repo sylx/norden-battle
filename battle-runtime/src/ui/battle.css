@@ -195,6 +195,32 @@
   display: none;
 }
 
+/* 軍団長の L の印（unitTags.ts。絵の左上。E の印と同じ形で、金色） */
+.battle-screen .unit-lead-mark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 10000;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #fff4d0;
+  border-radius: 3px;
+  background: linear-gradient(#f0c24a, #a8741c);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  color: #3a2408;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: Georgia, 'Times New Roman', serif;
+  line-height: 1;
+  will-change: transform;
+}
+
+.battle-screen .unit-lead-mark[hidden] {
+  display: none;
+}
+
 /* --- 行動メニュー（ActionMenu.tsx） --- */
 .battle-screen .action-menu {
   position: absolute;

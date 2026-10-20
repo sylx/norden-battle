@@ -6,6 +6,8 @@
  * - 退却は失敗することがある。失敗する確率は隣接している敵ユニットの数で決まる（retreatFailChance）。
  *   失敗したユニットは捕虜になる。成功しても失敗しても、そのユニットは戦場から消える。
  * - 結果は RetreatReport で知らせる（BattleApp の retreat のイベント・retreated）。捕虜をどう扱うかは使う側が決める。
+ * - 軍団長部隊の全滅・入城で負けた陣営に残った部隊は、強制退却になる（BattleApp が 1 部隊ずつ退却先を選ばせる。forced）。
+ *   ターンの初めでなくても退却し、失敗する確率は退却と同じ。
  */
 import type { Offset } from '@norden/map-runtime/core/hex';
 import type { HexMap } from '@norden/map-runtime/core/mapData';
@@ -40,6 +42,8 @@ export interface RetreatReport {
   failChance: number;
   /** 退却に失敗して捕虜になったか */
   captured: boolean;
+  /** 負けた陣営の強制退却か（自分で選んだ退却なら false） */
+  forced: boolean;
 }
 
 /** 隣接している敵ユニットの数ごとの、退却に失敗する確率（これより多ければ最後の値） */
