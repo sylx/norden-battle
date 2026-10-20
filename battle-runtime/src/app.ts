@@ -38,8 +38,8 @@
  *
  * 勝敗（victory.ts）: 行動を実行し終えるたびと軍の番を終えるときに調べる。どちらかの陣営の部隊がすべて殲滅・退却するか、攻撃側のユニットが
  * 防衛拠点（マップの stronghold。地面を金色に塗る）で行動を終える（もう行動できなくなる・拠点にいるまま番を終える。入城）か、
- * どちらかの陣営の軍団長の部隊が殲滅される（軍団長部隊の全滅）と決着し、戦闘を終える（end のイベント。outcome に残す）。
- * 軍団長部隊の全滅・入城で決着したときは、負けた陣営に残っている部隊を強制退却させてから戦闘を終える（rout のイベント。routing）:
+ * どちらかの陣営の軍団長の部隊が殲滅される・退却する（軍団長部隊の全滅・退却）と決着し、戦闘を終える（end のイベント。outcome に残す）。
+ * 軍団長部隊の全滅・退却、入城で決着したときは、負けた陣営に残っている部隊を強制退却させてから戦闘を終える（rout のイベント。routing）:
  * 1 部隊ずつ選んでカメラを寄せ、行動メニューに退却先の拠点の一覧を出す（「戻る」は無く、Esc も効かない）。拠点を選ぶと
  * 退却と同じように実行し（失敗すると捕虜になる。RetreatReport の forced）、次の部隊へ進む。負けた陣営に退却先が無ければすぐに終える。
  * 決着した後（強制退却の間も）はユニットを選べず、ターンも終えられない。
@@ -106,7 +106,7 @@ import { SpeechBubbles } from './speechBubbles';
 import { THUNDER_HIT_SEC, ThunderEffects } from './thunderFx';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
-import { judgeBattle, loserOf, sideUnits, type BattleOutcome } from './victory';
+import { judgeBattle, loserOf, sideUnits, type BattleOutcome, type CommanderLoss } from './victory';
 
 /** 移動できる HEX の色と、そのうち敵の ZOC で止まる HEX の印の色 */
 const MOVE_RANGE_COLOR = 0x4aa8ff;
@@ -289,7 +289,7 @@ export interface BattleEvents {
   retreat: [report: RetreatReport];
   /** ユニットが殲滅されたとき（ユニットはもうマップにいない。指揮官が捕縛されたかは report.captured） */
   wipeout: [report: WipeoutReport];
-  /** 軍団長部隊の全滅・入城で決着し、負けた陣営に残った部隊（units）の強制退却を始めるとき（execute の後。終えたら end） */
+  /** 軍団長部隊の全滅・退却、入城で決着し、負けた陣営に残った部隊（units）の強制退却を始めるとき（execute の後。終えたら end） */
   rout: [outcome: BattleOutcome, units: readonly UnitData[]];
   /** 戦闘が決着したとき（execute の後。強制退却があれば、すべて退却し終えた後） */
   end: [outcome: BattleOutcome];
@@ -420,8 +420,8 @@ export class BattleApp {
   outcome: BattleOutcome | null = null;
   /** 全滅で負けにする陣営（戦闘が始まったときに部隊のいた陣営） */
   private judged = new Set<DeploySide>();
-  /** 軍団長の部隊が殲滅された陣営と、そのユニット */
-  private fallen = new Map<DeploySide, UnitData>();
+  /** 軍団長の部隊が殲滅された・退却した陣営と、そのこと */
+  private fallen = new Map<DeploySide, CommanderLoss>();
   /** 強制退却の最中なら、その決着と、まだ退却先を選んでいない部隊（順に。退却先を選んでいる部隊は含まない） */
   private rout: { outcome: BattleOutcome; team: TeamId; queue: UnitData[] } | null = null;
 
@@ -1498,14 +1498,19 @@ export class BattleApp {
     // 動いた先で選び直す（残りの行動力でメニューを開く）
     this.setSelected(gone ? null : { col: report.unit.col, row: report.unit.row });
     this.refreshMarks();
+    // 軍団長の部隊がいなくなったら、その陣営の負け（強制退却で退却したときは、もう決着している）
+    const loseCommander = (unit: UnitData, status: UnitStatus, reason: CommanderLoss['reason']) => {
+      const side = DEPLOY_SIDES.find((s) => SIDE_TEAM[s] === unit.team);
+      if (status.commander && side && !this.fallen.has(side)) this.fallen.set(side, { unit, reason });
+    };
     if (report.retreat) {
       this.retreated.push(report.retreat);
+      if (!report.retreat.forced) loseCommander(report.retreat.unit, report.retreat.status, 'commanderRetreat');
       this.emit('retreat', report.retreat);
     }
     for (const w of report.wipeouts) {
       this.wipedOut.push(w);
-      const side = DEPLOY_SIDES.find((s) => SIDE_TEAM[s] === w.unit.team);
-      if (w.status.commander && side && !this.fallen.has(side)) this.fallen.set(side, w.unit);
+      loseCommander(w.unit, w.status, 'commander');
       this.emit('wipeout', w);
     }
     this.emit('execute', report);
@@ -1514,7 +1519,7 @@ export class BattleApp {
   }
 
   /**
-   * 決着したか調べ、決着していたら戦闘を終える。軍団長部隊の全滅・入城で負けた陣営に部隊が残っていて退却先もあれば、
+   * 決着したか調べ、決着していたら戦闘を終える。軍団長部隊の全滅・退却、入城で負けた陣営に部隊が残っていて退却先もあれば、
    * 先に強制退却させる（強制退却の間は、1 部隊が退却し終えるたびに次の部隊へ進む）。
    * ended はいま行動を終えたユニット（防衛拠点にいる攻撃側のユニットなら入城）
    */

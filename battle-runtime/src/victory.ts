@@ -6,8 +6,10 @@
  *   行動を終えるのは、実行し終えてもう行動できなくなった（行動済みの E の印が付いた）ときと、拠点にいるまま軍の番を終えたとき。
  *   拠点に入っても、行動力が残っていて拠点から動いたら入城しない。
  * - どちらの陣営も、軍団長の部隊（UnitStatus.commander）が殲滅されたら負け（軍団長部隊の全滅）。
+ *   軍団長の部隊が退却しても負け（軍団長部隊の退却。退却に失敗して捕虜になったときも）。
  * - 両軍が同時に負けになったとき（相討ち）は防衛側の勝ち（攻め落とせなかった）。
- * - 軍団長部隊の全滅・入城で負けた陣営に残っている部隊は、BattleApp が強制退却させてから戦闘を終える（退却先が無ければそのまま終える）。
+ * - 軍団長部隊の全滅・退却、入城で負けた陣営に残っている部隊は、BattleApp が強制退却させてから戦闘を終える
+ *   （退却先が無ければそのまま終える）。
  * - 戦闘が始まったときに部隊のいなかった陣営は、いなくなっても負けにしない（表示確認用のマップなど）。
  */
 import type { Offset } from '@norden/map-runtime/core/hex';
@@ -17,15 +19,23 @@ import { SIDE_TEAM } from './deployment';
 
 /**
  * eliminated: 負けた陣営の部隊がすべて殲滅・退却した、stronghold: 攻撃側が防衛拠点で行動を終えた（入城）、
- * commander: 負けた陣営の軍団長の部隊が殲滅された（軍団長部隊の全滅）
+ * commander: 負けた陣営の軍団長の部隊が殲滅された（軍団長部隊の全滅）、
+ * commanderRetreat: 負けた陣営の軍団長の部隊が退却した（軍団長部隊の退却。退却に失敗して捕虜になったときも）
  */
-export type BattleEndReason = 'eliminated' | 'stronghold' | 'commander';
+export type BattleEndReason = 'eliminated' | 'stronghold' | 'commander' | 'commanderRetreat';
 
 export const BATTLE_END_REASON_NAMES: Record<BattleEndReason, string> = {
   eliminated: '全軍の殲滅・退却',
   stronghold: '入城',
   commander: '軍団長部隊の全滅',
+  commanderRetreat: '軍団長部隊の退却',
 };
+
+/** 軍団長の部隊が戦場からいなくなったこと（殲滅された・退却した） */
+export interface CommanderLoss {
+  unit: UnitData;
+  reason: 'commander' | 'commanderRetreat';
+}
 
 /** 戦闘の決着 */
 export interface BattleOutcome {
@@ -33,7 +43,7 @@ export interface BattleOutcome {
   reason: BattleEndReason;
   /** 決着したターン */
   turn: number;
-  /** 入城したユニット（入城のとき）・全滅した軍団長の部隊のユニット（軍団長部隊の全滅のとき。もうマップにはいない） */
+  /** 入城したユニット（入城のとき）・いなくなった軍団長の部隊のユニット（軍団長部隊の全滅・退却のとき。もうマップにはいない） */
   unit?: UnitData;
 }
 
@@ -50,7 +60,7 @@ export function sideUnits(map: HexMap, side: DeploySide): UnitData[] {
 /**
  * いまのマップで決着しているか（していなければ null）。
  * stronghold は防衛拠点（無ければ入城では決着しない）、ended はいま行動を終えたユニット（このうち防衛拠点にいる攻撃側のユニットが入城する）、
- * judged は全滅で負けにする陣営（戦闘が始まったときに部隊のいた陣営）、fallen は軍団長の部隊が殲滅された陣営とそのユニット
+ * judged は全滅で負けにする陣営（戦闘が始まったときに部隊のいた陣営）、fallen は軍団長の部隊が殲滅された・退却した陣営と、そのこと
  */
 export function judgeBattle(
   map: HexMap,
@@ -58,18 +68,18 @@ export function judgeBattle(
   ended: readonly UnitData[],
   judged: ReadonlySet<DeploySide>,
   turn: number,
-  fallen: ReadonlyMap<DeploySide, UnitData> = new Map(),
+  fallen: ReadonlyMap<DeploySide, CommanderLoss> = new Map(),
 ): BattleOutcome | null {
   const gone = (side: DeploySide) => judged.has(side) && sideUnits(map, side).length === 0;
   if (gone('attacker')) return { winner: 'defender', reason: 'eliminated', turn };
   const attackerCommander = fallen.get('attacker');
-  if (attackerCommander) return { winner: 'defender', reason: 'commander', turn, unit: attackerCommander };
+  if (attackerCommander) return { winner: 'defender', turn, ...attackerCommander };
   const occupant = stronghold && map.unitAt(stronghold.col, stronghold.row);
   if (occupant && occupant.team === SIDE_TEAM.attacker && ended.includes(occupant)) {
     return { winner: 'attacker', reason: 'stronghold', turn, unit: occupant };
   }
   if (gone('defender')) return { winner: 'attacker', reason: 'eliminated', turn };
   const defenderCommander = fallen.get('defender');
-  if (defenderCommander) return { winner: 'attacker', reason: 'commander', turn, unit: defenderCommander };
+  if (defenderCommander) return { winner: 'attacker', turn, ...defenderCommander };
   return null;
 }

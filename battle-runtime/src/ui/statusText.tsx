@@ -80,7 +80,7 @@ export function endStatus(f: BattleFactions, { winner, reason, turn }: BattleOut
   return `決着 — ターン ${turn}、${BATTLE_END_REASON_NAMES[reason]}で${teamName(f, SIDE_TEAM[winner])}（${SIDE_NAMES[winner]}）の勝利`;
 }
 
-/** 軍団長部隊の全滅・入城で決着し、負けた陣営の残りの部隊（count 部隊）の強制退却を始めたとき */
+/** 軍団長部隊の全滅・退却、入城で決着し、負けた陣営の残りの部隊（count 部隊）の強制退却を始めたとき */
 export function routStatus(f: BattleFactions, outcome: BattleOutcome, count: number): string {
   const loser = loserOf(outcome);
   return (
