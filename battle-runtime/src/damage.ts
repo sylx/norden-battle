@@ -14,7 +14,7 @@
  * 戦う状況の倍率:
  *   包囲     = 相手が包囲されていれば ENCIRCLED_RATE
  *   地形     = 1 − 相手のいる HEX の地形効果（森 20%・砦 30%・城 50% など。人工物があればその値）
- *   高所     = 弓兵が相手より高い HEX にいれば 1 + 標高レベルの差 × HIGH_GROUND_RATE
+ *   高所     = 弓兵・砲兵が相手より高い HEX にいれば 1 + 標高レベルの差 × HIGH_GROUND_RATE
  *   ランダム = 1 + roll × RANDOM_SPREAD（roll は −1〜1）
  *
  *   迎撃     = 相手が迎撃の構えの近接ユニットなら INTERCEPT_GUARD
@@ -41,6 +41,9 @@ export const UNIT_POWER: Record<UnitType, { attack: number; defense: number }> =
   archer: { attack: 0.9, defense: 0.7 },
   cavalry: { attack: 1.2, defense: 0.9 },
   mage: { attack: 1.3, defense: 0.6 },
+  rifleman: { attack: 1.1, defense: 0.7 },
+  artillery: { attack: 1.5, defense: 0.5 },
+  landsknecht: { attack: 1.3, defense: 1.2 },
 };
 
 /** 攻撃の種類。行動メニューの攻撃と、迎撃の構えの間接ユニットが通りかかった敵へ自動でする攻撃（interceptFire） */
@@ -70,7 +73,7 @@ const ENCIRCLED_RATE = 1.2;
 /** 高所の兵種が相手より高い HEX から攻撃したときの、標高レベルの差 1 あたりのダメージの増え方 */
 const HIGH_GROUND_RATE = 0.1;
 /** 高所からの攻撃でダメージが増える兵種 */
-const HIGH_GROUND_TYPES: readonly UnitType[] = ['archer'];
+const HIGH_GROUND_TYPES: readonly UnitType[] = ['archer', 'artillery'];
 /** ランダムの幅（± の割合） */
 export const RANDOM_SPREAD = 0.2;
 /** 反撃の、通常攻撃のダメージに対する割合 */

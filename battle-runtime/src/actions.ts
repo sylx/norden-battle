@@ -79,16 +79,16 @@ const MENU: readonly (ActionDef | GroupDef)[] = [
     name: '攻撃',
     attack: true,
     children: [
-      { id: 'attack', name: '通常攻撃', cost: 2, types: ['infantry', 'archer', 'cavalry'] },
-      // 直接攻撃の兵種だけ（間接の弓兵・魔術師はできない）
-      { id: 'volley', name: '一斉攻撃', cost: 4, types: ['infantry', 'cavalry'] },
+      { id: 'attack', name: '通常攻撃', cost: 2, types: ['infantry', 'archer', 'cavalry', 'rifleman', 'artillery', 'landsknecht'] },
+      // 直接攻撃の兵種だけ（間接の弓兵・魔術師・ライフル兵・砲兵はできない）
+      { id: 'volley', name: '一斉攻撃', cost: 4, types: ['infantry', 'cavalry', 'landsknecht'] },
       { id: 'charge', name: '突撃', cost: 3, types: ['cavalry'] },
       // 魔術師の攻撃（間接攻撃。魔法の名前はいずれ指揮官の属性で変えるかもしれない）
       { id: 'thunderfall', name: 'サンダーフォール', cost: 4, types: ['mage'] },
     ],
   },
   // 騎兵はできない
-  { id: 'intercept', name: '迎撃', cost: 2, types: ['infantry', 'archer', 'mage'] },
+  { id: 'intercept', name: '迎撃', cost: 2, types: ['infantry', 'archer', 'mage', 'rifleman', 'artillery', 'landsknecht'] },
   // 行動力が余ったときに行動を終える
   { id: 'wait', name: '待機', cost: 0 },
   { name: '特殊', skills: true, children: [{ id: 'retreat', name: '退却', keepDisabled: true }] },

@@ -1,9 +1,9 @@
 /**
  * 攻撃の判定（値は仮）。ダメージの計算は damage.ts、士気の増減は morale.ts。
  *
- * - 兵種ごとの射程（minRange〜maxRange、HEX の距離）。弓兵は 1〜2、魔術師は 1〜3、ほかは 1。
- *   隣接したユニットを攻撃できない兵種（砲兵など）は minRange = 2 にする。
- * - ranged の兵種（弓兵・魔術師）の攻撃は放物線の矢印で出す。
+ * - 兵種ごとの射程（minRange〜maxRange、HEX の距離）。弓兵・ライフル兵は 1〜2、魔術師は 2〜3、砲兵は 2〜4、ほかは 1。
+ *   隣接したユニットを攻撃できない兵種（魔術師・砲兵）は minRange = 2 にする。
+ * - ranged の兵種（弓兵・魔術師・ライフル兵・砲兵）の攻撃は放物線の矢印で出す。
  * - magic の兵種（魔術師）は、指揮官の武力の代わりに知力を使う（ダメージ・士気の増減）。
  *   攻撃（サンダーフォール）は隣接した相手にも間接攻撃で、反撃を受けない（INDIRECT_KINDS）。
  *   魔術師の攻撃は魔法で、相手の武力による軽減と迎撃の構えの影響を受けない（damage.ts）。
@@ -13,10 +13,10 @@
  * - 隣接（距離 1）の相手への攻撃は直接攻撃で、相手も反撃して両軍の兵数が減る。距離 2 以上は一方的に減らす。
  * - 迎撃（app.ts）: 近接ユニットは構えている間、受けるダメージが減って反撃が増える（damage.ts）。
  *   間接（ranged）ユニットは構えている間、射程に入った敵へ 1 回だけ自動で攻撃する（interceptFire。反撃は受けない）。
- *   弓兵（interceptHalts）に撃たれた敵は、そこで移動を止められ、残りの予約も行動力も失う（騎兵（unhaltable）は除く）。
+ *   弓兵・ライフル兵（interceptHalts）に撃たれた敵は、そこで移動を止められ、残りの予約も行動力も失う（騎兵（unhaltable）は除く）。
  * - 包囲（movement.ts の encircled）されている相手へのダメージは増える。
  * - 地形効果（cellDefense。森・砦・城など）のある HEX にいる相手へのダメージは減り、
- *   弓兵が相手より高い HEX から攻撃するとダメージが増える（damage.ts）。
+ *   弓兵・砲兵が相手より高い HEX から攻撃するとダメージが増える（damage.ts）。
  * - 一斉攻撃は直接攻撃の兵種だけで、相手が攻撃する自分のほかの味方（直接攻撃の兵種）とも隣接している（取り囲んでいる）ときにできる。
  *   隣接している味方（volleySupporters）も一緒に攻撃する演出が入り、その数だけダメージが増える（damage.ts）。
  * - 攻撃の後、与えたダメージと反撃で受けたダメージの比で両軍の士気が増減する。
@@ -42,7 +42,7 @@ export interface CombatDef {
   moveAfterAttack?: boolean;
   /** 指揮官の武力の代わりに知力を使う */
   magic?: boolean;
-  /** 迎撃の自動攻撃で、撃った相手の移動をそこで止めて行動を終わらせる（弓兵） */
+  /** 迎撃の自動攻撃で、撃った相手の移動をそこで止めて行動を終わらせる（弓兵・ライフル兵） */
   interceptHalts?: boolean;
   /** interceptHalts の迎撃を受けても止まらない（騎兵） */
   unhaltable?: boolean;
@@ -53,6 +53,9 @@ export const COMBAT_DEFS: Record<UnitType, CombatDef> = {
   archer: { minRange: 1, maxRange: 2, ranged: true, interceptHalts: true },
   cavalry: { minRange: 1, maxRange: 1, ranged: false, moveAfterAttack: true, unhaltable: true },
   mage: { minRange: 2, maxRange: 3, ranged: true, magic: true },
+  rifleman: { minRange: 1, maxRange: 2, ranged: true, interceptHalts: true },
+  artillery: { minRange: 2, maxRange: 4, ranged: true },
+  landsknecht: { minRange: 1, maxRange: 1, ranged: false },
 };
 
 /** 隣接した相手へでも間接攻撃になる（反撃を受けない）攻撃の種類 */

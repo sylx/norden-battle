@@ -173,6 +173,9 @@ function drawPlaceholder(type: UnitType, teamColor: string): HTMLCanvasElement {
   if (type === 'infantry') drawInfantry(g, team, teamDark);
   else if (type === 'archer') drawArcher(g, team, teamDark);
   else if (type === 'cavalry') drawCavalry(g, team, teamDark);
+  else if (type === 'rifleman') drawRifleman(g, team, teamDark);
+  else if (type === 'artillery') drawArtillery(g, team, teamDark);
+  else if (type === 'landsknecht') drawLandsknecht(g, team, teamDark);
   else drawMage(g, team, teamDark);
   return canvas;
 }
@@ -369,4 +372,58 @@ function drawMage(g: Ctx, team: string, teamDark: string): void {
   shape(g, teamDark, () => g.ellipse(48, 28, 14, 3, 0, 0, Math.PI * 2));
   // 杖を持つ腕
   line(g, teamDark, 6, [52, 44, 67, 50]);
+}
+
+function drawRifleman(g: Ctx, team: string, teamDark: string): void {
+  body(g, 44, team, LEATHER);
+  head(g, 45, 32);
+  // つばの付いた帽子
+  shape(g, teamDark, () => poly(g, [36, 28, 54, 28, 52, 20, 39, 20]));
+  line(g, teamDark, 2.4, [34, 28, 58, 28]);
+  // 構えたライフル（肩付けで右へ）
+  line(g, '#6a4a2e', 4, [36, 52, 58, 46]);
+  line(g, '#4a4e56', 2.4, [56, 46.5, 92, 38]);
+  // 引き金を引く腕と銃身を支える腕
+  line(g, teamDark, 5.5, [40, 46, 48, 50]);
+  line(g, teamDark, 5.5, [48, 46, 66, 45]);
+}
+
+function drawArtillery(g: Ctx, team: string, teamDark: string): void {
+  // 砲手（大砲の後ろ）
+  body(g, 26, team, LEATHER);
+  head(g, 27, 32);
+  helmet(g, 27, 32);
+  line(g, teamDark, 5.5, [30, 46, 40, 58]);
+  // 砲架と砲身
+  shape(g, '#6a4a2e', () => poly(g, [34, 82, 70, 72, 74, 78, 36, 90]));
+  shape(g, '#4a4e56', () => poly(g, [44, 66, 92, 54, 94, 62, 46, 76]));
+  ellipse(g, '#4a4e56', 45, 71, 5, 6, 0.3);
+  // 車輪
+  ellipse(g, LEATHER, 56, 84, 13, 13);
+  ellipse(g, '#8a6a40', 56, 84, 9, 9);
+  line(g, LEATHER, 2, [47, 84, 65, 84]);
+  line(g, LEATHER, 2, [56, 75, 56, 93]);
+}
+
+function drawLandsknecht(g: Ctx, team: string, teamDark: string): void {
+  // 背負った両手剣
+  line(g, STEEL, 3.4, [30, 88, 62, 8]);
+  line(g, '#c8a040', 3, [32, 70, 42, 74]);
+  body(g, 46, team, LEATHER);
+  // 切れ込みの入った膨らんだ袖
+  ellipse(g, team, 38, 48, 7, 9);
+  line(g, '#f0e6c8', 1.4, [36, 42, 40, 54]);
+  ellipse(g, team, 56, 48, 7, 9);
+  line(g, '#f0e6c8', 1.4, [54, 42, 58, 54]);
+  head(g, 46, 32);
+  // 羽根飾りの付いたベレー帽
+  shape(g, teamDark, () => g.ellipse(46, 25, 13, 5, -0.15, 0, Math.PI * 2));
+  shape(g, '#f0e6c8', () => {
+    g.moveTo(38, 22);
+    g.quadraticCurveTo(26, 6, 22, 14);
+    g.quadraticCurveTo(28, 18, 40, 25);
+    g.closePath();
+  });
+  // 剣の柄を握る腕
+  line(g, teamDark, 6, [56, 50, 62, 58]);
 }

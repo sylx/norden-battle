@@ -1301,7 +1301,7 @@ export class BattleApp {
   static strikeFx(unit: UnitData, action: ActionId): StrikeFxKind | null {
     // 一斉攻撃は、加わる兵種それぞれの通常攻撃の演出
     const id = action === 'volley' ? 'attack' : action;
-    if (unit.type === 'infantry' && id === 'attack') return 'slash';
+    if ((unit.type === 'infantry' || unit.type === 'landsknecht') && id === 'attack') return 'slash';
     if (unit.type === 'cavalry' && (id === 'attack' || id === 'charge')) return 'lance';
     if (unit.type === 'archer' && id === 'attack') return 'arrows';
     if (unit.type === 'mage' && id === 'thunderfall') return 'thunder';

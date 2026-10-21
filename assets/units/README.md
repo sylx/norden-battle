@@ -9,7 +9,7 @@ map-editor のユニット（2D スプライト）の画像を置く場所。こ
 | `<兵種>.png` | その兵種の全軍（軍の色に着色して使う） |
 | `<兵種>_<軍>.png` | その軍だけ（あれば `<兵種>.png` より優先し、着色しない） |
 
-- 兵種: `infantry`（歩兵）・`archer`（弓兵）・`cavalry`（騎兵）・`mage`（魔術師）
+- 兵種: `infantry`（歩兵）・`archer`（弓兵）・`cavalry`（騎兵）・`mage`（魔術師）・`rifleman`（ライフル兵）・`artillery`（砲兵）・`landsknecht`（ランツクネヒト）
 - 軍: `blue`・`red`・`green`
 - 形式: PNG・WebP・JPEG
 
