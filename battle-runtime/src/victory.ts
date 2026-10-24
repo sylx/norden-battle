@@ -16,6 +16,7 @@ import type { Offset } from '@norden/map-runtime/core/hex';
 import type { DeploySide, HexMap } from '@norden/map-runtime/core/mapData';
 import type { UnitData } from '@norden/map-runtime/core/units';
 import { SIDE_TEAM } from './deployment';
+import type { UnitStatus } from './unitStatus';
 
 /**
  * eliminated: 負けた陣営の部隊がすべて殲滅・退却した、stronghold: 攻撃側が防衛拠点で行動を終えた（入城）、
@@ -45,6 +46,16 @@ export interface BattleOutcome {
   turn: number;
   /** 入城したユニット（入城のとき）・いなくなった軍団長の部隊のユニット（軍団長部隊の全滅・退却のとき。もうマップにはいない） */
   unit?: UnitData;
+  /** 決着したときに戦場に残っていた部隊（退却・殲滅した部隊は含まない）。BattleApp が戦闘を終えるときに付ける */
+  remaining?: readonly RemainingUnit[];
+}
+
+/** 決着したときに戦場に残っていた部隊と、その状態（兵士数など） */
+export interface RemainingUnit {
+  unit: UnitData;
+  /** 配備した部隊の ID（Troop.id。マップに最初から置いてあったユニットは null） */
+  troopId: string | null;
+  status: UnitStatus;
 }
 
 /** 負けた陣営 */

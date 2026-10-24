@@ -36,7 +36,7 @@ export type { WipeoutReport } from './wipeout';
 
 // 勝敗（決着は BattleScreen の onEnd・BattleApp の end で受け取る）
 export { BATTLE_END_REASON_NAMES, judgeBattle, loserOf } from './victory';
-export type { BattleEndReason, BattleOutcome, CommanderLoss } from './victory';
+export type { BattleEndReason, BattleOutcome, CommanderLoss, RemainingUnit } from './victory';
 
 // セリフ（何を喋るか。ゲームではセリフのデータから引く BarkSource を lineBarks で作って渡す）
 export { BARK_CHANCE, BARK_SITUATION_NAMES, BARK_SITUATIONS, BARK_TONE, demoBarks, EXCHANGE_CHANCE, lineBarks, lineSituationId } from './barks';

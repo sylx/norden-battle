@@ -1597,8 +1597,13 @@ export class BattleApp {
     if (p) this.cameraFocus.panTo(p.foot);
   }
 
-  /** 戦闘を終える（選択を外し、行動済みの印を消して end で知らせる） */
-  private endBattle(outcome: BattleOutcome): void {
+  /** 戦闘を終える（選択を外し、行動済みの印を消して end で知らせる）。戦場に残った部隊を outcome.remaining に付ける */
+  private endBattle(judged: BattleOutcome): void {
+    const remaining = (this.map?.allUnits() ?? []).flatMap((unit) => {
+      const status = this.statuses.get(unit);
+      return status ? [{ unit, troopId: this.troopIds.get(unit) ?? null, status }] : [];
+    });
+    const outcome: BattleOutcome = { ...judged, remaining };
     this.outcome = outcome;
     this.setSelected(null);
     this.done.clear();

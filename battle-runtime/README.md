@@ -41,7 +41,7 @@ import { BattleScreen } from '@norden/battle-runtime';
 - `onWipeout`: ユニットが殲滅されたとき（`WipeoutReport`: ユニット・`troopId`・殲滅されたときの状態・殲滅したユニット・
   隣接していた敵の数・捕縛される確率・指揮官が捕縛されたか `captured`）。この戦闘の分は `app.wipedOut` にも残る。
   ゲームは退却と同じく騎士を引いて戦後処理に渡す。
-- `onEnd`: 決着のウィンドウのボタンを押したとき（`BattleOutcome`: 勝った陣営 `winner`・決着の理由 `reason`・ターン・入城したユニット）。
+- `onEnd`: 決着のウィンドウのボタンを押したとき（`BattleOutcome`: 勝った陣営 `winner`・決着の理由 `reason`・ターン・入城したユニット・戦場に残った部隊 `remaining`（部隊の ID `troopId` と兵士数などの状態 `status`。退却・殲滅した部隊は含まない））。
   渡さなければボタンを出さない。ボタンの文字は `endLabel`（既定は「戦闘を終える」）。決着そのものは `app.on('end', …)`・`app.outcome` でも受け取れる。
   ゲームは勝った陣営と退却の結果を戦後処理に渡して結果の画面へ進む。
 - `playerSide`: プレイヤーの陣営（`'attacker'`・`'defender'`）。決着のカットインを、勝てば `CUTIN_TEMPLATES['battle-win']`（勝利）、
