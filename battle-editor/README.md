@@ -36,7 +36,7 @@ battle-editor からマップは書き換えない。
 
 norden-battle を nordencult のサブモジュールとして置いているときは、ゲームのセリフのデータ（`../../src/data/voiceLines.json`。
 norden-data のセリフエディタで書く）と騎士（`characterData.json`）を読み、騎士の口調・性格に合わせて喋る（[src/gameVoices.ts](src/gameVoices.ts)）。
-ユニットごとに喋る騎士を選べる（決めていなければ口調のある騎士を順に割り当てる。吹き出しの顔は表示確認用の顔のまま）。
+ユニットごとに喋る騎士を選べる（決めていなければ口調のある騎士を順に割り当てる。吹き出しに騎士の顔は出さない）。
 norden-data でセリフを保存すると、開いている battle-editor にもそのまま反映される。
 ゲームが無いとき（GitHub Pages など）は表示確認用の決まったセリフで喋る。
 

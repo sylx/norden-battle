@@ -4,7 +4,6 @@
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { SkillId } from './actions';
-import faceSheetUrl from '../../assets/units/character_face.webp?url';
 
 export interface UnitStatus {
   soldiers: number;
@@ -15,9 +14,7 @@ export interface UnitStatus {
   /** 残り行動力（0..maxAp） */
   ap: number;
   maxAp: number;
-  /** 指揮官の顔（顔画像の左上から行ごとの通し番号 0..FACE_COUNT-1）。portrait があればそちらを使う */
-  face: number;
-  /** 指揮官の顔をゲームの画像から切り出すときの指定（ゲームの騎士の顔。無ければ face の仮の顔） */
+  /** 指揮官の顔をゲームの画像から切り出すときの指定（ゲームの騎士の顔。無ければ顔を出さない） */
   portrait?: Portrait;
   /** 指揮官のスキル */
   skills: SkillId[];
@@ -57,8 +54,6 @@ export interface TroopInit {
   leadership: number;
   strength: number;
   intelligence: number;
-  /** 指揮官の顔（顔画像の通し番号）。省略すると 0。portrait を渡せばそちらを使う */
-  face?: number;
   /** 指揮官の顔をゲームの画像から切り出すときの指定（騎士の顔） */
   portrait?: Portrait;
   skills?: SkillId[];
@@ -74,7 +69,6 @@ export function troopStatus(type: UnitType, init: TroopInit): UnitStatus {
     morale: Math.min(MAX_MORALE, Math.max(0, init.morale)),
     ap: MAX_AP[type],
     maxAp: MAX_AP[type],
-    face: init.face ?? 0,
     ...(init.portrait && { portrait: init.portrait }),
     skills: init.skills ?? [],
     leadership: init.leadership,
@@ -89,11 +83,6 @@ export function troopStatus(type: UnitType, init: TroopInit): UnitStatus {
 }
 
 export const MAX_MORALE = 100;
-
-/** 指揮官の顔画像。1 枚に FACE_GRID × FACE_GRID の顔を並べたもの */
-export const FACE_SHEET_URL = faceSheetUrl;
-export const FACE_GRID = 3;
-export const FACE_COUNT = FACE_GRID * FACE_GRID;
 
 /** 兵種ごとの最大行動力（仮） */
 const MAX_AP: Record<UnitType, number> = {
@@ -117,8 +106,8 @@ const MAX_SOLDIERS: Record<UnitType, number> = {
   landsknecht: 800,
 };
 
-/** 顔ごとの指揮官のスキル（仮） */
-const FACE_SKILLS: SkillId[][] = [
+/** 表示確認用の指揮官ごとのスキル（仮） */
+const DEMO_SKILLS: SkillId[][] = [
   ['inspire'],
   ['betray'],
   [],
@@ -130,8 +119,8 @@ const FACE_SKILLS: SkillId[][] = [
   ['inspire', 'ambush', 'betray'],
 ];
 
-/** 顔ごとの指揮官の統率・武力・知力（仮） */
-const FACE_ABILITIES: [leadership: number, strength: number, intelligence: number][] = [
+/** 表示確認用の指揮官ごとの統率・武力・知力（仮） */
+const DEMO_ABILITIES: [leadership: number, strength: number, intelligence: number][] = [
   [82, 64, 71],
   [58, 77, 48],
   [45, 40, 92],
@@ -143,7 +132,10 @@ const FACE_ABILITIES: [leadership: number, strength: number, intelligence: numbe
   [76, 70, 84],
 ];
 
-/** 表示確認用の仮の状態。兵士数・士気は HEX の位置から決まるばらつき、行動力は満タン、顔は軍ごとに順に割り当てる（軍の最初のユニットが軍団長） */
+/** 表示確認用の指揮官の数（demoStatus の commander は 0..DEMO_COMMANDERS-1） */
+export const DEMO_COMMANDERS = DEMO_ABILITIES.length;
+
+/** 表示確認用の仮の状態。兵士数・士気は HEX の位置から決まるばらつき、行動力は満タン、指揮官は軍ごとに順に割り当てる（軍の最初のユニットが軍団長） */
 export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStatus> {
   const out = new Map<UnitData, UnitStatus>();
   const perTeam = new Map<string, number>();
@@ -152,18 +144,18 @@ export function demoStatuses(units: readonly UnitData[]): Map<UnitData, UnitStat
   for (const u of sorted) {
     if (!perTeam.has(u.team)) {
       perTeam.set(u.team, 0);
-      // 軍ごとに顔の割り当ての開始位置をずらす（少人数どうしで同じ顔が並ばないように）
+      // 軍ごとに指揮官の割り当ての開始位置をずらす（少人数どうしで同じ指揮官が並ばないように）
       teamOffset = (perTeam.size - 1) * 4;
     }
     const i = perTeam.get(u.team)!;
     perTeam.set(u.team, i + 1);
-    out.set(u, { ...demoStatus(u.type, (teamOffset + i) % FACE_COUNT, hash(u.col, u.row, 1), hash(u.col, u.row, 2)), commander: i === 0 });
+    out.set(u, { ...demoStatus(u.type, (teamOffset + i) % DEMO_COMMANDERS, hash(u.col, u.row, 1), hash(u.col, u.row, 2)), commander: i === 0 });
   }
   return out;
 }
 
-/** 表示確認用の仮の状態 1 つ分。兵士数・士気は 0..1 の r1・r2 でばらつかせ（兵数のゲージは満タン）、行動力は満タン */
-export function demoStatus(type: UnitType, face: number, r1: number, r2: number): UnitStatus {
+/** 表示確認用の仮の状態 1 つ分。指揮官の能力・スキルは commander 番目の仮の指揮官、兵士数・士気は 0..1 の r1・r2 でばらつかせ（兵数のゲージは満タン）、行動力は満タン */
+export function demoStatus(type: UnitType, commander: number, r1: number, r2: number): UnitStatus {
   const soldiers = Math.round((MAX_SOLDIERS[type] * (0.3 + 0.7 * r1)) / 10) * 10;
   return {
     initialSoldiers: soldiers,
@@ -171,11 +163,10 @@ export function demoStatus(type: UnitType, face: number, r1: number, r2: number)
     morale: Math.round(20 + 80 * r2),
     ap: MAX_AP[type],
     maxAp: MAX_AP[type],
-    face,
-    skills: FACE_SKILLS[face] ?? [],
-    leadership: FACE_ABILITIES[face]?.[0] ?? 50,
-    strength: FACE_ABILITIES[face]?.[1] ?? 50,
-    intelligence: FACE_ABILITIES[face]?.[2] ?? 50,
+    skills: DEMO_SKILLS[commander] ?? [],
+    leadership: DEMO_ABILITIES[commander]?.[0] ?? 50,
+    strength: DEMO_ABILITIES[commander]?.[1] ?? 50,
+    intelligence: DEMO_ABILITIES[commander]?.[2] ?? 50,
     moved: false,
     attacked: false,
     justAttacked: false,

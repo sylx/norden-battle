@@ -27,7 +27,7 @@ export interface UnitData {
 }
 
 /**
- * 兵種。画像はリポジトリ直下の assets/units/<id>.png（無ければプレースホルダー）。
+ * 兵種。画像はリポジトリ直下の assets/units/<id>.webp（無ければプレースホルダー）。
  * 置き方は assets/units/README.md を参照。
  */
 export interface UnitDef {

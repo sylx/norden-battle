@@ -29,7 +29,7 @@ const knights = Object.values(
 
 /**
  * ユニットに喋らせる騎士の割り当て。決めていないユニットには、口調のある騎士を順に割り当てる
- * （騎士 ID はユニットの指揮官の顔とは関係ない。吹き出しの顔は表示確認用の顔のまま）
+ * （騎士 ID はユニットの指揮官とは関係ない。吹き出しに騎士の顔は出さない）
  */
 export class KnightCast {
   readonly knights: readonly GameKnight[];

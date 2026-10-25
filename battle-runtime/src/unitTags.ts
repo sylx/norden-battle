@@ -15,15 +15,13 @@ import * as THREE from 'three';
 import type { Offset } from '@norden/map-runtime/core/hex';
 import { TEAM_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
-import { FACE_GRID, FACE_SHEET_URL, MAX_MORALE, type Portrait, type UnitStatus } from './unitStatus';
+import { MAX_MORALE, type UnitStatus } from './unitStatus';
 
 /** 札の大きさ（CSS ピクセル。ui/battle.css の .unit-tag と合わせる） */
 const TAG_W = 124;
 const TAG_H = 40;
 /** 顔の円の直径（枠を除く） */
 const FACE_SIZE = 32;
-/** 顔を円に切り抜くときの拡大率（顔画像の縁の余白を落とす） */
-const FACE_ZOOM = 1.15;
 /** 既定の位置での、足元から札の上端までの距離（負なら札の上端が足元より上で、足に少しかかる） */
 const FOOT_OFFSET = -8;
 /** 札の位置の候補の間隔と範囲（既定の位置から左右・上下に何段ずらすか）。細かく刻んで小さなずれで済ませる */
@@ -263,7 +261,7 @@ export class UnitTags {
   }
 
   private render(tag: Tag, s: UnitStatus, active: boolean): void {
-    const key = `${s.soldiers}/${s.initialSoldiers}/${s.morale}/${s.portrait?.url ?? s.face}/${active}`;
+    const key = `${s.soldiers}/${s.initialSoldiers}/${s.morale}/${s.portrait?.url ?? ''}/${active}`;
     if (key === tag.shown) return;
     tag.shown = key;
     tag.el.classList.toggle('active', active);
@@ -307,23 +305,13 @@ export function renderStatus(el: HTMLElement, s: UnitStatus): void {
   setFace(q('.face'), s, FACE_SIZE);
 }
 
-/**
- * el の背景に指揮官の顔を入れる。portrait があればその範囲を size の円いっぱいに、
- * 無ければ仮の顔画像（通し番号 face）のうち 1 枚を少し拡大して収める
- */
-export function setFace(el: HTMLElement, { face, portrait }: Pick<UnitStatus, 'face' | 'portrait'>, size: number): void {
-  if (portrait) return setPortrait(el, portrait, size);
-  const cell = size * FACE_ZOOM;
-  const margin = (cell - size) / 2;
-  const col = face % FACE_GRID;
-  const row = Math.floor(face / FACE_GRID);
-  el.style.backgroundImage = `url("${FACE_SHEET_URL}")`;
-  el.style.backgroundSize = `${cell * FACE_GRID}px ${cell * FACE_GRID}px`;
-  el.style.backgroundPosition = `${-(col * cell + margin)}px ${-(row * cell + margin)}px`;
-}
-
-/** 顔の範囲（rect）の短い辺を size に合わせ、真ん中を円に収める */
-function setPortrait(el: HTMLElement, { url, width, height, rect }: Portrait, size: number): void {
+/** el の背景に指揮官の顔を入れる。portrait の範囲の短い辺を size に合わせ、真ん中を円に収める。portrait が無ければ顔を出さない */
+export function setFace(el: HTMLElement, { portrait }: Pick<UnitStatus, 'portrait'>, size: number): void {
+  if (!portrait) {
+    el.style.backgroundImage = '';
+    return;
+  }
+  const { url, width, height, rect } = portrait;
   const scale = size / Math.min(rect.width, rect.height);
   const x = (rect.x + rect.width / 2) * scale - size / 2;
   const y = (rect.y + rect.height / 2) * scale - size / 2;

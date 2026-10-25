@@ -17,7 +17,7 @@ export { demoFactions, OTHER_FACTION_NAME, teamName } from './factions';
 export type { BattleFaction, BattleFactions } from './factions';
 
 // ユニットの戦闘中の状態
-export { demoStatus, demoStatuses, FACE_COUNT, MAX_MORALE, troopStatus } from './unitStatus';
+export { demoStatus, demoStatuses, MAX_MORALE, troopStatus } from './unitStatus';
 export type { Portrait, TroopInit, UnitStatus } from './unitStatus';
 
 // ユニットそのものの力（基本攻撃力・基本防御力。戦う前の比べ合いに使う）

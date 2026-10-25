@@ -13,7 +13,7 @@
 ## ユニットの表示（2D、map-editor）
 - **カメラ**（`map-runtime/src/render/scene.ts`）: 回転させない。北向き、俯角は既定 50°（`DEFAULT_CAMERA_PITCH`。lil-gui の「カメラ → 俯角」で調整できる）。操作は移動とズームだけ。
 - **画像**（`map-runtime/src/render/unitArt.ts`）:
-  - 兵種ごとに 1 枚を **`assets/units/<兵種>.png`** に置く（軍ごとに変えるなら `<兵種>_<軍>.png`）。置くだけで読み込まれ、無い兵種は Canvas で描いたプレースホルダーになる。詳しくは `assets/units/README.md`。
+  - 兵種ごとに 1 枚を **`assets/units/<兵種>.webp`** に置く（軍ごとに変えるなら `<兵種>_<軍>.webp`）。置くだけで読み込まれ、無い兵種は Canvas で描いたプレースホルダーになる。詳しくは `assets/units/README.md`。
   - 読み込み時に、透過の無い画像は外周からつながった無地の背景を抜き、余白を切り詰め、高さ 512px までに縮める（`map-runtime/src/render/spriteCleanup.ts`）。Midjourney の画像をそのまま置けるようにするため。
   - 描き方の約束: **カメラの俯角から見下ろした姿を右向きで**描く。**下端中央が足元**。余白は付けない（画像の縦横比がそのままスプライトの縦横比になる）。左向きは反転して表示する。
   - 軍の色は画像ではなく足元の円で示すので、画像は軍で共通にできる。
