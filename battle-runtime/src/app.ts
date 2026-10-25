@@ -20,8 +20,9 @@
  *   一斉攻撃は、加わる味方も含めた全員へ寄り、それぞれの兵種の演出（斬撃・ランス）を少しずつずらして出す。
  *   突撃で駆け抜けるときは、飛び出る先の HEX まで画面に収める。
  *   兵数が 0 になったユニットは消える。
- * - ライフル兵の弾は、目標の手前の HEX にいるユニットにも敵・味方を問わず当たる（巻き添え。combat.ts の piercedUnits）。迎撃も同じ。
- *   巻き添えで壊滅したユニットも、実行を終えたときに消える（迎撃の構えのユニットなら、それより後の迎撃は撃たない）。
+ * - ライフル兵の弾は、目標の手前の HEX にいるユニットにも敵・味方を問わず当たる（combat.ts の piercedUnits）。迎撃も同じ。
+ *   味方に当たったときだけ「巻き添え」と出す。手前で当たって壊滅したユニットも、実行を終えたときに消える
+ *   （迎撃の構えのユニットなら、それより後の迎撃は撃たない）。
  * - 迎撃（騎兵はできない）は選んだらすぐに実行する。予約した移動があればそこまで歩き、迎撃の構えで待機して行動を終える（行動力は 0 になる）。
  *   構えは次にそのユニットが行動するまで続く（ターンをまたいでも続く）。
  *   近接ユニットの構えは、受けるダメージを減らして反撃を増やす（damage.ts）。
@@ -281,9 +282,11 @@ export interface InterceptReport {
   pierced: PierceHit[];
 }
 
-/** ライフル兵の弾が目標の手前で当たったユニット 1 つ分（巻き添え。敵・味方を問わない） */
+/** ライフル兵の弾が目標の手前で当たったユニット 1 つ分（敵・味方を問わない。味方に当たったものが巻き添え） */
 export interface PierceHit {
   unit: UnitData;
+  /** 撃ったユニットの味方か（巻き添え） */
+  friendly: boolean;
   result: AttackResult;
   /** 当たった後の兵数 */
   left: number;
@@ -1117,7 +1120,7 @@ export class BattleApp {
     const exec = this.exec!;
     const map = this.map!;
     let phase = exec.phases.shift();
-    // 巻き添えで壊滅した迎撃の構えのユニットは撃たない
+    // 目標の手前で弾が当たって壊滅した迎撃の構えのユニットは撃たない
     while ((phase?.kind === 'walk' && phase.path.length < 2) || (phase?.kind === 'intercept' && !((this.statuses.get(phase.shooter)?.soldiers ?? 0) > 0))) {
       if (phase.kind === 'walk' && phase.commit && phase.path.length > 0) this.commitWalk(exec, phase.path[0]);
       phase = exec.phases.shift();
@@ -1537,9 +1540,11 @@ export class BattleApp {
       applyMorale(status, result.morale.defender);
       const destroyed = status.soldiers <= 0;
       const w = destroyed ? this.wipeOut(report, unit, status, unit, shooter.unit, []) : null;
+      // 味方に当たったときだけ巻き添えと出す
+      const friendly = unit.team === shooter.unit.team;
       const p = placements.find((x) => x.unit === unit);
-      if (p) this.popups.show(p, `巻き添え -${result.damage}${wipeoutLabel(w)}`, 'damage');
-      return [{ unit, result, left: Math.max(0, status.soldiers), destroyed }];
+      if (p) this.popups.show(p, `${friendly ? '巻き添え ' : ''}-${result.damage}${wipeoutLabel(w)}`, 'damage');
+      return [{ unit, friendly, result, left: Math.max(0, status.soldiers), destroyed }];
     });
   }
 

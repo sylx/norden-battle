@@ -18,7 +18,7 @@ import { useTeamName, useUnitName } from './factionsContext';
 
 /** 攻撃 1 回分の記録 */
 export interface AttackLogEntry {
-  /** intercept: 迎撃の構えの間接ユニットの自動攻撃、pierce: ライフル兵の弾が目標の手前のユニットに当たった（巻き添え） */
+  /** intercept: 迎撃の構えの間接ユニットの自動攻撃、pierce: ライフル兵の弾が目標の手前のユニットに当たった（味方なら巻き添え） */
   kind?: 'intercept' | 'pierce';
   turn: number;
   /** 記録した番の軍（迎撃は相手の番に起きる） */
@@ -249,7 +249,7 @@ function Morale({ n }: { n: number }) {
 function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: ExecuteReport): AttackLogEntry[] {
   const out: AttackLogEntry[] = [];
   const captured = (u: UnitData) => wipeouts.some((w) => w.unit === u && w.captured);
-  // 巻き添え（目標の手前で弾が当たったユニット）は、撃った攻撃の記録の後に並べる
+  // 目標の手前で弾が当たったユニットは、撃った攻撃の記録の後に並べる（味方に当たったものは巻き添えと出す）
   const addPierced = (shooter: UnitData, actionName: string, hits: readonly PierceHit[]) => {
     for (const h of hits) {
       const { result } = h;
@@ -261,7 +261,7 @@ function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: Exec
         target: h.unit,
         attackerLeader: app.leaderOf(shooter),
         targetLeader: app.leaderOf(h.unit),
-        actionName: `${actionName}（巻き添え）`,
+        actionName: h.friendly ? `${actionName}（巻き添え）` : actionName,
         damage: result.damage,
         counter: 0,
         direct: false,

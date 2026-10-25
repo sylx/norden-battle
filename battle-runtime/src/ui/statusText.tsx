@@ -115,9 +115,9 @@ export function executeStatus(name: UnitNamer, { unit, from, moveCost, attack, i
     parts.push(retreat.captured ? `${retreat.to.name}への${kind}に失敗し、捕虜になった（${odds}）` : `${retreat.to.name}へ${kind}した（${odds}）`);
   }
   if (moveCost > 0) parts.push(`(${from.col}, ${from.row}) から移動（行動力 ${moveCost}）`);
-  // 目標の手前で弾が当たったユニット（巻き添え）
+  // 目標の手前で弾が当たったユニット（味方に当たったものは巻き添え）
   const pierced = (hits: readonly PierceHit[]) => {
-    for (const h of hits) parts.push(`${name(h.unit)}に巻き添え: -${h.result.damage}${h.destroyed ? '（壊滅）' : ''}`);
+    for (const h of hits) parts.push(`${name(h.unit)}${h.friendly ? 'に巻き添え' : 'にも命中'}: -${h.result.damage}${h.destroyed ? '（壊滅）' : ''}`);
   };
   // 移動の途中で受けた迎撃（攻撃の前の移動・後の移動）
   const interceptParts = (afterAttack: boolean) => {
