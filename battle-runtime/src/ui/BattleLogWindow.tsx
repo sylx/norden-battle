@@ -11,10 +11,10 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ThinFrameWithTitle } from 'norden-ui';
 import type { Offset } from '@norden/map-runtime/core/hex';
-import { TEAM_DEFS, UNIT_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
+import { TEAM_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
 import type { BattleApp, ExecuteReport } from '../app';
 import type { MoraleChange } from '../morale';
-import { useTeamName } from './factionsContext';
+import { useTeamName, useUnitName } from './factionsContext';
 
 /** 攻撃 1 回分の記録 */
 export interface AttackLogEntry {
@@ -25,6 +25,9 @@ export interface AttackLogEntry {
   team: TeamId;
   attacker: UnitData;
   target: UnitData;
+  /** 攻撃したユニット・相手を率いる騎士の名前（騎士がいなければ無し） */
+  attackerLeader?: string;
+  targetLeader?: string;
   /** 行動の名前（攻撃・斉射・突撃など） */
   actionName: string;
   damage: number;
@@ -179,9 +182,9 @@ function Entry({ entry: e }: { entry: AttackLogEntry }) {
     // 足したときだけ光らせる（畳んで広げたときにもう一度光らないよう、終わったら外す）
     <li className={`log-entry fresh${e.kind ? ` ${e.kind}` : ''}`} onAnimationEnd={(ev) => ev.currentTarget.classList.remove('fresh')}>
       <div className="log-who">
-        <Unit unit={e.attacker} />
+        <Unit unit={e.attacker} leader={e.attackerLeader} />
         <span className="log-verb">が</span>
-        <Unit unit={e.target} />
+        <Unit unit={e.target} leader={e.targetLeader} />
         <span className="log-verb">に</span>
         {e.encircled && <span className="log-encircled">包囲</span>}
         {e.defense > 0 && <span className="log-terrain">地形-{Math.round(e.defense * 100)}%</span>}
@@ -206,12 +209,12 @@ function Entry({ entry: e }: { entry: AttackLogEntry }) {
 }
 
 /** 軍の色の印を付けたユニット名 */
-function Unit({ unit }: { unit: UnitData }) {
+function Unit({ unit, leader }: { unit: UnitData; leader?: string }) {
   const team = TEAM_DEFS[unit.team];
-  const teamName = useTeamName();
+  const unitName = useUnitName();
   return (
     <span className="log-unit" style={{ '--team': team.color } as CSSProperties}>
-      {teamName(unit.team)} {UNIT_DEFS[unit.type].name}
+      {unitName(unit, leader)}
     </span>
   );
 }
@@ -256,6 +259,8 @@ function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: Exec
         team: app.activeTeam,
         attacker: i.unit,
         target: unit,
+        attackerLeader: app.leaderOf(i.unit),
+        targetLeader: app.leaderOf(unit),
         actionName: '迎撃',
         damage: result.damage,
         counter: 0,
@@ -280,6 +285,8 @@ function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: Exec
       team: app.activeTeam,
       attacker: unit,
       target: attack.target,
+      attackerLeader: app.leaderOf(unit),
+      targetLeader: app.leaderOf(attack.target),
       // 一斉攻撃は加わった隊の数（自分を含む）も出す
       actionName: result.supporters > 0 ? `${attack.action.name} ${result.supporters + 1}隊` : attack.action.name,
       damage: result.damage,

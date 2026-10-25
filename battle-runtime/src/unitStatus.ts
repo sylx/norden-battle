@@ -14,6 +14,8 @@ export interface UnitStatus {
   /** 残り行動力（0..maxAp） */
   ap: number;
   maxAp: number;
+  /** 部隊を率いる騎士の名前（部隊は「{name}隊」と呼ぶ。無ければ勢力の名前と兵種で呼ぶ） */
+  name?: string;
   /** 指揮官の顔をゲームの画像から切り出すときの指定（ゲームの騎士の顔。無ければ顔を出さない） */
   portrait?: Portrait;
   /** 指揮官のスキル */
@@ -54,6 +56,8 @@ export interface TroopInit {
   leadership: number;
   strength: number;
   intelligence: number;
+  /** 部隊を率いる騎士の名前 */
+  name?: string;
   /** 指揮官の顔をゲームの画像から切り出すときの指定（騎士の顔） */
   portrait?: Portrait;
   skills?: SkillId[];
@@ -69,6 +73,7 @@ export function troopStatus(type: UnitType, init: TroopInit): UnitStatus {
     morale: Math.min(MAX_MORALE, Math.max(0, init.morale)),
     ap: MAX_AP[type],
     maxAp: MAX_AP[type],
+    ...(init.name && { name: init.name }),
     ...(init.portrait && { portrait: init.portrait }),
     skills: init.skills ?? [],
     leadership: init.leadership,

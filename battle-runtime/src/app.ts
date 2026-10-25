@@ -415,6 +415,8 @@ export class BattleApp {
   readonly retreated: RetreatReport[] = [];
   /** この戦闘で殲滅されたユニット（順に。マップを読み込むと空にする） */
   readonly wipedOut: WipeoutReport[] = [];
+  /** 殲滅・退却で戦場からいなくなったユニットを率いていた騎士の名前（記録・案内で部隊を呼ぶため。マップを読み込むと空にする） */
+  private goneLeaders = new Map<UnitData, string>();
   /** 配備したユニットの部隊の ID（戦闘が始まったときに配備から写す） */
   private troopIds = new Map<UnitData, string>();
   /** 防衛拠点の HEX（マップの stronghold。無ければ入城では決着しない） */
@@ -543,6 +545,7 @@ export class BattleApp {
     this.statuses = makeStatuses(map.allUnits());
     this.retreated.length = 0;
     this.wipedOut.length = 0;
+    this.goneLeaders = new Map();
     this.troopIds = new Map();
     this.outcome = null;
     this.judged = new Set();
@@ -613,6 +616,11 @@ export class BattleApp {
     const map = this.map;
     const hovered = this.hovered && map?.unitAt(this.hovered.col, this.hovered.row);
     return hovered ?? this.plan?.unit ?? this.inspected;
+  }
+
+  /** ユニットを率いる騎士の名前（戦場からいなくなったユニットも引ける。騎士がいなければ undefined） */
+  leaderOf(unit: UnitData): string | undefined {
+    return this.statuses.get(unit)?.name ?? this.goneLeaders.get(unit);
   }
 
   /** 配備の様子（配備フェーズでなければ null） */
@@ -1542,6 +1550,8 @@ export class BattleApp {
     for (const u of removed) {
       if (!u) continue;
       map.removeUnit(u.col, u.row);
+      const leader = this.statuses.get(u)?.name;
+      if (leader) this.goneLeaders.set(u, leader);
       this.statuses.delete(u);
     }
     if (removed.some(Boolean)) this.tags.setStatuses(this.statuses);

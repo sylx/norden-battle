@@ -13,7 +13,7 @@ export { demoTroops, MAX_DEPLOY, SIDE_NAMES, SIDE_TEAM } from './deployment';
 export type { DeployState, Troop, TroopFactory } from './deployment';
 
 // 勢力（軍を勢力の名前で呼ぶ。ゲームは陣営ごとの勢力を BattleScreen の factions で渡す）
-export { demoFactions, OTHER_FACTION_NAME, teamName } from './factions';
+export { demoFactions, OTHER_FACTION_NAME, teamName, unitName } from './factions';
 export type { BattleFaction, BattleFactions } from './factions';
 
 // ユニットの戦闘中の状態

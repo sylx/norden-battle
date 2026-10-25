@@ -24,18 +24,19 @@
  * - ターン表示には、いま行動している軍を出す（防衛側 → 攻撃側の交互）。その軍のユニットがすべて行動済みになったら
  *   「全部隊 行動終了」と出して、ターン終了のボタンを脈打つ光で目立たせる（BattleApp の allDone）。
  * - 軍は色（赤・青）ではなく勢力の名前で呼ぶ。陣営ごとの勢力は factions で渡す（factions.ts。中の UI には FactionsContext で配る）。
+ *   部隊は率いる騎士の名前（UnitStatus.name）で「{騎士の名前}隊」と呼ぶ。騎士のいない部隊は「{勢力の名前} {兵種}」。
  * - 画面の下に操作の案内・予約の中身・実行した結果のステータス行を出す（notice を渡すとそちらを出す）。
  * - 親の要素いっぱいに広がる。children はその上に重ねる（エディタの道具・ゲームの見出しなど）。
  */
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { AlertDialog, Button, CUTIN_TEMPLATES, CutInLayer, ThinFrame, useCutIn, type CutInPlayOptions, type CutInQueue } from 'norden-ui';
 import type { MapData } from '@norden/map-runtime/core/mapData';
-import { TEAM_DEFS, type TeamId } from '@norden/map-runtime/core/units';
+import { TEAM_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
 import { BattleApp, type BattlePhase, type StatusFactory } from '../app';
 import { demoBarks, type BarkSource } from '../barks';
 import type { DeploySide } from '@norden/map-runtime/core/mapData';
 import { SIDE_TEAM, type TroopFactory } from '../deployment';
-import { demoFactions, teamName, type BattleFactions } from '../factions';
+import { demoFactions, teamName, unitName, type BattleFactions } from '../factions';
 import type { RetreatDestinations, RetreatReport } from '../retreat';
 import type { WipeoutReport } from '../wipeout';
 import { BATTLE_END_REASON_NAMES, loserOf, type BattleEndReason, type BattleOutcome } from '../victory';
@@ -171,6 +172,8 @@ export default function BattleScreen({
     const app = new BattleApp(viewportRef.current!);
     setApp(app);
     latest.current.onApp?.(app);
+    // 部隊は率いる騎士の名前で呼ぶ（戦場からいなくなった部隊も）
+    const name = (u: UnitData) => unitName(latest.current.factions, u, app.leaderOf(u));
     const offs = [
       app.on('load', () => {
         setStatus(LOADED_STATUS);
@@ -191,13 +194,13 @@ export default function BattleScreen({
         void playCutIn(queue, 'turn', cutInTexts?.turn ? cutInTexts.turn(turn, team) : defaultTurnText(factions, turn, team));
       }),
       app.on('select', (unit) => {
-        if (unit && unit === app.inspected) setStatus(inspectStatus(latest.current.factions, unit));
+        if (unit && unit === app.inspected) setStatus(inspectStatus(name, unit));
       }),
-      app.on('action', (u, a) => setStatus(actionStatus(latest.current.factions, u, a))),
-      app.on('planChange', (plan) => setStatus(planStatus(latest.current.factions, plan))),
+      app.on('action', (u, a) => setStatus(actionStatus(name, u, a))),
+      app.on('planChange', (plan) => setStatus(planStatus(name, plan))),
       app.on('targetCancel', () => setStatus(IDLE_STATUS)),
       app.on('targetReject', (reason) => setStatus(rejectStatus(reason))),
-      app.on('execute', (report) => setStatus(executeStatus(latest.current.factions, report))),
+      app.on('execute', (report) => setStatus(executeStatus(name, report))),
       app.on('retreat', (report) => latest.current.onRetreat?.(report)),
       app.on('wipeout', (report) => latest.current.onWipeout?.(report)),
       app.on('rout', (o, units) => {
