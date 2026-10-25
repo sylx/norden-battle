@@ -10,6 +10,7 @@
  * - 両軍が同時に負けになったとき（相討ち）は防衛側の勝ち（攻め落とせなかった）。
  * - 軍団長部隊の全滅・退却、入城で負けた陣営に残っている部隊は、BattleApp が強制退却させてから戦闘を終える
  *   （退却先が無ければそのまま終える）。
+ * - 捕縛した指揮官は、勝った陣営のものだけが捕虜になる（BattleOutcome.captives）。負けた陣営の捕縛は無効。
  * - 戦闘が始まったときに部隊のいなかった陣営は、いなくなっても負けにしない（表示確認用のマップなど）。
  */
 import type { Offset } from '@norden/map-runtime/core/hex';
@@ -48,6 +49,24 @@ export interface BattleOutcome {
   unit?: UnitData;
   /** 決着したときに戦場に残っていた部隊（退却・殲滅した部隊は含まない）。BattleApp が戦闘を終えるときに付ける */
   remaining?: readonly RemainingUnit[];
+  /**
+   * 勝った陣営が捕縛した指揮官（退却に失敗した・殲滅されて捕縛された、負けた陣営の部隊）。BattleApp が戦闘を終えるときに付ける。
+   * 負けた陣営が捕縛したものは無効なので含まない
+   */
+  captives?: readonly CapturedUnit[];
+}
+
+/** 指揮官が捕縛された部隊と、どう捕縛されたか（retreat: 退却に失敗した、wipeout: 殲滅されて捕縛された） */
+export interface CapturedUnit {
+  /** 捕縛された部隊のユニット（もうマップにはいない） */
+  unit: UnitData;
+  /** 配備した部隊の ID（Troop.id。マップに最初から置いてあったユニットは null） */
+  troopId: string | null;
+  /** 捕縛されたときの戦闘中の状態 */
+  status: UnitStatus;
+  /** 何ターン目に捕縛されたか */
+  turn: number;
+  cause: 'retreat' | 'wipeout';
 }
 
 /** 決着したときに戦場に残っていた部隊と、その状態（兵士数など） */

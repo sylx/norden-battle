@@ -562,7 +562,7 @@ function RetreatTool({ app, teams, onTeams }: { app: BattleApp; teams: ReadonlyS
         </label>
       ))}
       <p className="hint">退却に失敗する確率（隣接する敵の数）: {table(RETREAT_FAIL_CHANCE)}。失敗すると捕虜になる</p>
-      <p className="hint">殲滅されて指揮官が捕縛される確率（隣接する敵の数）: {table(WIPEOUT_CAPTURE_CHANCE)}。捕縛されなければ落ち延びる</p>
+      <p className="hint">殲滅されて指揮官が捕縛される確率（隣接する敵の数）: {table(WIPEOUT_CAPTURE_CHANCE)}。捕縛されなければ最初の退却先へ落ち延びる（無ければ在野）</p>
       {log.length > 0 && (
         <ul className="bark-log">
           {log.map((r, i) => (
@@ -578,7 +578,9 @@ function RetreatTool({ app, teams, onTeams }: { app: BattleApp; teams: ReadonlyS
                   : `${r.to.name}へ退却した`
                 : r.captured
                   ? '殲滅され、指揮官が捕縛された'
-                  : '殲滅されたが、指揮官は落ち延びた'}
+                  : r.to
+                    ? `殲滅されたが、指揮官は${r.to.name}へ落ち延びた`
+                    : '殲滅されたが、指揮官は落ち延びた（退却先が無く在野に）'}
             </li>
           ))}
         </ul>

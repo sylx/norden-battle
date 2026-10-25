@@ -136,7 +136,8 @@ export function executeStatus(f: BattleFactions, { unit, from, moveCost, attack,
   if (inspire !== undefined) parts.push(`鼓舞: 士気 +${inspire}`);
   for (const w of wipeouts) {
     const odds = `捕縛 ${Math.round(w.captureChance * 100)}%・隣接する敵 ${w.enemies}`;
-    parts.push(`${teamUnit(f, w.unit)}の指揮官は${w.captured ? '捕縛された' : '落ち延びた'}（${odds}）`);
+    const fate = w.captured ? '捕縛された' : w.to ? `${w.to.name}へ落ち延びた` : '落ち延びたが、退却先が無く在野になった';
+    parts.push(`${teamUnit(f, w.unit)}の指揮官は${fate}（${odds}）`);
   }
   return `${unitLabel(f, unit)}: ${parts.join(' → ')}`;
 }

@@ -52,8 +52,10 @@
  *   拠点を選ぶとすぐに実行する。退却先の無い軍のユニットは選べない。隣接している敵ユニットの数で決まる確率で失敗し（retreat.ts）、
  *   失敗すると捕虜になる。成功したユニットは敵から離れる向きへ下がりながら消え、失敗したユニットは下がりかけたところで止められて消える。
  *   結果は retreat のイベントで知らせ、retreated に残す（捕虜をどう扱うかは使う側が決める）。
- * - 兵数が 0 になった（殲滅された）ユニットの指揮官は、そのとき隣接している敵ユニットの数で決まる確率で捕縛される（wipeout.ts）。
- *   捕縛されなければ落ち延びる。結果は wipeout のイベントで知らせ、wipedOut に残す。
+ * - 兵数が 0 になった（殲滅された）ユニットの指揮官は自動退却し、そのとき隣接している敵ユニットの数で決まる確率で捕縛される（wipeout.ts）。
+ *   捕縛されなければ軍の最初の退却先へ落ち延びる（退却先が無ければ落ち延びる先は無い）。結果は wipeout のイベントで知らせ、wipedOut に残す。
+ * - 戦闘を終えるときに、勝った陣営が捕縛した指揮官（退却に失敗した・殲滅されて捕縛された負けた陣営の部隊）を outcome.captives に付ける。
+ *   負けた陣営が捕縛したものは無効なので付けない。
  *
  * セリフ（barks.ts。吹き出しは speechBubbles.ts）:
  * - 攻撃: カメラが寄ったところで攻撃するユニットが確率で喋り、読み終えてから攻撃する。
@@ -107,7 +109,7 @@ import { SpeechBubbles } from './speechBubbles';
 import { THUNDER_HIT_SEC, ThunderEffects } from './thunderFx';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
-import { judgeBattle, loserOf, sideUnits, type BattleOutcome, type CommanderLoss } from './victory';
+import { judgeBattle, loserOf, sideUnits, type BattleOutcome, type CapturedUnit, type CommanderLoss } from './victory';
 
 /** 移動できる HEX の色と、そのうち敵の ZOC で止まる HEX の印の色 */
 const MOVE_RANGE_COLOR = 0x4aa8ff;
@@ -1442,7 +1444,7 @@ export class BattleApp {
 
   /**
    * unit が pos で by に殲滅された。そのとき隣接している敵ユニット（exclude の同時に殲滅されたものを除く）の数で、
-   * 指揮官が捕縛されるかを決めて report に記録する
+   * 指揮官が捕縛されるか（されなければ軍の最初の退却先へ落ち延びる）を決めて report に記録する
    */
   private wipeOut(report: ExecuteReport, unit: UnitData, status: UnitStatus, pos: Offset, by: UnitData, exclude: readonly UnitData[]): WipeoutReport {
     const enemies = adjacentEnemies(this.map!, unit, pos).filter((u) => !exclude.includes(u)).length;
@@ -1456,7 +1458,9 @@ export class BattleApp {
       enemies,
       captureChance,
       captured: Math.random() < captureChance,
+      to: null,
     };
+    if (!w.captured) w.to = this.retreatDestinations(unit)[0] ?? null;
     report.wipeouts.push(w);
     return w;
   }
@@ -1602,13 +1606,23 @@ export class BattleApp {
     if (p) this.cameraFocus.panTo(p.foot);
   }
 
-  /** 戦闘を終える（選択を外し、行動済みの印を消して end で知らせる）。戦場に残った部隊を outcome.remaining に付ける */
+  /**
+   * 戦闘を終える（選択を外し、行動済みの印を消して end で知らせる）。戦場に残った部隊を outcome.remaining に、
+   * 勝った陣営が捕縛した指揮官（退却に失敗した・殲滅されて捕縛された負けた陣営の部隊。退却・殲滅の順）を outcome.captives に付ける
+   */
   private endBattle(judged: BattleOutcome): void {
     const remaining = (this.map?.allUnits() ?? []).flatMap((unit) => {
       const status = this.statuses.get(unit);
       return status ? [{ unit, troopId: this.troopIds.get(unit) ?? null, status }] : [];
     });
-    const outcome: BattleOutcome = { ...judged, remaining };
+    const loser = SIDE_TEAM[loserOf(judged)];
+    const captives = [
+      ...this.retreated.map((r) => ({ ...r, cause: 'retreat' as const })),
+      ...this.wipedOut.map((w) => ({ ...w, cause: 'wipeout' as const })),
+    ]
+      .filter((r) => r.captured && r.unit.team === loser)
+      .map(({ unit, troopId, status, turn, cause }): CapturedUnit => ({ unit, troopId, status, turn, cause }));
+    const outcome: BattleOutcome = { ...judged, remaining, captives };
     this.outcome = outcome;
     this.setSelected(null);
     this.done.clear();
