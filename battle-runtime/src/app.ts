@@ -519,6 +519,11 @@ export class BattleApp {
     return this.view.map;
   }
 
+  /** 負けた陣営の残りの部隊を強制退却させている最中か */
+  get routing(): boolean {
+    return this.rout !== null;
+  }
+
   /**
    * マップを読み込む。マップに置いてあるユニットの戦闘中の状態は makeStatuses で配る。
    * 初期配置地点（deploy）があれば、makeTroops で配った部隊を置く配備フェーズから始める

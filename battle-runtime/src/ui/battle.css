@@ -394,6 +394,33 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 強制退却（負けた陣営に残った部隊）。ふだんの退却と見分けられるよう、メニューを赤く縁取り、赤い帯を出す */
+.battle-screen .action-menu.is-forced .menu-panel.main {
+  box-shadow: 0 0 0 2px rgba(214, 62, 44, 0.9), 0 0 18px rgba(214, 62, 44, 0.55);
+}
+
+.battle-screen .action-menu .menu-forced {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #b8321f, #8a2214);
+  color: #fff3e6;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.battle-screen .action-menu .menu-forced b {
+  font-size: 15px;
+  letter-spacing: 0.35em;
+}
+
+.battle-screen .action-menu .menu-forced span {
+  font-size: 11px;
+  color: rgba(255, 236, 220, 0.85);
+}
+
 /* 行動終了（選べる行動が無い）。押せるものと見間違えないよう、枠も背景も無い小さな文字にする */
 .battle-screen .action-menu .menu-ended {
   margin: 0 0 2px;

@@ -8,7 +8,7 @@
  * - 2 階層目は 1 階層目の項目の横に開く。マウスは項目に乗せる、タッチはタップで開く。
  *   選べない項目（退却先の無い退却など）は灰色で出し、理由を title に持たせる。
  * - 退却を選んだ後は、項目の代わりに退却先の拠点の一覧と失敗する確率を出す（「戻る」で項目に戻る）。
- *   強制退却（負けた陣営に残った部隊）は「強制退却」と出し、「戻る」を出さない。
+ *   強制退却（負けた陣営に残った部隊）は、メニューを赤い縁で囲み、項目の上に赤い「強制退却」の帯を出して、「戻る」を出さない。
  * - 選べる行動が無い（行動済みの E の印が付く。待機は数えない）ときは、項目の上に赤い「行動終了」の帯を出す。
  * - パネルは norden-ui の細いベゼル（ThinFrame）で囲む。
  */
@@ -56,7 +56,7 @@ export default function ActionMenu({ model }: { model: ActionMenuModel }) {
   const sub = openIndex !== null ? entries[openIndex]?.children : undefined;
 
   return (
-    <div ref={rootRef} className="action-menu" style={{ '--team': team.color } as CSSProperties}>
+    <div ref={rootRef} className={`action-menu${retreat?.forced ? ' is-forced' : ''}`} style={{ '--team': team.color } as CSSProperties}>
       <div ref={mainRef} className="menu-panel main">
         <ThinFrame />
         <div className="menu-body">
@@ -172,8 +172,14 @@ function RetreatList({ retreat, model }: { retreat: RetreatMenu; model: ActionMe
   const { destinations, enemies, failChance, forced } = retreat;
   return (
     <>
+      {forced && (
+        <div className="menu-forced" role="note">
+          <b>強制退却</b>
+          <span>退却先を選んでください</span>
+        </div>
+      )}
       <div className="menu-note">
-        {forced ? '強制退却' : '退却先を選択'}
+        {forced ? '退却先' : '退却先を選択'}
         <span className="fail" title={`隣接する敵 ${enemies} 部隊`}>
           失敗 {Math.round(failChance * 100)}%
         </span>
