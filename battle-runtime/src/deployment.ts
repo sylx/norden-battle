@@ -55,8 +55,8 @@ export interface DeployState {
   more: boolean;
 }
 
-/** 表示確認用の仮の部隊の兵種の並び */
-const DEMO_PATTERN: readonly UnitType[] = ['infantry', 'infantry', 'archer', 'cavalry', 'infantry', 'mage', 'archer', 'cavalry'];
+/** 表示確認用の仮の部隊の兵種の並び（自動配置は先頭から MAX_DEPLOY 部隊を置くので、確かめたい兵種は前の方に入れる） */
+const DEMO_PATTERN: readonly UnitType[] = ['infantry', 'archer', 'rifleman', 'cavalry', 'artillery', 'mage', 'infantry', 'cavalry'];
 
 /** 表示確認用の仮の部隊。配置地点のある陣営ごとに 8 部隊（指揮官は陣営ごとに順に、兵士数・士気は決まったばらつき。先頭の部隊が軍団長） */
 export function demoTroops(deploy: BattleDeployment): Troop[] {
