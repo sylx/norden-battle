@@ -9,7 +9,8 @@
  *   魔術師の攻撃は魔法で、相手の武力による軽減と迎撃の構えの影響を受けない（damage.ts）。
  * - moveAfterAttack の兵種（騎兵）だけ、攻撃の後に移動できる（一撃離脱）。攻撃の直後は敵の ZOC の中からでも動き出せる。
  * - 突撃（騎兵）は隣の相手を攻撃した後、相手を突き抜けて同じ向きの向こうの HEX へ飛び出る（chargeLanding）。
- *   その HEX にユニットがいる・通れない地形・マップの外なら飛び出さない。行動力は突撃の分だけで、ZOC は関係ない。
+ *   その HEX にユニットがいる・通れない地形・マップの外なら飛び出さない。相手が城・砦（WALLED_FEATURES）の HEX にいれば
+ *   突き抜けられない（攻撃はする）。行動力は突撃の分だけで、ZOC は関係ない。
  * - 隣接（距離 1）の相手への攻撃は直接攻撃で、相手も反撃して両軍の兵数が減る。距離 2 以上は一方的に減らす。
  * - 迎撃（app.ts）: 近接ユニットは構えている間、受けるダメージが減って反撃が増える（damage.ts）。
  *   間接（ranged）ユニットは構えている間、射程に入った敵へ 1 回だけ自動で攻撃する（interceptFire。反撃は受けない）。
@@ -103,14 +104,18 @@ export function attackRange(map: HexMap, unit: UnitData, pos: Offset): Offset[] 
   return out;
 }
 
-/** pos から隣の target へ突撃したときに飛び出る HEX（飛び出せなければ null） */
+/** 突撃で突き抜けられない人工物（城・砦。そこにいる相手を攻撃しても飛び出さない） */
+const WALLED_FEATURES: ReadonlySet<string> = new Set(['castle', 'fort']);
+
+/** pos から隣の target へ突撃したときに飛び出る HEX（飛び出せなければ null。target が城・砦なら必ず null） */
 export function chargeLanding(map: HexMap, pos: Offset, target: Offset): Offset | null {
   const dir = dirBetween(map, pos, target);
   if (dir < 0) return null;
   const n = map.layout.neighborInDir(target.col, target.row, dir);
   const from = map.get(target.col, target.row);
   const to = map.get(n.col, n.row);
-  if (!from || !to || map.unitAt(n.col, n.row) || enterCost(from, dir, to) === null) return null;
+  if (!from || !to || (from.feature && WALLED_FEATURES.has(from.feature))) return null;
+  if (map.unitAt(n.col, n.row) || enterCost(from, dir, to) === null) return null;
   return n;
 }
 
