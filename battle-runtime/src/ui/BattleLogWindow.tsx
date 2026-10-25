@@ -12,14 +12,14 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSPropert
 import { ThinFrameWithTitle } from 'norden-ui';
 import type { Offset } from '@norden/map-runtime/core/hex';
 import { TEAM_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
-import type { BattleApp, ExecuteReport } from '../app';
+import type { BattleApp, ExecuteReport, PierceHit } from '../app';
 import type { MoraleChange } from '../morale';
 import { useTeamName, useUnitName } from './factionsContext';
 
 /** 攻撃 1 回分の記録 */
 export interface AttackLogEntry {
-  /** intercept: 迎撃の構えの間接ユニットの自動攻撃 */
-  kind?: 'intercept';
+  /** intercept: 迎撃の構えの間接ユニットの自動攻撃、pierce: ライフル兵の弾が目標の手前のユニットに当たった（巻き添え） */
+  kind?: 'intercept' | 'pierce';
   turn: number;
   /** 記録した番の軍（迎撃は相手の番に起きる） */
   team: TeamId;
@@ -249,6 +249,33 @@ function Morale({ n }: { n: number }) {
 function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: ExecuteReport): AttackLogEntry[] {
   const out: AttackLogEntry[] = [];
   const captured = (u: UnitData) => wipeouts.some((w) => w.unit === u && w.captured);
+  // 巻き添え（目標の手前で弾が当たったユニット）は、撃った攻撃の記録の後に並べる
+  const addPierced = (shooter: UnitData, actionName: string, hits: readonly PierceHit[]) => {
+    for (const h of hits) {
+      const { result } = h;
+      out.push({
+        kind: 'pierce',
+        turn: app.turn,
+        team: app.activeTeam,
+        attacker: shooter,
+        target: h.unit,
+        attackerLeader: app.leaderOf(shooter),
+        targetLeader: app.leaderOf(h.unit),
+        actionName: `${actionName}（巻き添え）`,
+        damage: result.damage,
+        counter: 0,
+        direct: false,
+        encircled: result.encircled,
+        defense: result.defense,
+        highGround: result.highGround,
+        morale: result.morale,
+        attackerLeft: app.statuses.get(shooter)?.soldiers ?? 0,
+        targetLeft: h.left,
+        landing: null,
+        targetCaptured: h.destroyed && captured(h.unit),
+      });
+    }
+  };
   const addIntercepts = (afterAttack: boolean) => {
     for (const i of intercepts) {
       if (i.afterAttack !== afterAttack) continue;
@@ -275,6 +302,7 @@ function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: Exec
         halted: i.halted,
         targetCaptured: i.targetLeft <= 0 && captured(unit),
       });
+      addPierced(i.unit, '迎撃', i.pierced);
     }
   };
   addIntercepts(false);
@@ -302,6 +330,7 @@ function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: Exec
       attackerCaptured: captured(unit),
       targetCaptured: captured(attack.target),
     });
+    addPierced(unit, attack.action.name, attack.pierced);
   }
   addIntercepts(true);
   return out;

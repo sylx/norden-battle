@@ -5,7 +5,7 @@
 import type { ReactNode } from 'react';
 import { UNIT_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
 import type { MenuAction } from '../actions';
-import { BattleApp, type ExecuteReport, type Plan } from '../app';
+import { BattleApp, type ExecuteReport, type PierceHit, type Plan } from '../app';
 import { isAttack } from '../combat';
 import { SIDE_NAMES, SIDE_TEAM, type DeployState } from '../deployment';
 import { teamName, type BattleFactions } from '../factions';
@@ -115,10 +115,16 @@ export function executeStatus(name: UnitNamer, { unit, from, moveCost, attack, i
     parts.push(retreat.captured ? `${retreat.to.name}への${kind}に失敗し、捕虜になった（${odds}）` : `${retreat.to.name}へ${kind}した（${odds}）`);
   }
   if (moveCost > 0) parts.push(`(${from.col}, ${from.row}) から移動（行動力 ${moveCost}）`);
+  // 目標の手前で弾が当たったユニット（巻き添え）
+  const pierced = (hits: readonly PierceHit[]) => {
+    for (const h of hits) parts.push(`${name(h.unit)}に巻き添え: -${h.result.damage}${h.destroyed ? '（壊滅）' : ''}`);
+  };
   // 移動の途中で受けた迎撃（攻撃の前の移動・後の移動）
   const interceptParts = (afterAttack: boolean) => {
     for (const i of intercepts) {
-      if (i.afterAttack === afterAttack) parts.push(`${name(i.unit)}の迎撃: -${i.result.damage}${i.targetLeft <= 0 ? '（壊滅）' : ''}`);
+      if (i.afterAttack !== afterAttack) continue;
+      parts.push(`${name(i.unit)}の迎撃: -${i.result.damage}${i.targetLeft <= 0 ? '（壊滅）' : ''}`);
+      pierced(i.pierced);
     }
   };
   interceptParts(false);
@@ -130,6 +136,7 @@ export function executeStatus(name: UnitNamer, { unit, from, moveCost, attack, i
         (result.direct ? ` / 反撃 -${result.counter}${attack.unitDestroyed ? '（壊滅）' : ''}` : '') +
         (attack.landing && !attack.unitDestroyed ? ` → (${attack.landing.col}, ${attack.landing.row}) へ突破` : ''),
     );
+    pierced(attack.pierced);
   }
   interceptParts(true);
   if (halted && !lost) parts.push(`(${unit.col}, ${unit.row}) で足止めされた（行動終了）`);

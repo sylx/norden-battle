@@ -3,6 +3,7 @@
  *
  * - 地形の名前と色、人工物（防衛拠点ならその札も）、座標、標高、入るのに使う行動力、地形効果（受けるダメージの減り方）、街道を出す。
  * - 移動先・攻撃の相手を選んでいる間は、その HEX への移動・攻撃の予測を下に足す。
+ *   ライフル兵の弾が目標の手前のユニットにも当たるときは、その巻き添えも出す（味方に当たるなら赤字）。
  * - カーソルがマップの外にあるときは隠す。
  * - 枠は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）。表示するだけなので、マウスは下のマップへ通す。
  */
@@ -112,6 +113,11 @@ function forecastRows(app: BattleApp, cell: HexCell): InfoRow[] {
         士気 {signed(morale.attacker)} / 敵の士気 {signed(morale.defender)}（目安）
       </>,
     ]);
+    const team = app.plan?.unit.team;
+    for (const p of f.pierced) {
+      const text = `${p.unit.team === team ? '味方' : '敵'} (${p.unit.col}, ${p.unit.row}) ${range(p.damage)}`;
+      rows.push(['巻き添え', p.unit.team === team ? <Err>{text}</Err> : text]);
+    }
   }
   return rows;
 }

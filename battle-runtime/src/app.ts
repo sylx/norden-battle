@@ -20,6 +20,8 @@
  *   一斉攻撃は、加わる味方も含めた全員へ寄り、それぞれの兵種の演出（斬撃・ランス）を少しずつずらして出す。
  *   突撃で駆け抜けるときは、飛び出る先の HEX まで画面に収める。
  *   兵数が 0 になったユニットは消える。
+ * - ライフル兵の弾は、目標の手前の HEX にいるユニットにも敵・味方を問わず当たる（巻き添え。combat.ts の piercedUnits）。迎撃も同じ。
+ *   巻き添えで壊滅したユニットも、実行を終えたときに消える（迎撃の構えのユニットなら、それより後の迎撃は撃たない）。
  * - 迎撃（騎兵はできない）は選んだらすぐに実行する。予約した移動があればそこまで歩き、迎撃の構えで待機して行動を終える（行動力は 0 になる）。
  *   構えは次にそのユニットが行動するまで続く（ターンをまたいでも続く）。
  *   近接ユニットの構えは、受けるダメージを減らして反撃を増やす（damage.ts）。
@@ -89,13 +91,16 @@ import {
   hexDistance,
   interceptorsAt,
   isAttack,
+  piercedUnits,
+  pierceResult,
   volleySupporters,
   type AttackForecast,
   type AttackResult,
+  type Combatant,
 } from './combat';
 import { ARROW_HIT_SEC, ARROW_RELEASE_SEC, ArrowEffects } from './arrowFx';
 import { CameraFocus, type FocusTiming } from './cameraFocus';
-import { randomRoll } from './damage';
+import { randomRoll, type AttackKind } from './damage';
 import { demoTroops, Deployment, SIDE_TEAM, type DeployState, type TroopFactory } from './deployment';
 import { InterceptEffects } from './interceptFx';
 import { LANCE_HIT_SEC, LanceEffects } from './lanceFx';
@@ -233,6 +238,8 @@ export interface ExecuteReport {
     /** 攻撃の後の兵数（自分・相手） */
     unitLeft: number;
     targetLeft: number;
+    /** 目標の手前で弾が当たったユニット（ライフル兵。当たらなければ空） */
+    pierced: PierceHit[];
   };
   /** 移動の途中で受けた、迎撃の構えの間接ユニットからの自動攻撃（受けた順） */
   intercepts: InterceptReport[];
@@ -269,6 +276,17 @@ export interface InterceptReport {
   afterAttack: boolean;
   /** この迎撃で足止めされたか（同じ HEX で続けて撃たれたときは最後の 1 回） */
   halted: boolean;
+  /** 撃たれたユニットの手前で弾が当たったユニット（ライフル兵。当たらなければ空） */
+  pierced: PierceHit[];
+}
+
+/** ライフル兵の弾が目標の手前で当たったユニット 1 つ分（巻き添え。敵・味方を問わない） */
+export interface PierceHit {
+  unit: UnitData;
+  result: AttackResult;
+  /** 当たった後の兵数 */
+  left: number;
+  destroyed: boolean;
 }
 
 /** BattleApp が知らせること（on で受け取る）。値は受け取る関数の引数 */
@@ -780,7 +798,11 @@ export class BattleApp {
     const reason = this.rejectReason(this.targeting.action, target);
     if (reason) return { rejected: reason };
     const attacker = { unit: plan.unit, status: plan.status, pos: BattleApp.planPos(plan) };
-    return attackForecast(map, attacker, { unit: target, status: ts, pos: target }, this.targeting.action.id);
+    const pierced = piercedUnits(map, plan.unit, attacker.pos, target, target).flatMap((u) => {
+      const status = this.statuses.get(u);
+      return status ? [{ unit: u, status, pos: u }] : [];
+    });
+    return attackForecast(map, attacker, { unit: target, status: ts, pos: target }, this.targeting.action.id, pierced);
   }
 
   /** action で target を攻撃できない理由（できれば null）。一斉攻撃は、ほかの味方とも隣接している相手しか選べない */
@@ -1094,8 +1116,9 @@ export class BattleApp {
     const exec = this.exec!;
     const map = this.map!;
     let phase = exec.phases.shift();
-    while (phase?.kind === 'walk' && phase.path.length < 2) {
-      if (phase.commit && phase.path.length > 0) this.commitWalk(exec, phase.path[0]);
+    // 巻き添えで壊滅した迎撃の構えのユニットは撃たない
+    while ((phase?.kind === 'walk' && phase.path.length < 2) || (phase?.kind === 'intercept' && !((this.statuses.get(phase.shooter)?.soldiers ?? 0) > 0))) {
+      if (phase.kind === 'walk' && phase.commit && phase.path.length > 0) this.commitWalk(exec, phase.path[0]);
       phase = exec.phases.shift();
     }
     if (!phase) {
@@ -1266,9 +1289,10 @@ export class BattleApp {
     applyMorale(ss, result.morale.attacker);
     ss.intercepting = false;
     report.lost = plan.status.soldiers <= 0;
-    report.intercepts.push({ unit: phase.shooter, result, targetLeft: Math.max(0, plan.status.soldiers), afterAttack: !!report.attack, halted: false });
     // 移動していたユニットは、撃たれた HEX（at）で殲滅される
     const w = report.lost ? this.wipeOut(report, plan.unit, plan.status, phase.at, phase.shooter, []) : null;
+    const pierced = this.applyPierce(report, { unit: phase.shooter, status: ss, pos: phase.shooter }, plan.unit, phase.at, 'interceptFire');
+    report.intercepts.push({ unit: phase.shooter, result, targetLeft: Math.max(0, plan.status.soldiers), afterAttack: !!report.attack, halted: false, pierced });
     const p = this.view.units.placements().find((x) => x.unit === plan.unit);
     if (p) this.popups.show(p, `迎撃 -${result.damage}${wipeoutLabel(w)}`, 'damage');
   }
@@ -1497,6 +1521,28 @@ export class BattleApp {
     return w;
   }
 
+  /**
+   * ライフル兵の弾が目標（at にいる target）の手前の HEX にいるユニットに当たった結果（ランダム係数を振る）を、兵数・士気に反映し、
+   * 頭上に減った数を出す。撃ったユニットの士気は、敵に当たった分だけ増減する
+   */
+  private applyPierce(report: ExecuteReport, shooter: Combatant, target: UnitData, at: Offset, kind: AttackKind): PierceHit[] {
+    const map = this.map!;
+    const placements = this.view.units.placements();
+    return piercedUnits(map, shooter.unit, shooter.pos, target, at).flatMap((unit): PierceHit[] => {
+      const status = this.statuses.get(unit);
+      if (!status || status.soldiers <= 0) return [];
+      const result = pierceResult(map, shooter, { unit, status, pos: unit }, kind, randomRoll());
+      status.soldiers -= result.damage;
+      applyMorale(status, result.morale.defender);
+      if (unit.team !== shooter.unit.team) applyMorale(shooter.status, result.morale.attacker);
+      const destroyed = status.soldiers <= 0;
+      const w = destroyed ? this.wipeOut(report, unit, status, unit, shooter.unit, []) : null;
+      const p = placements.find((x) => x.unit === unit);
+      if (p) this.popups.show(p, `巻き添え -${result.damage}${wipeoutLabel(w)}`, 'damage');
+      return [{ unit, result, left: Math.max(0, status.soldiers), destroyed }];
+    });
+  }
+
   /** 攻撃の結果（ランダム係数を振る）を兵数・士気に反映し、頭上に減った数を出す */
   private applyAttack(exec: Execution): void {
     const map = this.map!;
@@ -1524,12 +1570,14 @@ export class BattleApp {
       unitDestroyed: plan.status.soldiers <= 0,
       unitLeft: Math.max(0, plan.status.soldiers),
       targetLeft: Math.max(0, ts.soldiers),
+      pierced: [],
     };
 
     // 殲滅されたユニットの指揮官の捕縛（相討ちなら、相手は隣接する敵に数えない）
     const both = report.attack.targetDestroyed && report.attack.unitDestroyed;
     const tw = report.attack.targetDestroyed ? this.wipeOut(report, attack.target, ts, attack.target, plan.unit, both ? [plan.unit] : []) : null;
     const uw = report.attack.unitDestroyed ? this.wipeOut(report, plan.unit, plan.status, plan.unit, attack.target, both ? [attack.target] : []) : null;
+    report.attack.pierced = this.applyPierce(report, { unit: plan.unit, status: plan.status, pos: plan.unit }, attack.target, attack.target, attack.action.id);
 
     const placements = this.view.units.placements();
     const at = (u: UnitData) => placements.find((p) => p.unit === u);
@@ -1570,7 +1618,8 @@ export class BattleApp {
     }
     // 弓兵の迎撃で足止めされたら行動を終える
     if (report.halted) plan.status.ap = 0;
-    const removed = [report.attack?.targetDestroyed && report.attack.target, gone && report.unit];
+    const pierced = [...(report.attack?.pierced ?? []), ...report.intercepts.flatMap((i) => i.pierced)];
+    const removed = [report.attack?.targetDestroyed && report.attack.target, gone && report.unit, ...pierced.map((h) => h.destroyed && h.unit)];
     for (const u of removed) {
       if (!u) continue;
       map.removeUnit(u.col, u.row);

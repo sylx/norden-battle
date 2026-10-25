@@ -3,6 +3,8 @@
  *
  * - 兵種ごとの射程（minRange〜maxRange、HEX の距離）。弓兵・ライフル兵は 1〜2、魔術師・砲兵は 2〜3、ほかは 1。
  *   隣接したユニットを攻撃できない兵種（魔術師・砲兵）は minRange = 2 にする。
+ *   pierce の兵種（ライフル兵）は、隣より遠い HEX は 6 方向の直線上だけを撃てる（inRange）。撃つと弾が目標の手前の HEX にいる
+ *   ユニットにも敵・味方を問わず当たる（piercedUnits。目標を撃ったのと同じ計算で、反撃は無い。迎撃の自動攻撃も同じ）。
  * - ranged の兵種（弓兵・魔術師・ライフル兵・砲兵）の攻撃は放物線の矢印で出す。
  * - magic の兵種（魔術師）は、指揮官の武力の代わりに知力を使う（ダメージ・士気の増減）。
  *   攻撃（サンダーフォール）は隣接した相手にも間接攻撃で、反撃を受けない（INDIRECT_KINDS）。
@@ -48,6 +50,8 @@ export interface CombatDef {
   interceptHalts?: boolean;
   /** interceptHalts の迎撃を受けても止まらない（騎兵） */
   unhaltable?: boolean;
+  /** 隣より遠い目標は直線上だけを撃てて、目標の手前の HEX にいるユニットにも（敵・味方を問わず）当たる（ライフル兵） */
+  pierce?: boolean;
 }
 
 export const COMBAT_DEFS: Record<UnitType, CombatDef> = {
@@ -55,7 +59,7 @@ export const COMBAT_DEFS: Record<UnitType, CombatDef> = {
   archer: { minRange: 1, maxRange: 2, ranged: true, interceptHalts: true },
   cavalry: { minRange: 1, maxRange: 1, ranged: false, moveAfterAttack: true, unhaltable: true },
   mage: { minRange: 2, maxRange: 3, ranged: true, magic: true },
-  rifleman: { minRange: 1, maxRange: 2, ranged: true, interceptHalts: true },
+  rifleman: { minRange: 1, maxRange: 2, ranged: true, interceptHalts: true, pierce: true },
   artillery: { minRange: 2, maxRange: 3, ranged: true },
   landsknecht: { minRange: 1, maxRange: 1, ranged: false },
 };
@@ -82,24 +86,51 @@ export function hexDistance(map: HexMap, a: Offset, b: Offset): number {
   return axialDistance(l.offsetToAxial(a.col, a.row), l.offsetToAxial(b.col, b.row));
 }
 
+/** type の兵種が from から to を撃てるか（射程の中か。pierce の兵種は、隣より遠い HEX は直線上だけ） */
+export function inRange(map: HexMap, type: UnitType, from: Offset, to: Offset): boolean {
+  const { minRange, maxRange, pierce } = COMBAT_DEFS[type];
+  const d = hexDistance(map, from, to);
+  if (d < minRange || d > maxRange) return false;
+  return !pierce || d <= 1 || cellsBetween(map, from, to) !== null;
+}
+
+/** from から to への 6 方向の直線上で、間にある HEX（隣なら空。直線上でなければ null） */
+function cellsBetween(map: HexMap, from: Offset, to: Offset): Offset[] | null {
+  const l = map.layout;
+  const a = l.offsetToAxial(from.col, from.row);
+  const b = l.offsetToAxial(to.col, to.row);
+  const dq = b.q - a.q;
+  const dr = b.r - a.r;
+  if (dq !== 0 && dr !== 0 && dq + dr !== 0) return null;
+  const d = axialDistance(a, b);
+  const out: Offset[] = [];
+  for (let k = 1; k < d; k++) out.push(l.axialToOffset(a.q + (dq * k) / d, a.r + (dr * k) / d));
+  return out;
+}
+
+/**
+ * pierce の兵種の unit が from から target（to にいる）を撃ったときに、目標の手前で弾が当たるユニット
+ * （敵・味方を問わない。撃つユニットと目標は除く）。pierce でない兵種は空
+ */
+export function piercedUnits(map: HexMap, unit: UnitData, from: Offset, target: UnitData, to: Offset): UnitData[] {
+  if (!COMBAT_DEFS[unit.type].pierce) return [];
+  return (cellsBetween(map, from, to) ?? []).flatMap((o) => {
+    const u = map.unitAt(o.col, o.row);
+    return u && u !== unit && u !== target ? [u] : [];
+  });
+}
+
 /** unit が pos から攻撃できる敵ユニット */
 export function attackTargets(map: HexMap, unit: UnitData, pos: Offset): UnitData[] {
-  const { minRange, maxRange } = COMBAT_DEFS[unit.type];
-  return map.allUnits().filter((u) => {
-    if (u.team === unit.team) return false;
-    const d = hexDistance(map, pos, u);
-    return d >= minRange && d <= maxRange;
-  });
+  return map.allUnits().filter((u) => u.team !== unit.team && inRange(map, unit.type, pos, u));
 }
 
 /** unit が pos から攻撃できる範囲の HEX（相手がいるかどうかに関わらない） */
 export function attackRange(map: HexMap, unit: UnitData, pos: Offset): Offset[] {
-  const { minRange, maxRange } = COMBAT_DEFS[unit.type];
   const out: Offset[] = [];
   for (let row = 0; row < map.layout.rows; row++) {
     for (let col = 0; col < map.layout.cols; col++) {
-      const d = hexDistance(map, pos, { col, row });
-      if (d >= minRange && d <= maxRange) out.push({ col, row });
+      if (inRange(map, unit.type, pos, { col, row })) out.push({ col, row });
     }
   }
   return out;
@@ -156,12 +187,13 @@ export interface AttackRolls {
 /**
  * attacker が defender を kind で攻撃したときの結果。
  * 包囲・地形は両者をそれぞれの pos に置いて判定する（予約中・移動の途中はまだそこにいないため）。
+ * indirect なら隣接していても反撃を受けない（pierce の弾が目標の手前で当たったとき）。
  */
-export function attackResult(map: HexMap, attacker: Combatant, defender: Combatant, kind: AttackKind, rolls: AttackRolls): AttackResult {
+export function attackResult(map: HexMap, attacker: Combatant, defender: Combatant, kind: AttackKind, rolls: AttackRolls, indirect = false): AttackResult {
   const supporters = kind === 'volley' ? volleySupporters(map, attacker.unit, defender.pos).length : 0;
   const att = { ...fighter(map, attacker, encircledAt(map, attacker, defender)), supporters };
   const def = fighter(map, defender, encircledAt(map, defender, attacker));
-  const direct = !INDIRECT_KINDS.includes(kind) && hexDistance(map, attacker.pos, defender.pos) <= 1;
+  const direct = !indirect && !INDIRECT_KINDS.includes(kind) && hexDistance(map, attacker.pos, defender.pos) <= 1;
   const damage = calcDamage(att, def, kind, rolls.damage);
   const counter = direct ? calcCounter(att, { ...def, soldiers: def.soldiers - damage }, rolls.counter) : 0;
   return {
@@ -176,19 +208,31 @@ export function attackResult(map: HexMap, attacker: Combatant, defender: Combata
   };
 }
 
-/** 攻撃の結果の予測（ランダム係数が真ん中のときの結果と、ダメージ・反撃の幅） */
+/** pierce の弾が目標の手前で victim に当たったときの結果（目標を撃ったのと同じ計算で、反撃は無い。roll はランダム係数） */
+export function pierceResult(map: HexMap, attacker: Combatant, victim: Combatant, kind: AttackKind, roll: number): AttackResult {
+  return attackResult(map, attacker, victim, kind, { damage: roll, counter: 0 }, true);
+}
+
+/** 攻撃の結果の予測（ランダム係数が真ん中のときの結果と、ダメージ・反撃の幅。pierced は目標の手前で弾が当たるユニットへのダメージの幅） */
 export interface AttackForecast {
   expected: AttackResult;
   damage: [min: number, max: number];
   counter: [min: number, max: number];
+  pierced: { unit: UnitData; damage: [min: number, max: number] }[];
 }
 
-export function attackForecast(map: HexMap, attacker: Combatant, defender: Combatant, kind: AttackKind): AttackForecast {
+/** pierced は目標の手前で弾が当たるユニット（piercedUnits） */
+export function attackForecast(map: HexMap, attacker: Combatant, defender: Combatant, kind: AttackKind, pierced: readonly Combatant[] = []): AttackForecast {
   const at = (damage: number, counter: number) => attackResult(map, attacker, defender, kind, { damage, counter });
   // 与えるダメージが少ないほど相手の兵が残って反撃が増える
   const low = at(-1, 1);
   const high = at(1, -1);
-  return { expected: at(0, 0), damage: [low.damage, high.damage], counter: [high.counter, low.counter] };
+  return {
+    expected: at(0, 0),
+    damage: [low.damage, high.damage],
+    counter: [high.counter, low.counter],
+    pierced: pierced.map((v) => ({ unit: v.unit, damage: [pierceResult(map, attacker, v, kind, -1).damage, pierceResult(map, attacker, v, kind, 1).damage] })),
+  };
 }
 
 function fighter(map: HexMap, { unit, status, pos }: Combatant, encircled: boolean): Fighter {
@@ -240,9 +284,7 @@ function encircledAt(map: HexMap, who: Combatant, other: Combatant): boolean {
 /** 迎撃の構えの間接ユニットのうち、mover が pos に入ったときに射程に入るもの */
 export function interceptorsAt(map: HexMap, statuses: ReadonlyMap<UnitData, UnitStatus>, mover: UnitData, pos: Offset): UnitData[] {
   return map.allUnits().filter((u) => {
-    const def = COMBAT_DEFS[u.type];
-    if (u.team === mover.team || !def.ranged || !statuses.get(u)?.intercepting) return false;
-    const d = hexDistance(map, u, pos);
-    return d >= def.minRange && d <= def.maxRange;
+    if (u.team === mover.team || !COMBAT_DEFS[u.type].ranged || !statuses.get(u)?.intercepting) return false;
+    return inRange(map, u.type, u, pos);
   });
 }

@@ -5,7 +5,7 @@ export type { AttackLogEntry } from './ui/BattleLogWindow';
 
 // 戦闘画面の本体（three.js のマップ・ユニット・入力）
 export { BattleApp, TURN_ORDER } from './app';
-export type { BattleEvents, BattlePhase, ExecuteReport, InterceptReport, Plan, PlannedAttack, StatusFactory } from './app';
+export type { BattleEvents, BattlePhase, ExecuteReport, InterceptReport, PierceHit, Plan, PlannedAttack, StatusFactory } from './app';
 export type { ActionMenuModel, MenuFrame, MenuState, RetreatMenu } from './menuModel';
 
 // 配備フェーズ
