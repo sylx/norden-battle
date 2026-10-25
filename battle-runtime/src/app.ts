@@ -1523,7 +1523,7 @@ export class BattleApp {
 
   /**
    * ライフル兵の弾が目標（at にいる target）の手前の HEX にいるユニットに当たった結果（ランダム係数を振る）を、兵数・士気に反映し、
-   * 頭上に減った数を出す。撃ったユニットの士気は、敵に当たった分だけ増減する
+   * 頭上に減った数を出す。撃ったユニットの士気は増減しない（目標への攻撃の分だけ）
    */
   private applyPierce(report: ExecuteReport, shooter: Combatant, target: UnitData, at: Offset, kind: AttackKind): PierceHit[] {
     const map = this.map!;
@@ -1534,7 +1534,6 @@ export class BattleApp {
       const result = pierceResult(map, shooter, { unit, status, pos: unit }, kind, randomRoll());
       status.soldiers -= result.damage;
       applyMorale(status, result.morale.defender);
-      if (unit.team !== shooter.unit.team) applyMorale(shooter.status, result.morale.attacker);
       const destroyed = status.soldiers <= 0;
       const w = destroyed ? this.wipeOut(report, unit, status, unit, shooter.unit, []) : null;
       const p = placements.find((x) => x.unit === unit);

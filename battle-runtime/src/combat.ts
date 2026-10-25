@@ -5,6 +5,7 @@
  *   隣接したユニットを攻撃できない兵種（魔術師・砲兵）は minRange = 2 にする。
  *   pierce の兵種（ライフル兵）は、隣より遠い HEX は 6 方向の直線上だけを撃てる（inRange）。撃つと弾が目標の手前の HEX にいる
  *   ユニットにも敵・味方を問わず当たる（piercedUnits。目標を撃ったのと同じ計算で、反撃は無い。迎撃の自動攻撃も同じ）。
+ *   撃ったユニットの士気は目標への攻撃の分だけ増減し、巻き添えでは増減しない。
  * - ranged の兵種（弓兵・魔術師・ライフル兵・砲兵）の攻撃は放物線の矢印で出す。
  * - magic の兵種（魔術師）は、指揮官の武力の代わりに知力を使う（ダメージ・士気の増減）。
  *   攻撃（サンダーフォール）は隣接した相手にも間接攻撃で、反撃を受けない（INDIRECT_KINDS）。
@@ -208,9 +209,13 @@ export function attackResult(map: HexMap, attacker: Combatant, defender: Combata
   };
 }
 
-/** pierce の弾が目標の手前で victim に当たったときの結果（目標を撃ったのと同じ計算で、反撃は無い。roll はランダム係数） */
+/**
+ * pierce の弾が目標の手前で victim に当たったときの結果（目標を撃ったのと同じ計算で、反撃は無い。roll はランダム係数）。
+ * 撃ったユニットの士気は目標への攻撃で増減するので、巻き添えでは増減しない（morale.attacker は 0）
+ */
 export function pierceResult(map: HexMap, attacker: Combatant, victim: Combatant, kind: AttackKind, roll: number): AttackResult {
-  return attackResult(map, attacker, victim, kind, { damage: roll, counter: 0 }, true);
+  const result = attackResult(map, attacker, victim, kind, { damage: roll, counter: 0 }, true);
+  return { ...result, morale: { ...result.morale, attacker: 0 } };
 }
 
 /** 攻撃の結果の予測（ランダム係数が真ん中のときの結果と、ダメージ・反撃の幅。pierced は目標の手前で弾が当たるユニットへのダメージの幅） */
