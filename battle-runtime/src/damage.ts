@@ -14,6 +14,7 @@
  * 戦う状況の倍率:
  *   包囲     = 相手が包囲されていれば ENCIRCLED_RATE
  *   地形     = 1 − 相手のいる HEX の地形効果（森 20%・砦 30%・城 50% など。人工物があればその値）
+ *              攻城の兵種（砲兵）が城・砦にいる相手を攻撃するときは、地形効果を SIEGE_RATE 倍にする（terrainDefense）
  *   高所     = 弓兵・砲兵が相手より高い HEX にいれば 1 + 標高レベルの差 × HIGH_GROUND_RATE
  *   ランダム = 1 + roll × RANDOM_SPREAD（roll は −1〜1）
  *
@@ -41,8 +42,8 @@ export const UNIT_POWER: Record<UnitType, { attack: number; defense: number }> =
   archer: { attack: 0.9, defense: 0.7 },
   cavalry: { attack: 1.2, defense: 0.9 },
   mage: { attack: 1.3, defense: 0.6 },
-  rifleman: { attack: 1.1, defense: 0.7 },
-  artillery: { attack: 1.5, defense: 0.5 },
+  rifleman: { attack: 2.2, defense: 0.7 },
+  artillery: { attack: 3.0, defense: 0.5 },
   landsknecht: { attack: 1.3, defense: 1.2 },
 };
 
@@ -74,6 +75,9 @@ const ENCIRCLED_RATE = 1.2;
 const HIGH_GROUND_RATE = 0.1;
 /** 高所からの攻撃でダメージが増える兵種 */
 const HIGH_GROUND_TYPES: readonly UnitType[] = ['archer', 'artillery'];
+/** 城・砦にいる相手の地形効果を減らす攻城の兵種と、地形効果に掛ける倍率 */
+const SIEGE_TYPES: readonly UnitType[] = ['artillery'];
+const SIEGE_RATE = 0.5;
 /** ランダムの幅（± の割合） */
 export const RANDOM_SPREAD = 0.2;
 /** 反撃の、通常攻撃のダメージに対する割合 */
@@ -110,6 +114,8 @@ export interface Fighter extends UnitPower {
   magic: boolean;
   /** いる HEX の地形効果（受けるダメージを減らす割合） */
   defense: number;
+  /** いる HEX が城・砦か（攻城の兵種に攻撃されると地形効果が減る） */
+  walled: boolean;
   /** いる HEX の標高レベル */
   elevation: number;
 }
@@ -127,6 +133,11 @@ export function highGroundLevels(att: Fighter, def: Fighter): number {
 /** 標高レベルの差が levels のときの高所からの攻撃のダメージの倍率 */
 export function highGroundRate(levels: number): number {
   return 1 + levels * HIGH_GROUND_RATE;
+}
+
+/** att が def を攻撃するときの、def のいる HEX の地形効果（攻城の兵種が城・砦にいる相手を攻撃するときは SIEGE_RATE 倍） */
+export function terrainDefense(att: Fighter, def: Fighter): number {
+  return def.walled && SIEGE_TYPES.includes(att.type) ? def.defense * SIEGE_RATE : def.defense;
 }
 
 /** −1〜1 の乱数（ランダム係数の roll） */
@@ -183,7 +194,7 @@ export function calcDamage(att: Fighter, def: Fighter, action: AttackKind, roll:
   const magic = att.magic && action !== 'attack';
   const base = baseDamage(att, def, ATTACK_POWER[action] ?? 1, magic);
   const encircled = def.encircled ? ENCIRCLED_RATE : 1;
-  const terrain = 1 - def.defense;
+  const terrain = 1 - terrainDefense(att, def);
   const highGround = highGroundRate(highGroundLevels(att, def));
   const intercept = def.guarding && !magic ? INTERCEPT_GUARD : 1;
   const volley = action === 'volley' ? volleyRate(att.supporters) : 1;

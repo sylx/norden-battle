@@ -125,8 +125,10 @@ export class ProjectileEffects {
   private readonly plane = new THREE.PlaneGeometry(2, 2);
   private readonly sparkTexture = createSparkTexture();
   private items: Salvo[] = [];
+  private readonly style: ProjectileStyle;
 
-  constructor(private readonly style: ProjectileStyle) {
+  constructor(style: ProjectileStyle) {
+    this.style = style;
     this.group.name = 'projectile-fx';
   }
 

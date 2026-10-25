@@ -18,6 +18,7 @@
  * - 包囲（movement.ts の encircled）されている相手へのダメージは増える。
  * - 地形効果（cellDefense。森・砦・城など）のある HEX にいる相手へのダメージは減り、
  *   弓兵・砲兵が相手より高い HEX から攻撃するとダメージが増える（damage.ts）。
+ *   砲兵が城・砦（WALLED_FEATURES）にいる相手を攻撃するときは、地形効果が半分になる（damage.ts の terrainDefense）。
  * - 一斉攻撃は直接攻撃の兵種だけで、相手が攻撃する自分のほかの味方（直接攻撃の兵種）とも隣接している（取り囲んでいる）ときにできる。
  *   隣接している味方（volleySupporters）も一緒に攻撃する演出が入り、その数だけダメージが増える（damage.ts）。
  * - 攻撃の後、与えたダメージと反撃で受けたダメージの比で両軍の士気が増減する。
@@ -29,7 +30,7 @@ import { dirBetween } from '@norden/map-runtime/core/roads';
 import { TERRAIN_DEFS } from '@norden/map-runtime/core/terrainTypes';
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { ActionId } from './actions';
-import { ATTACK_POWER, calcCounter, calcDamage, highGroundLevels, type AttackKind, type Fighter } from './damage';
+import { ATTACK_POWER, calcCounter, calcDamage, highGroundLevels, terrainDefense, type AttackKind, type Fighter } from './damage';
 import { moraleChange, type MoraleChange } from './morale';
 import { encircled, enterCost } from './movement';
 import type { UnitStatus } from './unitStatus';
@@ -104,7 +105,7 @@ export function attackRange(map: HexMap, unit: UnitData, pos: Offset): Offset[] 
   return out;
 }
 
-/** 突撃で突き抜けられない人工物（城・砦。そこにいる相手を攻撃しても飛び出さない） */
+/** 城・砦の人工物（突撃で突き抜けられない。そこにいる相手を攻撃しても飛び出さない。砲兵に攻撃されると地形効果が半分になる） */
 const WALLED_FEATURES: ReadonlySet<string> = new Set(['castle', 'fort']);
 
 /** pos から隣の target へ突撃したときに飛び出る HEX（飛び出せなければ null。target が城・砦なら必ず null） */
@@ -136,7 +137,7 @@ export interface AttackResult {
   direct: boolean;
   /** 相手が包囲されているか（ダメージが増える） */
   encircled: boolean;
-  /** 相手のいる HEX の地形効果（受けるダメージを減らす割合。なければ 0） */
+  /** 相手のいる HEX の地形効果（受けるダメージを減らす割合。なければ 0。砲兵が城・砦を攻撃するときは減らした値） */
   defense: number;
   /** 高所から攻撃してダメージが増えた標高レベルの差（増えなければ 0） */
   highGround: number;
@@ -168,7 +169,7 @@ export function attackResult(map: HexMap, attacker: Combatant, defender: Combata
     counter,
     direct,
     encircled: def.encircled,
-    defense: def.defense,
+    defense: terrainDefense(att, def),
     highGround: highGroundLevels(att, def),
     supporters,
     morale: moraleChange(damage, counter, att.strength, def.strength),
@@ -206,6 +207,7 @@ function fighter(map: HexMap, { unit, status, pos }: Combatant, encircled: boole
     supporters: 0,
     magic,
     defense: cell ? cellDefense(cell) : 0,
+    walled: !!cell?.feature && WALLED_FEATURES.has(cell.feature),
     elevation: cell?.elevation ?? 0,
   };
 }
