@@ -5,7 +5,7 @@
  * 行動は予約してから「決定」でまとめて実行する:
  * ユニットを選択 → 行動メニュー → 移動 → 移動先を選ぶ → 移動先でメニュー → … → 攻撃 → 相手を選ぶ → 決定。
  * - 移動は何回かに分けて予約でき、予約したルートは地面に矢印で出す。
- * - 攻撃は 1 ターンに 1 回で、予約した移動先から射程内の敵を選ぶ（射程内の HEX を薄い赤、相手のいる HEX を濃い赤で塗る）。相手へ赤い矢印を出す（遠隔攻撃は放物線）。
+ * - 攻撃は 1 ターンに 1 回で、予約した移動先から射程内の敵を選ぶ（射程内の HEX を薄い赤、相手のいる HEX を濃い赤で塗る）。相手へ赤い矢印を出す（遠隔攻撃は放物線。ライフル兵は直線）。
  *   一斉攻撃は、ほかの味方とも隣接している敵（金の斜線）しか選べない。ほかの敵を選ぶと「包囲していません」でやり直し。
  *   相手に隣接している味方からも細い赤い矢印を出し、実行するとその味方も一緒に踏み込んで攻撃する。
  *   攻撃を予約した後は移動できない。騎兵だけは攻撃の後にも移動を予約できる（一撃離脱。攻撃の直後は敵の ZOC の中からでも
@@ -82,6 +82,7 @@ import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { canAct, minAttackCost, SKILL_DEFS, type ActionId, type MenuAction, type MenuContext } from './actions';
 import { BARK_CHANCE, BARK_TONE, demoBarks, EXCHANGE_CHANCE, type BarkSituation, type BarkSource, type BarkSpeaker } from './barks';
 import {
+  attackArc,
   attackForecast,
   attackRange,
   attackResult,
@@ -1052,7 +1053,7 @@ export class BattleApp {
       return this.view.setAttack(null, null);
     }
     const { action, target, landing } = plan.attack;
-    this.view.setAttack(BattleApp.attackPos(plan), target, COMBAT_DEFS[plan.unit.type].ranged, landing);
+    this.view.setAttack(BattleApp.attackPos(plan), target, attackArc(plan.unit.type), landing);
     this.view.setSupportAttacks(action.id === 'volley' ? volleySupporters(this.map!, plan.unit, target) : [], target);
   }
 
