@@ -1,7 +1,7 @@
 /**
  * 攻撃の判定（値は仮）。ダメージの計算は damage.ts、士気の増減は morale.ts。
  *
- * - 兵種ごとの射程（minRange〜maxRange、HEX の距離）。弓兵・ライフル兵は 1〜2、魔術師は 2〜3、砲兵は 2〜4、ほかは 1。
+ * - 兵種ごとの射程（minRange〜maxRange、HEX の距離）。弓兵・ライフル兵は 1〜2、魔術師・砲兵は 2〜3、ほかは 1。
  *   隣接したユニットを攻撃できない兵種（魔術師・砲兵）は minRange = 2 にする。
  * - ranged の兵種（弓兵・魔術師・ライフル兵・砲兵）の攻撃は放物線の矢印で出す。
  * - magic の兵種（魔術師）は、指揮官の武力の代わりに知力を使う（ダメージ・士気の増減）。
@@ -56,7 +56,7 @@ export const COMBAT_DEFS: Record<UnitType, CombatDef> = {
   cavalry: { minRange: 1, maxRange: 1, ranged: false, moveAfterAttack: true, unhaltable: true },
   mage: { minRange: 2, maxRange: 3, ranged: true, magic: true },
   rifleman: { minRange: 1, maxRange: 2, ranged: true, interceptHalts: true },
-  artillery: { minRange: 2, maxRange: 4, ranged: true },
+  artillery: { minRange: 2, maxRange: 3, ranged: true },
   landsknecht: { minRange: 1, maxRange: 1, ranged: false },
 };
 
