@@ -49,7 +49,7 @@ export interface ProjectileStyle {
 
 /** ライフル兵: 小さな光の弾をまっすぐ続けて撃つ */
 export const BULLET_STYLE: ProjectileStyle = {
-  shots: 15,
+  shots: 30,
   fireSpread: 0.3,
   flight: 0.14,
   hitSec: 0.3 / 2 + 0.14,
