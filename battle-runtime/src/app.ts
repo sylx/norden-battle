@@ -16,6 +16,7 @@
  *   歩兵の通常攻撃は踏み込んで光の剣で斬る（slashFx.ts）。騎兵の通常攻撃・突撃は光るランスで貫く（lanceFx.ts）。
  *   弓兵の通常攻撃は無数の光の矢を放物線で降らせる（arrowFx.ts）。弓兵の迎撃も同じ演出で、弓兵と撃たれるユニットへ寄る。
  *   魔術師のサンダーフォールは相手の頭上に雷を落とす（thunderFx.ts）。魔術師の迎撃も同じ演出。
+ *   ライフル兵の通常攻撃は光の弾を続けてまっすぐ撃ち、砲兵の通常攻撃は大きな光の弾を放物線で撃つ（projectileFx.ts）。迎撃も同じ演出。
  *   一斉攻撃は、加わる味方も含めた全員へ寄り、それぞれの兵種の演出（斬撃・ランス）を少しずつずらして出す。
  *   突撃で駆け抜けるときは、飛び出る先の HEX まで画面に収める。
  *   兵数が 0 になったユニットは消える。
@@ -104,6 +105,7 @@ import { adjacentEnemies, retreatFailChance, type RetreatDestination, type Retre
 import { wipeoutCaptureChance, type WipeoutReport } from './wipeout';
 import { inEnemyZoc, movePath, moveRange, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
+import { BULLET_STYLE, ProjectileEffects, SHELL_STYLE } from './projectileFx';
 import { SLASH_HIT_SEC, SlashEffects } from './slashFx';
 import { SpeechBubbles } from './speechBubbles';
 import { THUNDER_HIT_SEC, ThunderEffects } from './thunderFx';
@@ -142,18 +144,22 @@ const FX_ZOOM_OUT_SEC = 0.5;
 /**
  * 攻撃の演出のときの攻撃のアニメーションの時間（秒。半分の時点で当たる）。
  * 斬撃（歩兵）、ランスで踏み込んで貫く（騎兵の通常攻撃）、ランスを構えて駆け抜ける（突撃）、矢を射て届くまで（弓兵）、
- * 雷を落とす（魔術師）
+ * 雷を落とす（魔術師）、弾を撃って届くまで（ライフル兵・砲兵）
  */
 const SLASH_STRIKE_SEC = 0.7;
 const LANCE_STRIKE_SEC = 0.7;
 const LANCE_CHARGE_SEC = 1.0;
 const ARROW_STRIKE_SEC = 1.5;
 const THUNDER_STRIKE_SEC = 1.0;
+const BULLET_STRIKE_SEC = 1.0;
+const SHELL_STRIKE_SEC = 1.9;
 /** 鼓舞で回復する士気（この範囲の整数） */
 const INSPIRE_MIN = 10;
 const INSPIRE_MAX = 20;
 /** 魔術師が雷を呼んで跳ねる時間（秒。雷が落ちる時点で終わる） */
 const THUNDER_CAST_SEC = 0.35;
+/** 砲兵が撃った反動で跳ねる時間（秒） */
+const SHELL_RECOIL_SEC = 0.25;
 /** 攻撃・迎撃の前のセリフを、カメラが寄り始めてから出すまでの時間（秒） */
 const BARK_BEFORE_SEC = 0.25;
 /** 殲滅されたときの言葉を、当たってから出すまでの時間（秒） */
@@ -168,9 +174,10 @@ const STRONGHOLD_COLOR = 0xf0c030;
 
 /**
  * 攻撃の演出の種類。slash: 光の剣で斬る（歩兵の通常攻撃）、lance: 光るランスで貫く（騎兵の通常攻撃・突撃）、
- * arrows: 光の矢の雨（弓兵の通常攻撃）、thunder: 頭上に落ちる雷（魔術師のサンダーフォール）
+ * arrows: 光の矢の雨（弓兵の通常攻撃）、thunder: 頭上に落ちる雷（魔術師のサンダーフォール）、
+ * bullets: まっすぐ飛ぶ光の弾（ライフル兵の通常攻撃）、shell: 放物線で飛ぶ大きな光の弾（砲兵の通常攻撃）
  */
-type StrikeFxKind = 'slash' | 'lance' | 'arrows' | 'thunder';
+type StrikeFxKind = 'slash' | 'lance' | 'arrows' | 'thunder' | 'bullets' | 'shell';
 
 /** 一斉攻撃で、加わるユニットごとにエフェクトをずらす時間（秒） */
 const VOLLEY_FX_STAGGER_SEC = 0.06;
@@ -181,6 +188,8 @@ const STRIKE_FX: Record<StrikeFxKind, { hitSec: number; cameraShake: number }> =
   lance: { hitSec: LANCE_HIT_SEC, cameraShake: 0.06 },
   arrows: { hitSec: ARROW_HIT_SEC, cameraShake: 0.03 },
   thunder: { hitSec: THUNDER_HIT_SEC, cameraShake: 0.08 },
+  bullets: { hitSec: BULLET_STYLE.hitSec, cameraShake: 0.02 },
+  shell: { hitSec: SHELL_STYLE.hitSec, cameraShake: 0.1 },
 };
 
 /** 軍が行動する順（防衛側が先）。部隊のいない軍は飛ばす */
@@ -384,6 +393,10 @@ export class BattleApp {
   readonly arrowFx = new ArrowEffects();
   /** 頭上に落ちる雷（魔術師のサンダーフォール） */
   readonly thunderFx = new ThunderEffects();
+  /** まっすぐ飛ぶ光の弾（ライフル兵の通常攻撃） */
+  readonly bulletFx = new ProjectileEffects(BULLET_STYLE);
+  /** 放物線で飛ぶ大きな光の弾（砲兵の通常攻撃） */
+  readonly shellFx = new ProjectileEffects(SHELL_STYLE);
   /** 攻撃の演出でカメラを寄せる */
   readonly cameraFocus: CameraFocus;
   /** セリフの吹き出し */
@@ -460,7 +473,7 @@ export class BattleApp {
     this.popups = new Popups(container);
     this.bubbles = new SpeechBubbles(container);
     this.cameraFocus = new CameraFocus(this.ctx);
-    this.ctx.overlay.add(this.interceptFx.group, this.slashFx.group, this.lanceFx.group, this.arrowFx.group, this.thunderFx.group);
+    this.ctx.overlay.add(this.interceptFx.group, this.slashFx.group, this.lanceFx.group, this.arrowFx.group, this.thunderFx.group, this.bulletFx.group, this.shellFx.group);
     this.menu.onAction = (unit, action) => {
       if (action.id === 'confirm') return this.execute('confirm');
       if (action.id === 'intercept') return this.execute('intercept');
@@ -541,6 +554,8 @@ export class BattleApp {
     this.lanceFx.clear();
     this.arrowFx.clear();
     this.thunderFx.clear();
+    this.bulletFx.clear();
+    this.shellFx.clear();
     this.cameraFocus.stop();
     this.statuses = makeStatuses(map.allUnits());
     this.retreated.length = 0;
@@ -1105,7 +1120,7 @@ export class BattleApp {
       // 攻撃・迎撃の前のセリフ（演出のある攻撃は、カメラが寄ったまま読み終えるのを待ってから攻撃する）
       const talk = phase.kind === 'strike' ? this.strikeTalk(exec) : this.bark('intercept', phase.shooter, exec.plan.unit, BARK_BEFORE_SEC);
       if (kind) {
-        const strikeSec = { slash: SLASH_STRIKE_SEC, lance: attack?.landing ? LANCE_CHARGE_SEC : LANCE_STRIKE_SEC, arrows: ARROW_STRIKE_SEC, thunder: THUNDER_STRIKE_SEC }[kind];
+        const strikeSec = { slash: SLASH_STRIKE_SEC, lance: attack?.landing ? LANCE_CHARGE_SEC : LANCE_STRIKE_SEC, arrows: ARROW_STRIKE_SEC, thunder: THUNDER_STRIKE_SEC, bullets: BULLET_STRIKE_SEC, shell: SHELL_STRIKE_SEC }[kind];
         // 一斉攻撃は、加わる味方もそれぞれの兵種の演出を、当たりの時点を中心に少しずつずらして出す
         const units = phase.kind === 'strike' ? [exec.plan.unit, ...exec.supporters] : [phase.shooter];
         const shots = units.flatMap((unit, i): FxShot[] => {
@@ -1320,13 +1335,20 @@ export class BattleApp {
     if (unit.type === 'cavalry' && (id === 'attack' || id === 'charge')) return 'lance';
     if (unit.type === 'archer' && id === 'attack') return 'arrows';
     if (unit.type === 'mage' && id === 'thunderfall') return 'thunder';
+    if (unit.type === 'rifleman' && id === 'attack') return 'bullets';
+    if (unit.type === 'artillery' && id === 'attack') return 'shell';
     return null;
   }
 
-  /** 迎撃の自動攻撃の演出の種類（演出の無い兵種は null）。それぞれの兵種の攻撃と同じ演出（弓兵は矢の雨、魔術師は雷） */
+  /**
+   * 迎撃の自動攻撃の演出の種類（演出の無い兵種は null）。それぞれの兵種の攻撃と同じ演出
+   * （弓兵は矢の雨、魔術師は雷、ライフル兵は光の弾、砲兵は大きな光の弾）
+   */
   static interceptFx(shooter: UnitData): StrikeFxKind | null {
     if (shooter.type === 'archer') return 'arrows';
     if (shooter.type === 'mage') return 'thunder';
+    if (shooter.type === 'rifleman') return 'bullets';
+    if (shooter.type === 'artillery') return 'shell';
     return null;
   }
 
@@ -1378,6 +1400,8 @@ export class BattleApp {
     if (kind === 'slash') this.slashFx.spawn(tp, facing);
     else if (kind === 'thunder') this.thunderFx.spawn(tp);
     else if (up && kind === 'lance') this.lanceFx.spawn(up, tp, this.ctx.camera);
+    else if (up && kind === 'bullets') this.bulletFx.spawn(up, tp, this.ctx.camera);
+    else if (up && kind === 'shell') this.shellFx.spawn(up, tp, this.ctx.camera);
     else if (up) this.arrowFx.spawn(up, tp, this.ctx.camera);
   }
 
@@ -1846,6 +1870,8 @@ export class BattleApp {
     this.lanceFx.update(this.ctx.camera);
     this.arrowFx.update(this.ctx.camera);
     this.thunderFx.update(this.ctx.camera);
+    this.bulletFx.update(this.ctx.camera);
+    this.shellFx.update(this.ctx.camera);
     // 輪は描画の前に足元へ合わせる（移動のアニメーションで動かした絵に同じフレームで付いていく）
     this.interceptFx.update(this.view.units.placements(), this.statuses, this.map?.layout.size ?? 1, this.view.display.units);
     this.view.render();
@@ -1877,11 +1903,14 @@ function holdCurve(t: number): number {
 
 /**
  * 演出のある攻撃の、攻撃するユニットの踏み込み・跳ねる量（t は攻撃のアニメーションの 0〜1）。
- * 直接攻撃は踏み込んだまま当てて戻る。弓兵は矢を放ち始めてから放ち終えるまで、魔術師は雷を呼んでから落ちるまでに 1 回跳ねる
+ * 直接攻撃は踏み込んだまま当てて戻る。弓兵は矢を放ち始めてから放ち終えるまで、魔術師は雷を呼んでから落ちるまで、
+ * ライフル兵は弾を撃ち始めてから撃ち終えるまでに 1 回跳ねる。砲兵は撃った反動で 1 回跳ねる
  */
 function fxMotion(fx: StrikeFx, t: number): number {
   if (fx.kind === 'arrows') return hopCurve(t, fx.strikeSec, ARROW_HIT_SEC, ARROW_RELEASE_SEC);
   if (fx.kind === 'thunder') return hopCurve(t, fx.strikeSec, THUNDER_CAST_SEC, THUNDER_CAST_SEC);
+  if (fx.kind === 'bullets') return hopCurve(t, fx.strikeSec, BULLET_STYLE.hitSec, BULLET_STYLE.fireSpread);
+  if (fx.kind === 'shell') return hopCurve(t, fx.strikeSec, SHELL_STYLE.hitSec, SHELL_RECOIL_SEC);
   return holdCurve(t);
 }
 
