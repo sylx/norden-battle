@@ -103,7 +103,7 @@ export default function ActionMenu({ model }: { model: ActionMenuModel }) {
                   {a.cost !== undefined && <Cost n={a.cost} />}
                 </li>
               ) : (
-                <li key={a.id} className="menu-item" onClick={() => model.choose(a)}>
+                <li key={a.id} className="menu-item" data-sound="click" onClick={() => model.choose(a)}>
                   <span className="name">{a.name}</span>
                   {a.cost !== undefined && <Cost n={a.cost} />}
                 </li>
@@ -148,7 +148,7 @@ function Item({
   if (action) {
     const a: MenuAction = action;
     return (
-      <li ref={itemRef} className={`menu-item${kind}`} onPointerEnter={() => model.closeSub()} onClick={() => model.choose(a)}>
+      <li ref={itemRef} className={`menu-item${kind}`} data-sound="click" onPointerEnter={() => model.closeSub()} onClick={() => model.choose(a)}>
         {content}
       </li>
     );
@@ -157,6 +157,7 @@ function Item({
     <li
       ref={itemRef}
       className={`menu-item has-sub${open ? ' open' : ''}`}
+      data-sound="click"
       onPointerEnter={(e) => {
         if (e.pointerType === 'mouse') model.openSub(index);
       }}
@@ -186,12 +187,12 @@ function RetreatList({ retreat, model }: { retreat: RetreatMenu; model: ActionMe
       </div>
       <ul className="menu-items">
         {destinations.map((d) => (
-          <li key={d.id} className="menu-item" onClick={() => model.chooseRetreat(d)}>
+          <li key={d.id} className="menu-item" data-sound="click" onClick={() => model.chooseRetreat(d)}>
             <span className="name">{d.name}</span>
           </li>
         ))}
         {!forced && (
-          <li className="menu-item back" onClick={() => model.closeRetreat()}>
+          <li className="menu-item back" data-sound="click" onClick={() => model.closeRetreat()}>
             <span className="name">戻る</span>
           </li>
         )}

@@ -41,6 +41,7 @@ export default function DeployWindow({ app }: { app: BattleApp }) {
             <li
               key={t.id}
               className={`deploy-troop${t.id === picked ? ' picked' : ''}${at ? ' placed' : ''}${!at && full ? ' over' : ''}`}
+              data-sound="click"
               onClick={() => app.pickTroop(t.id)}
             >
               <span className="troop-name">

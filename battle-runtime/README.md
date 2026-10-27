@@ -6,6 +6,8 @@
 UI の部品は [norden-ui](https://github.com/sylx/norden-ui) を使う（地形・騎士・戦闘記録・配備の枠は題名の札付きの `ThinFrameWithTitle`、
 行動メニュー・ターン表示の枠は `ThinFrame` の細いベゼル、ターン終了は `Button`）。norden-ui はリポジトリの隣（`../../norden-ui`）のソースを
 そのまま読み込むので、使う側の Vite・TypeScript の設定に別名を入れる（battle-editor の vite.config.ts・tsconfig.json を参照）。
+効果音も norden-ui の `playSound(name)` で名前を伝えるだけで、鳴らすのは使う側（nordencult が `setSoundPlayer` で渡す。battle-editor では鳴らない）。
+UI のクリック音は norden-ui の `installClickSound` がまとめて鳴らすので、ボタン以外でクリックする要素（行動メニュー・配備の一覧の項目）に `data-sound="click"` を付ける。
 
 ```tsx
 import { BattleScreen } from '@norden/battle-runtime';
