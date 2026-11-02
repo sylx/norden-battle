@@ -49,9 +49,9 @@ export interface RetreatReport {
 /** 隣接している敵ユニットの数ごとの、退却に失敗する確率（これより多ければ最後の値） */
 export const RETREAT_FAIL_CHANCE: readonly number[] = [0.01, 0.1, 0.25, 0.5];
 
-/** 隣接している敵ユニットが enemies 部隊いるときに、退却に失敗する確率 */
-export function retreatFailChance(enemies: number): number {
-  return RETREAT_FAIL_CHANCE[Math.min(enemies, RETREAT_FAIL_CHANCE.length - 1)];
+/** 隣接している敵ユニットが enemies 部隊いるときに、退却に失敗する確率（捕縛されない部隊は必ず成功する） */
+export function retreatFailChance(enemies: number, uncapturable = false): number {
+  return uncapturable ? 0 : RETREAT_FAIL_CHANCE[Math.min(enemies, RETREAT_FAIL_CHANCE.length - 1)];
 }
 
 /** unit が pos（省略時はいる HEX）にいるときに隣接している敵ユニット */

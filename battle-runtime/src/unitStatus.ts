@@ -34,6 +34,8 @@ export interface UnitStatus {
   intercepting: boolean;
   /** その陣営の軍団長（軍を率いる騎士）の部隊か */
   commander?: boolean;
+  /** 捕縛されない部隊か（傭兵。退却は失敗せず、殲滅されても指揮官は捕まらない） */
+  uncapturable?: boolean;
 }
 
 /** 指揮官の顔を切り出す画像と範囲（大きさはどれも画像の px） */
@@ -63,6 +65,8 @@ export interface TroopInit {
   skills?: SkillId[];
   /** その陣営の軍団長の部隊か */
   commander?: boolean;
+  /** 捕縛されない部隊か */
+  uncapturable?: boolean;
 }
 
 /** ゲームから渡された部隊の値を、戦闘に入るときの状態にする（行動力は兵種の満タン） */
@@ -84,6 +88,7 @@ export function troopStatus(type: UnitType, init: TroopInit): UnitStatus {
     justAttacked: false,
     intercepting: false,
     commander: init.commander ?? false,
+    ...(init.uncapturable && { uncapturable: true }),
   };
 }
 

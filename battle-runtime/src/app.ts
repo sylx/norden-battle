@@ -943,7 +943,7 @@ export class BattleApp {
     const destinations = this.retreatDestinations(unit);
     if (!this.map || destinations.length === 0) return;
     const enemies = adjacentEnemies(this.map, unit).length;
-    this.menu.openRetreat({ destinations, enemies, failChance: retreatFailChance(enemies), forced });
+    this.menu.openRetreat({ destinations, enemies, failChance: retreatFailChance(enemies, this.statuses.get(unit)?.uncapturable), forced });
   }
 
   /** 移動できる HEX を出して、移動先を選ぶ状態にする */
@@ -1091,7 +1091,7 @@ export class BattleApp {
     const phases: Phase[] = [walk(plan.legs.slice(0, split)), ...(plan.attack ? [{ kind: 'strike' as const }, walk(plan.legs.slice(split))] : [])];
     if (end === 'retreat' && to) {
       const enemies = adjacentEnemies(map, plan.unit).length;
-      const failChance = retreatFailChance(enemies);
+      const failChance = retreatFailChance(enemies, plan.status.uncapturable);
       report.retreat = {
         unit: plan.unit,
         troopId: this.troopIds.get(plan.unit) ?? null,
@@ -1508,7 +1508,7 @@ export class BattleApp {
    */
   private wipeOut(report: ExecuteReport, unit: UnitData, status: UnitStatus, pos: Offset, by: UnitData, exclude: readonly UnitData[]): WipeoutReport {
     const enemies = adjacentEnemies(this.map!, unit, pos).filter((u) => !exclude.includes(u)).length;
-    const captureChance = wipeoutCaptureChance(enemies);
+    const captureChance = wipeoutCaptureChance(enemies, status.uncapturable);
     const w: WipeoutReport = {
       unit,
       troopId: this.troopIds.get(unit) ?? null,

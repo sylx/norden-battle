@@ -1,7 +1,7 @@
 /**
  * 殲滅（兵数が 0 になった）ときの指揮官の自動退却。隣接している敵ユニットの数で決まる確率で失敗して捕縛され、捕虜になる。
  * 捕縛されなければ指揮官は軍の最初の退却先の拠点へ落ち延びる。退却先が無い軍でも捕縛されるかは決め、
- * 捕縛されなければ落ち延びる先が無い（使う側で在野にする）。どちらでもユニットは戦場から消える。
+ * 捕縛されなければ落ち延びる先が無い（どうするかは使う側が決める）。どちらでもユニットは戦場から消える。
  * 結果は WipeoutReport で知らせる（BattleApp の wipeout のイベント・wipedOut）。捕虜をどう扱うかは使う側が決める。
  */
 import type { UnitData } from '@norden/map-runtime/core/units';
@@ -26,14 +26,14 @@ export interface WipeoutReport {
   captureChance: number;
   /** 指揮官が捕縛されて捕虜になったか（なっていなければ落ち延びた） */
   captured: boolean;
-  /** 指揮官が落ち延びた先の拠点（軍の最初の退却先）。捕縛されたとき・軍に退却先が無いとき（在野になる）は null */
+  /** 指揮官が落ち延びた先の拠点（軍の最初の退却先）。捕縛されたとき・軍に退却先が無いときは null */
   to: RetreatDestination | null;
 }
 
 /** 隣接している敵ユニットの数ごとの、殲滅されたときに捕縛される確率（これより多ければ最後の値） */
 export const WIPEOUT_CAPTURE_CHANCE: readonly number[] = [0.1, 0.3, 0.5, 0.75];
 
-/** 隣接している敵ユニットが enemies 部隊いるときに、殲滅されて捕縛される確率 */
-export function wipeoutCaptureChance(enemies: number): number {
-  return WIPEOUT_CAPTURE_CHANCE[Math.min(enemies, WIPEOUT_CAPTURE_CHANCE.length - 1)];
+/** 隣接している敵ユニットが enemies 部隊いるときに、殲滅されて捕縛される確率（捕縛されない部隊は 0） */
+export function wipeoutCaptureChance(enemies: number, uncapturable = false): number {
+  return uncapturable ? 0 : WIPEOUT_CAPTURE_CHANCE[Math.min(enemies, WIPEOUT_CAPTURE_CHANCE.length - 1)];
 }

@@ -145,7 +145,11 @@ export function executeStatus(name: UnitNamer, { unit, from, moveCost, attack, i
   if (inspire !== undefined) parts.push(`鼓舞: 士気 +${inspire}`);
   for (const w of wipeouts) {
     const odds = `捕縛 ${Math.round(w.captureChance * 100)}%・隣接する敵 ${w.enemies}`;
-    const fate = w.captured ? '捕縛された' : w.to ? `${w.to.name}へ落ち延びた` : '落ち延びたが、退却先が無く在野になった';
+    if (w.status.uncapturable) {
+      parts.push(`${name(w.unit)}は壊滅し、戦場を去った`);
+      continue;
+    }
+    const fate = w.captured ? '捕縛された' : w.to ? `${w.to.name}へ落ち延びた` : '落ち延びたが、退却先が無かった';
     parts.push(`${name(w.unit)}の指揮官は${fate}（${odds}）`);
   }
   return `${unitLabel(name, unit)}: ${parts.join(' → ')}`;
