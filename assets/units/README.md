@@ -39,5 +39,3 @@ Midjourney などの画像をそのまま置けるように、読み込むとき
 fantasy medieval foot soldier with sword and shield, full body, facing right,
 seen from above at 50 degrees, miniature figure, plain white background, no shadow --ar 1:1
 ```
-
-画像ファイルは Git LFS で管理する（`.gitattributes`）。

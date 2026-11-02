@@ -10,7 +10,7 @@
 | [map-runtime](map-runtime/) | マップのデータ・地形生成・three.js 描画・マップ JSON の読み書き（map-editor・battle-editor・battle-runtime で共有） |
 | [object-editor](object-editor/) | 3D 素材の取り込み・正規化・カタログ管理（仕様: [SPEC.md](object-editor/SPEC.md)） |
 | [asset-runtime](asset-runtime/) | アセットカタログの型と three.js での読み込み（各ツール・戦闘デモで共有） |
-| [assets](assets/) | 取り込んだ素材とカタログ（元ファイルは Git LFS）、マップ JSON（`assets/maps/`） |
+| [assets](assets/) | 取り込んだ素材のカタログ（素材本体は Git 管理外）、ユニット画像（`assets/units/`）、マップ JSON（`assets/maps/`） |
 
 battle-runtime（と battle-editor）は UI の部品に [norden-ui](https://github.com/sylx/norden-ui) のソースを使う。
 このリポジトリの隣（`../norden-ui`）に置いておくこと（[nordencult](https://github.com/sylx/nordencult) のサブモジュールの並びのまま。norden-ui 側の `npm install` は要らない）。

@@ -44,10 +44,6 @@ jobs:
           repository: sylx/norden-ui
           path: norden-ui
 
-      # LFS のうちユニット画像だけを取る（3D 素材の元ファイルは不要なので落とさない）
-      - name: Pull unit images (Git LFS)
-        run: git lfs pull --include="assets/units/**"
-
       - uses: actions/setup-node@v5
         with:
           node-version: 24

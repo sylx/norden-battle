@@ -126,10 +126,10 @@ ID で相互に参照する。ユニットの配置は map-editor のマップ J
 ```
 norden-battle/
   assets/
-    sources/<id>/        取り込んだ元ファイルと変換した model.glb（Git LFS）
+    sources/<id>/        取り込んだ元ファイルと変換した model.glb（Git 管理外）
     catalog/sources/     Source の JSON
     CREDITS.md           カタログから自動生成
-    units/               ユニットの 2D 画像（map-editor・battle-editor が読み込む。Git LFS）
+    units/               ユニットの 2D 画像（map-editor・battle-editor が読み込む）
     maps/                マップ JSON（map-editor が保存、battle-editor が読み込む）
   asset-runtime/         カタログの型（three.js 非依存）と three.js 側
     src/three/soldier/   プロシージャル兵士（中止、参考として残す）
