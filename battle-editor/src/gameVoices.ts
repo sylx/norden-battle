@@ -2,7 +2,7 @@
  * ゲーム（nordencult）のセリフのデータ（src/data/voiceLines.json）と騎士（src/data/characterData.json）。
  *
  * norden-battle を nordencult のサブモジュールとして置いているとき（../../ がゲーム）だけ読める。
- * GitHub Pages のビルドなど、ゲームが無いときは gameVoices が null になり、表示確認用のセリフ（demoBarks）を使う。
+ * norden-battle 単体で動かすなど、ゲームが無いときは gameVoices が null になり、表示確認用のセリフ（demoBarks）を使う。
  * セリフの選び方（口調・性格からどのセルを引くか）はゲームの src/data/voiceLines.ts をそのまま使う。
  */
 import { lineBarks, type BarkSource } from '@norden/battle-runtime';

@@ -14,14 +14,6 @@ npm run build
 
 URL パラメータ: `?map=pointy-test.json`（assets/maps/ のファイルを開く）
 
-## GitHub Pages
-
-main に push すると [.github/workflows/battle-editor-pages.yml](../.github/workflows/battle-editor-pages.yml) がビルドして
-GitHub Pages に公開する（battle-editor・battle-runtime・map-runtime・assets/maps・assets/units などに変更があったときだけ。Actions の画面から手動でも実行できる）。
-norden-ui はビルドのときに main の最新を隣に取ってくる（norden-ui だけを更新したときは手動で実行する）。
-初回だけリポジトリの Settings → Pages → Source を「GitHub Actions」にしておく。
-Pages 上のマップはビルド時点の assets/maps/ の内容。
-
 ## マップ
 
 ツールバーの「マップ」で開くウィンドウから、map-editor で保存したマップ（リポジトリ直下の [assets/maps/](../assets/maps/)）を「保存済み」で選んで読み込む。
@@ -38,7 +30,7 @@ norden-battle を nordencult のサブモジュールとして置いていると
 norden-data のセリフエディタで書く）と騎士（`characterData.json`）を読み、騎士の口調・性格に合わせて喋る（[src/gameVoices.ts](src/gameVoices.ts)）。
 ユニットごとに喋る騎士を選べる（決めていなければ口調のある騎士を順に割り当てる。吹き出しに騎士の顔は出さない）。
 norden-data でセリフを保存すると、開いている battle-editor にもそのまま反映される。
-ゲームが無いとき（GitHub Pages など）は表示確認用の決まったセリフで喋る。
+ゲームが無いとき（norden-battle 単体で動かしたとき）は表示確認用の決まったセリフで喋る。
 
 ## 退却・捕縛
 
