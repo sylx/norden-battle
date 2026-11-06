@@ -45,6 +45,7 @@ export const UNIT_POWER: Record<UnitType, { attack: number; defense: number }> =
   rifleman: { attack: 2.2, defense: 0.7 },
   artillery: { attack: 3.0, defense: 0.5 },
   landsknecht: { attack: 1.3, defense: 1.2 },
+  wizard: { attack: 1.3, defense: 0.6 },
 };
 
 /** 攻撃の種類。行動メニューの攻撃と、迎撃の構えの間接ユニットが通りかかった敵へ自動でする攻撃（interceptFire） */

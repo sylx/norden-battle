@@ -11,7 +11,7 @@
  * 攻撃は 1 ターンに 1 回で、攻撃を予約した後は移動できない（騎兵は除く）。
  * 退却は「特殊」の中（指揮官のスキルの後）に並べ、ターンの初め（待機・鼓舞などで行動力を使う前）だけ選べる。行動力は使わない。
  * 退却先の拠点が無い軍のユニット・ターンの初めでないときは選べない（灰色で理由を持つ）。選ぶと退却先の拠点の一覧を出し、拠点を選ぶと退却する（retreat.ts）。
- * 魔術師は通常攻撃の代わりにサンダーフォール（行動力 4。最大行動力と同じなので移動した後は撃てない）。
+ * 魔術師・上級魔術師は通常攻撃の代わりにサンダーフォール（行動力 4。最大行動力と同じなので移動した後は撃てない）。
  * 一斉攻撃は直接攻撃の兵種だけで、射程内に自分のほかの味方とも隣接している敵がいるときだけ並ぶ（hasVolleyTargets）。
  * 迎撃は選んだらすぐに実行し（予約した移動があればそこまで動く）、迎撃の構えで待機して行動を終える。攻撃の後と騎兵はできない。
  * 待機（行動力 0）も選んだらすぐに実行し（予約した行動があれば実行してから）、残りの行動力を捨てて行動を終える。
@@ -84,11 +84,11 @@ const MENU: readonly (ActionDef | GroupDef)[] = [
       { id: 'volley', name: '一斉攻撃', cost: 4, types: ['infantry', 'cavalry', 'landsknecht'] },
       { id: 'charge', name: '突撃', cost: 3, types: ['cavalry'] },
       // 魔術師の攻撃（間接攻撃。魔法の名前はいずれ指揮官の属性で変えるかもしれない）
-      { id: 'thunderfall', name: 'サンダーフォール', cost: 4, types: ['mage'] },
+      { id: 'thunderfall', name: 'サンダーフォール', cost: 4, types: ['mage', 'wizard'] },
     ],
   },
   // 騎兵はできない
-  { id: 'intercept', name: '迎撃', cost: 2, types: ['infantry', 'archer', 'mage', 'rifleman', 'artillery', 'landsknecht'] },
+  { id: 'intercept', name: '迎撃', cost: 2, types: ['infantry', 'archer', 'mage', 'rifleman', 'artillery', 'landsknecht', 'wizard'] },
   // 行動力が余ったときに行動を終える
   { id: 'wait', name: '待機', cost: 0 },
   { name: '特殊', skills: true, children: [{ id: 'retreat', name: '退却', keepDisabled: true }] },

@@ -1,14 +1,14 @@
 /**
  * 攻撃の判定（値は仮）。ダメージの計算は damage.ts、士気の増減は morale.ts。
  *
- * - 兵種ごとの射程（minRange〜maxRange、HEX の距離）。弓兵・ライフル兵は 1〜2、魔術師・砲兵は 2〜3、ほかは 1。
- *   隣接したユニットを攻撃できない兵種（魔術師・砲兵）は minRange = 2 にする。
+ * - 兵種ごとの射程（minRange〜maxRange、HEX の距離）。弓兵・ライフル兵は 1〜2、魔術師・上級魔術師・砲兵は 2〜3、ほかは 1。
+ *   隣接したユニットを攻撃できない兵種（魔術師・上級魔術師・砲兵）は minRange = 2 にする。
  *   pierce の兵種（ライフル兵）は、隣より遠い HEX は 6 方向の直線上だけを撃てる（inRange）。撃つと弾が目標の手前の HEX にいる
  *   ユニットにも敵・味方を問わず当たる（piercedUnits。目標を撃ったのと同じ計算で、反撃は無い。迎撃の自動攻撃も同じ）。
  *   撃ったユニットの士気は目標への攻撃の分だけ増減し、巻き添えでは増減しない。
  * - ranged の兵種（弓兵・魔術師・ライフル兵・砲兵）の攻撃は放物線の矢印で出す。ただし pierce の兵種（ライフル兵）は、弾がまっすぐ飛んで
  *   手前の HEX にも当たるので直線の矢印で出す（attackArc）。
- * - magic の兵種（魔術師）は、指揮官の武力の代わりに知力を使う（ダメージ・士気の増減）。
+ * - magic の兵種（魔術師・上級魔術師）は、指揮官の武力の代わりに知力を使う（ダメージ・士気の増減）。
  *   攻撃（サンダーフォール）は隣接した相手にも間接攻撃で、反撃を受けない（INDIRECT_KINDS）。
  *   魔術師の攻撃は魔法で、相手の武力による軽減と迎撃の構えの影響を受けない（damage.ts）。
  * - moveAfterAttack の兵種（騎兵）だけ、攻撃の後に移動できる（一撃離脱）。攻撃の直後は敵の ZOC の中からでも動き出せる。
@@ -64,6 +64,8 @@ export const COMBAT_DEFS: Record<UnitType, CombatDef> = {
   rifleman: { minRange: 1, maxRange: 2, ranged: true, interceptHalts: true, pierce: true },
   artillery: { minRange: 2, maxRange: 3, ranged: true },
   landsknecht: { minRange: 1, maxRange: 1, ranged: false },
+  // 上級魔術師（M007 の段階 0 では魔術師と同じ。使える魔法の違いは段階 2 以降）
+  wizard: { minRange: 2, maxRange: 3, ranged: true, magic: true },
 };
 
 /** type の兵種の攻撃の矢印を放物線で出すか（遠隔攻撃の兵種。弾がまっすぐ飛ぶ pierce の兵種は直線） */

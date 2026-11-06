@@ -1362,7 +1362,7 @@ export class BattleApp {
     if ((unit.type === 'infantry' || unit.type === 'landsknecht') && id === 'attack') return 'slash';
     if (unit.type === 'cavalry' && (id === 'attack' || id === 'charge')) return 'lance';
     if (unit.type === 'archer' && id === 'attack') return 'arrows';
-    if (unit.type === 'mage' && id === 'thunderfall') return 'thunder';
+    if (id === 'thunderfall') return 'thunder';
     if (unit.type === 'rifleman' && id === 'attack') return 'bullets';
     if (unit.type === 'artillery' && id === 'attack') return 'shell';
     return null;
@@ -1374,7 +1374,7 @@ export class BattleApp {
    */
   static interceptFx(shooter: UnitData): StrikeFxKind | null {
     if (shooter.type === 'archer') return 'arrows';
-    if (shooter.type === 'mage') return 'thunder';
+    if (COMBAT_DEFS[shooter.type].magic) return 'thunder';
     if (shooter.type === 'rifleman') return 'bullets';
     if (shooter.type === 'artillery') return 'shell';
     return null;

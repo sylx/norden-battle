@@ -211,3 +211,63 @@ body,
   font-size: 11px;
   color: var(--text-dim);
 }
+
+/* 部隊（編成）の道具 */
+.tool-window.wide {
+  width: 560px;
+}
+
+.tool-window button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tool-window table.roster {
+  width: 100%;
+  margin-top: 6px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.tool-window table.roster th {
+  font-weight: normal;
+  color: var(--text-dim);
+  text-align: left;
+  padding: 0 2px 2px;
+}
+
+.tool-window table.roster td {
+  padding: 2px;
+  vertical-align: middle;
+}
+
+.tool-window table.roster select {
+  width: 100%;
+  max-width: 220px;
+}
+
+.tool-window table.roster td:nth-child(4) select {
+  max-width: 130px;
+}
+
+.tool-window table.roster input.num {
+  width: 64px;
+}
+
+.tool-window table.roster input.num.narrow {
+  width: 48px;
+}
+
+.tool-window table.roster button.remove {
+  width: 22px;
+  padding: 0;
+}
+
+.roster-face {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--panel-border);
+  background-repeat: no-repeat;
+}

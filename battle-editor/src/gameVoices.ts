@@ -1,36 +1,16 @@
 /**
- * ゲーム（nordencult）のセリフのデータ（src/data/voiceLines.json）と騎士（src/data/characterData.json）。
+ * ゲーム（nordencult）のセリフのデータ（src/data/voiceLines.json）で喋らせる。
  *
- * norden-battle を nordencult のサブモジュールとして置いているとき（../../ がゲーム）だけ読める。
- * norden-battle 単体で動かすなど、ゲームが無いときは gameVoices が null になり、表示確認用のセリフ（demoBarks）を使う。
  * セリフの選び方（口調・性格からどのセルを引くか）はゲームの src/data/voiceLines.ts をそのまま使う。
+ * 喋る騎士は、エディタで選んだものがあればそれ、無ければ部隊を率いる騎士（gameKnights.ts の編成から作った部隊）、
+ * それも無ければ口調のある騎士を順に割り当てる（吹き出しに騎士の顔は出さない）。
  */
-import { lineBarks, type BarkSource } from '@norden/battle-runtime';
+import { lineBarks, type BarkSource, type UnitStatus } from '@norden/battle-runtime';
 import type { UnitData } from '@norden/map-runtime/core/units';
+import { pickVoiceLine } from '../../../src/data/voiceLines.ts';
+import { GAME_KNIGHTS, knightOfStatus, type GameKnight } from './gameKnights';
 
-/** 騎士（characterData.json の 1 行のうち、使うところだけ） */
-export interface GameKnight {
-  id: string;
-  name: string;
-  voiceTone?: string;
-  personality?: string[];
-}
-
-/** ゲームの src/data/voiceLines.ts のうち、使うところだけ */
-interface VoiceLinesModule {
-  pickVoiceLine(situation: string, profile: { voiceTone?: string; personality?: readonly string[] } | undefined): string | null;
-}
-
-// ファイルが無ければ空になる（import と違ってビルドが止まらない）
-const voiceLines = Object.values(import.meta.glob<VoiceLinesModule>('../../../src/data/voiceLines.ts', { eager: true }))[0];
-const knights = Object.values(
-  import.meta.glob<GameKnight[]>('../../../src/data/characterData.json', { eager: true, import: 'default' }),
-)[0];
-
-/**
- * ユニットに喋らせる騎士の割り当て。決めていないユニットには、口調のある騎士を順に割り当てる
- * （騎士 ID はユニットの指揮官とは関係ない。吹き出しに騎士の顔は出さない）
- */
+/** ユニットに喋らせる騎士の割り当て */
 export class KnightCast {
   readonly knights: readonly GameKnight[];
   private readonly voiced: readonly GameKnight[];
@@ -43,8 +23,9 @@ export class KnightCast {
     this.voiced = voiced.length ? voiced : knights;
   }
 
-  get(unit: UnitData): GameKnight | undefined {
-    let knight = this.assigned.get(unit);
+  /** unit に喋らせる騎士（status はそのユニットの戦闘中の状態。率いる騎士を引くのに使う） */
+  get(unit: UnitData, status?: UnitStatus): GameKnight | undefined {
+    let knight = this.assigned.get(unit) ?? knightOfStatus(status);
     if (!knight && this.voiced.length) {
       knight = this.voiced[this.next++ % this.voiced.length];
       this.assigned.set(unit, knight);
@@ -57,9 +38,7 @@ export class KnightCast {
   }
 }
 
-/** ゲームのセリフで喋らせる（cast は喋るユニットの騎士）。ゲームが無ければ null */
-export const gameVoices: { cast: KnightCast; barks: BarkSource } | null = (() => {
-  if (!voiceLines || !knights) return null;
-  const cast = new KnightCast(knights);
-  return { cast, barks: lineBarks((situation, { unit }) => voiceLines.pickVoiceLine(situation, cast.get(unit))) };
-})();
+export const knightCast = new KnightCast(GAME_KNIGHTS);
+
+/** ゲームのセリフで喋らせる */
+export const gameBarks: BarkSource = lineBarks((situation, { unit, status }) => pickVoiceLine(situation, knightCast.get(unit, status)));

@@ -103,6 +103,7 @@ const MAX_AP: Record<UnitType, number> = {
   rifleman: 4,
   artillery: 3,
   landsknecht: 4,
+  wizard: 4,
 };
 
 /** 表示確認用の仮の部隊の、兵種ごとの兵数の目安（実際の兵数はこれをばらつかせる） */
@@ -114,6 +115,7 @@ const MAX_SOLDIERS: Record<UnitType, number> = {
   rifleman: 600,
   artillery: 300,
   landsknecht: 800,
+  wizard: 400,
 };
 
 /** 表示確認用の指揮官ごとのスキル（仮） */
