@@ -214,7 +214,7 @@ body,
 
 /* 部隊（編成）の道具 */
 .tool-window.wide {
-  width: 560px;
+  width: 680px;
 }
 
 .tool-window button.active {
@@ -270,4 +270,16 @@ body,
   border-radius: 50%;
   border: 1px solid var(--panel-border);
   background-repeat: no-repeat;
+}
+
+.tool-window table.roster label.spell {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.tool-window table.roster .none {
+  color: var(--text-dim);
 }

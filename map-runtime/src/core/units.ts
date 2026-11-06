@@ -11,7 +11,7 @@ import type { Offset } from './hex.ts';
 import type { HexCell, HexMap } from './mapData.ts';
 import { TERRAIN_DEFS } from './terrainTypes.ts';
 
-export const UNIT_TYPES = ['infantry', 'archer', 'cavalry', 'mage', 'rifleman', 'artillery', 'landsknecht', 'wizard'] as const;
+export const UNIT_TYPES = ['infantry', 'archer', 'cavalry', 'mage', 'rifleman', 'artillery', 'landsknecht', 'wizard', 'dragon'] as const;
 export type UnitType = (typeof UNIT_TYPES)[number];
 
 export const TEAM_IDS = ['blue', 'red', 'green'] as const;
@@ -33,6 +33,8 @@ export interface UnitData {
 export interface UnitDef {
   id: UnitType;
   name: string;
+  /** 人の兵ではない部隊（ドラゴンなど）。兵数を HP と呼ぶ */
+  monster?: boolean;
 }
 
 export const UNIT_DEFS: Record<UnitType, UnitDef> = {
@@ -44,6 +46,7 @@ export const UNIT_DEFS: Record<UnitType, UnitDef> = {
   artillery: { id: 'artillery', name: '砲兵' },
   landsknecht: { id: 'landsknecht', name: 'ランツクネヒト' },
   wizard: { id: 'wizard', name: '上級魔術師' },
+  dragon: { id: 'dragon', name: 'ドラゴン', monster: true },
 };
 
 export interface TeamDef {

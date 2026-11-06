@@ -41,6 +41,7 @@ describe('攻撃の項目', () => {
       rifleman: ['attack:2'],
       artillery: ['attack:2'],
       landsknecht: ['attack:2', 'volley:4'],
+      dragon: ['claw:2', 'breath:4'],
     });
   });
 
@@ -64,6 +65,11 @@ describe('攻撃の項目', () => {
     ]);
   });
 
+  it('持たせた魔法は兵種の攻撃の後に並ぶ', () => {
+    const s = { ...status('mage'), spells: ['flameLance' as const] };
+    expect(attackChildren(ctx('mage', { status: s, targetable: ['thunderfall', 'flameLance'] }))).toEqual(['thunderfall:4', 'flameLance:4']);
+  });
+
   it('狙える相手のいない攻撃は並ばない', () => {
     expect(attackChildren(ctx('cavalry', { targetable: ['charge'] }))).toEqual(['charge:3']);
   });
@@ -85,6 +91,7 @@ describe('攻撃の項目', () => {
       rifleman: 2,
       artillery: 2,
       landsknecht: 2,
+      dragon: 2,
     });
   });
 });

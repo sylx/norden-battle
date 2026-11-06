@@ -3,9 +3,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { Offset } from '@norden/map-runtime/core/hex';
-import { areaCells, canAim, hexDistance, resolveAttack, splashUnits } from './combat';
+import { areaCells, attackResult, attacksOf, canAim, hexDistance, resolveAttack, splashUnits } from './combat';
 import { setCondition, tickConditions, tickCooldowns } from './conditions';
-import { place, status, testMap } from './test/fixtures';
+import { combatant, place, status, testMap } from './test/fixtures';
 
 const key = (o: Offset) => `${o.col},${o.row}`;
 const keys = (cells: readonly Offset[]) => cells.map(key).sort();
@@ -117,5 +117,54 @@ describe('状態とクールタイムのターン', () => {
     expect(s.cooldowns).toEqual({ thunderfall: 1 });
     tickCooldowns(s);
     expect(s.cooldowns).toEqual({});
+  });
+});
+
+describe('ドラゴン・フレイムランス（M007 段階 2）', () => {
+  it('ブレスは目標の向きへ直線 3 HEX に当たり、範囲の味方にも当たる。反撃は受けない', () => {
+    const m = testMap();
+    const dragon = place(m, 'dragon', 'blue', 2, 3);
+    const target = place(m, 'infantry', 'red', 3, 3);
+    const ally = place(m, 'infantry', 'blue', 4, 3);
+    const beyond = place(m, 'archer', 'red', 5, 3);
+    place(m, 'archer', 'red', 6, 3);
+    expect(canAim(m, 'dragon', 'breath', dragon, { col: 5, row: 3 })).toBe(true);
+    expect(hexDistance(m, dragon, { col: 2, row: 1 })).toBe(2);
+    expect(canAim(m, 'dragon', 'breath', dragon, { col: 2, row: 1 })).toBe(false);
+    expect(splashUnits(m, dragon, dragon, target, target, 'breath')).toEqual([ally, beyond]);
+    const r = attackResult(m, combatant(dragon), combatant(target), 'breath', { damage: 0, counter: 0 });
+    expect(r.direct).toBe(false);
+    expect(r.counter).toBe(0);
+  });
+
+  it('クロウは直接攻撃で反撃を受ける。ブレスにはクールタイムがある', () => {
+    const m = testMap();
+    const dragon = place(m, 'dragon', 'blue', 2, 3);
+    const target = place(m, 'infantry', 'red', 3, 3);
+    expect(attackResult(m, combatant(dragon), combatant(target), 'claw', { damage: 0, counter: 0 }).counter).toBeGreaterThan(0);
+    expect(resolveAttack('dragon', 'breath').cooldown).toBe(1);
+  });
+
+  it('魔法は magic の兵種だけが、持たせたときに使える（サンダーフォールの後に並ぶ）', () => {
+    expect(attacksOf('mage', { spells: ['flameLance'] })).toEqual(['thunderfall', 'flameLance']);
+    expect(attacksOf('wizard', { spells: [] })).toEqual(['thunderfall']);
+    expect(attacksOf('infantry', { spells: ['flameLance'] })).toEqual(['attack', 'volley']);
+  });
+
+  it('フレイムランスは魔術師でも隣を狙えて、直線 2 HEX に当たる。魔法で知力を使う', () => {
+    const m = testMap();
+    const mage = place(m, 'mage', 'blue', 2, 3);
+    expect(canAim(m, 'mage', 'flameLance', mage, { col: 3, row: 3 })).toBe(true);
+    expect(canAim(m, 'mage', 'thunderfall', mage, { col: 3, row: 3 })).toBe(false);
+    expect(areaCells(m, mage, { col: 3, row: 3 }, resolveAttack('mage', 'flameLance').shape)).toEqual([
+      { col: 3, row: 3 },
+      { col: 4, row: 3 },
+    ]);
+    expect(resolveAttack('mage', 'flameLance').magic).toBe(true);
+  });
+
+  it('ドラゴンの兵数は HP と呼ぶ（monster）', () => {
+    expect(status('dragon').monster).toBe(true);
+    expect(status('infantry').monster).toBeUndefined();
   });
 });

@@ -97,6 +97,7 @@ import {
   hexDistance,
   interceptorsAt,
   areaCells,
+  attacksOf,
   isAttack,
   resolveAttack,
   splashResult,
@@ -108,6 +109,7 @@ import {
   type Combatant,
 } from './combat';
 import { ARROW_HIT_SEC, ARROW_RELEASE_SEC, ArrowEffects } from './arrowFx';
+import { BREATH_STYLE, BreathEffects, breathHitSec, FLAME_LANCE_STYLE } from './breathFx';
 import { CameraFocus, type FocusTiming } from './cameraFocus';
 import { setCondition, tickConditions, tickCooldowns, type ConditionId } from './conditions';
 import { randomRoll } from './damage';
@@ -170,6 +172,10 @@ const ARROW_STRIKE_SEC = 1.5;
 const THUNDER_STRIKE_SEC = 1.0;
 const BULLET_STRIKE_SEC = 1.0;
 const SHELL_STRIKE_SEC = 1.9;
+/** 爪で引き裂く（ドラゴンのクロウ）、炎を吹き出して範囲の端まで届き消えるまで（ブレス・フレイムランス） */
+const CLAW_STRIKE_SEC = 0.7;
+const BREATH_STRIKE_SEC = 2 * breathHitSec(BREATH_STYLE);
+const FLAME_STRIKE_SEC = 2 * breathHitSec(FLAME_LANCE_STYLE);
 /** 鼓舞で回復する士気（この範囲の整数） */
 const INSPIRE_MIN = 10;
 const INSPIRE_MAX = 20;
@@ -200,6 +206,9 @@ const STRIKE_FX: Record<StrikeFxKind, { hitSec: number; cameraShake: number }> =
   thunder: { hitSec: THUNDER_HIT_SEC, cameraShake: 0.08 },
   bullets: { hitSec: BULLET_STYLE.hitSec, cameraShake: 0.02 },
   shell: { hitSec: SHELL_STYLE.hitSec, cameraShake: 0.1 },
+  claw: { hitSec: SLASH_HIT_SEC, cameraShake: 0.07 },
+  breath: { hitSec: breathHitSec(BREATH_STYLE), cameraShake: 0.09 },
+  flame: { hitSec: breathHitSec(FLAME_LANCE_STYLE), cameraShake: 0.05 },
 };
 
 /** 軍が行動する順（防衛側が先）。部隊のいない軍は飛ばす */
@@ -399,6 +408,8 @@ interface StrikeFx {
   lead: number;
   /** エフェクトを出すユニットごとの演出（先頭が攻撃するユニット。一斉攻撃は加わる味方の分も続く） */
   shots: FxShot[];
+  /** 範囲の端の HEX（直線に吹く炎は、目標ではなくここまで届かせる。範囲の無い攻撃は null） */
+  end: Offset | null;
 }
 
 interface FxShot {
@@ -423,6 +434,10 @@ export class BattleApp {
   readonly interceptFx = new InterceptEffects();
   /** 光の剣の斬撃（歩兵の通常攻撃） */
   readonly slashFx = new SlashEffects();
+  /** 3 本の爪の跡（ドラゴンのクロウ） */
+  readonly clawFx = new SlashEffects({ color: 0xff6a3a, blades: 3, gap: 0.16 });
+  /** 範囲の端まで吹く炎（ドラゴンのブレス・フレイムランス） */
+  readonly breathFx = new BreathEffects();
   /** 光るランスの突き（騎兵の通常攻撃・突撃） */
   readonly lanceFx = new LanceEffects();
   /** 光の矢の雨（弓兵の通常攻撃） */
@@ -509,7 +524,7 @@ export class BattleApp {
     this.popups = new Popups(container);
     this.bubbles = new SpeechBubbles(container);
     this.cameraFocus = new CameraFocus(this.ctx);
-    this.ctx.overlay.add(this.interceptFx.group, this.slashFx.group, this.lanceFx.group, this.arrowFx.group, this.thunderFx.group, this.bulletFx.group, this.shellFx.group);
+    this.ctx.overlay.add(this.interceptFx.group, this.slashFx.group, this.lanceFx.group, this.arrowFx.group, this.thunderFx.group, this.bulletFx.group, this.shellFx.group, this.clawFx.group, this.breathFx.group);
     this.menu.onAction = (unit, action) => {
       if (action.id === 'confirm') return this.execute('confirm');
       if (action.id === 'intercept') return this.execute('intercept');
@@ -587,6 +602,8 @@ export class BattleApp {
     this.popups.clear();
     this.bubbles.clear();
     this.slashFx.clear();
+    this.clawFx.clear();
+    this.breathFx.clear();
     this.lanceFx.clear();
     this.arrowFx.clear();
     this.thunderFx.clear();
@@ -964,7 +981,7 @@ export class BattleApp {
     const moves = moveRange(map, unit, unit, ap, { escapeZoc: true });
     const out = new Map<number, RangeCell>();
     for (const [k, step] of moves) out.set(k, { col: step.col, row: step.row, mark: step.zoc });
-    const attacks = COMBAT_DEFS[unit.type].attacks.map((id) => resolveAttack(unit.type, id));
+    const attacks = attacksOf(unit.type, status).map((id) => resolveAttack(unit.type, id));
     if (attacks.length === 0) return [...out.values()];
     const self = unit.row * cols + unit.col;
     const froms = [{ pos: unit as Offset, spent: 0 }, ...[...moves.values()].map((step) => ({ pos: step as Offset, spent: step.cost }))];
@@ -1216,7 +1233,17 @@ export class BattleApp {
       // 攻撃・迎撃の前のセリフ（演出のある攻撃は、カメラが寄ったまま読み終えるのを待ってから攻撃する）
       const talk = phase.kind === 'strike' ? this.strikeTalk(exec) : this.bark('intercept', phase.shooter, exec.plan.unit, BARK_BEFORE_SEC);
       if (kind) {
-        const strikeSec = { slash: SLASH_STRIKE_SEC, lance: attack?.landing ? LANCE_CHARGE_SEC : LANCE_STRIKE_SEC, arrows: ARROW_STRIKE_SEC, thunder: THUNDER_STRIKE_SEC, bullets: BULLET_STRIKE_SEC, shell: SHELL_STRIKE_SEC }[kind];
+        const strikeSec = {
+          slash: SLASH_STRIKE_SEC,
+          lance: attack?.landing ? LANCE_CHARGE_SEC : LANCE_STRIKE_SEC,
+          arrows: ARROW_STRIKE_SEC,
+          thunder: THUNDER_STRIKE_SEC,
+          bullets: BULLET_STRIKE_SEC,
+          shell: SHELL_STRIKE_SEC,
+          claw: CLAW_STRIKE_SEC,
+          breath: BREATH_STRIKE_SEC,
+          flame: FLAME_STRIKE_SEC,
+        }[kind];
         // 一斉攻撃は、加わる味方もそれぞれの兵種の演出を、当たりの時点を中心に少しずつずらして出す
         const units = phase.kind === 'strike' ? [exec.plan.unit, ...exec.supporters] : [phase.shooter];
         const shots = units.flatMap((unit, i): FxShot[] => {
@@ -1224,10 +1251,14 @@ export class BattleApp {
           return k ? [{ unit, kind: k, offset: (i - (units.length - 1) / 2) * VOLLEY_FX_STAGGER_SEC, spawned: false }] : [];
         });
         const lead = Math.max(FX_ZOOM_IN_SEC, talk);
-        exec.fx = { kind, strikeSec, shots, lead };
+        exec.fx = { kind, strikeSec, shots, lead, end: phase.kind === 'strike' ? this.areaEnd(exec.plan) : null };
         exec.duration = lead + strikeSec + FX_HOLD_SEC + FX_ZOOM_OUT_SEC;
         const timing = { in: FX_ZOOM_IN_SEC, hold: lead - FX_ZOOM_IN_SEC + strikeSec + FX_HOLD_SEC, out: FX_ZOOM_OUT_SEC };
-        if (phase.kind === 'strike') this.focusOn([exec.plan.unit, attack!.target, ...exec.supporters], attack!.landing, timing);
+        if (phase.kind === 'strike') {
+          // 範囲の巻き添えになるユニットも画面に収める
+          const splash = splashUnits(map, exec.plan.unit, exec.plan.unit, attack!.target, attack!.target, attack!.id);
+          this.focusOn([exec.plan.unit, attack!.target, ...exec.supporters, ...splash], attack!.landing, timing);
+        }
         else this.focusOn([phase.shooter, exec.plan.unit], null, timing);
       } else {
         exec.duration = phase.kind === 'strike' && attack!.landing ? CHARGE_SEC : STRIKE_SEC;
@@ -1454,8 +1485,23 @@ export class BattleApp {
       if (shot.spawned || time < 0.5 + (shot.offset - STRIKE_FX[shot.kind].hitSec) / fx.strikeSec) continue;
       shot.spawned = true;
       const a = layout.offsetToWorld(shot.unit.col, shot.unit.row);
-      this.spawnStrikeFx(shot.kind, shot.unit, target, b.x >= a.x ? 'right' : 'left');
+      this.spawnStrikeFx(shot.kind, shot.unit, target, b.x >= a.x ? 'right' : 'left', fx.end);
     }
+  }
+
+  /** HEX の中心の地面の点（ワールド） */
+  private groundPoint(o: Offset): THREE.Vector3 {
+    const c = this.map!.layout.offsetToWorld(o.col, o.row);
+    return new THREE.Vector3(c.x, this.view.groundAt(c.x, c.z), c.z);
+  }
+
+  /** 予約した攻撃の範囲の端の HEX（直線の範囲の攻撃だけ。ほかは null） */
+  private areaEnd(plan: Plan): Offset | null {
+    const attack = plan.attack;
+    if (!attack) return null;
+    const def = resolveAttack(plan.unit.type, attack.id);
+    if (def.shape.kind !== 'line') return null;
+    return areaCells(this.map!, plan.unit, attack.target, def.shape).at(-1) ?? null;
   }
 
   /** 演出で当たったときのカメラの揺れ（一斉攻撃は加わるユニットの演出のうち一番大きいもの） */
@@ -1478,13 +1524,18 @@ export class BattleApp {
     this.cameraFocus.play(placements, timing);
   }
 
-  /** 攻撃の演出のエフェクトを出す */
-  private spawnStrikeFx(kind: StrikeFxKind, unit: UnitData, target: UnitData, facing: Facing): void {
+  /** 攻撃の演出のエフェクトを出す（end は直線に吹く炎が届く範囲の端の HEX。無ければ目標まで） */
+  private spawnStrikeFx(kind: StrikeFxKind, unit: UnitData, target: UnitData, facing: Facing, end: Offset | null = null): void {
     const placements = this.view.units.placements();
     const up = placements.find((p) => p.unit === unit);
     const tp = placements.find((p) => p.unit === target);
     if (!tp) return;
+    if ((kind === 'breath' || kind === 'flame') && up) {
+      const to = end ? this.groundPoint(end) : tp.foot;
+      return this.breathFx.spawn(up, to, kind === 'breath' ? BREATH_STYLE : FLAME_LANCE_STYLE);
+    }
     if (kind === 'slash') this.slashFx.spawn(tp, facing);
+    else if (kind === 'claw') this.clawFx.spawn(tp, facing);
     else if (kind === 'thunder') this.thunderFx.spawn(tp);
     else if (up && kind === 'lance') this.lanceFx.spawn(up, tp, this.ctx.camera);
     else if (up && kind === 'bullets') this.bulletFx.spawn(up, tp, this.ctx.camera);
@@ -1519,10 +1570,10 @@ export class BattleApp {
       this.view.units.moveTo(plan.unit, new THREE.Vector3(x, this.view.groundAt(x, z), z), facing);
     } else {
       const k = fx ? fxMotion(fx, t) : strikeCurve(t);
-      this.lunge(plan.unit, attack.target, k);
+      this.lunge(plan.unit, attack.target, k, attack.id);
     }
     // 一斉攻撃は、取り囲んでいる味方も一緒に踏み込む
-    for (const u of exec.supporters) this.lunge(u, attack.target, fx ? holdCurve(t) : strikeCurve(t));
+    for (const u of exec.supporters) this.lunge(u, attack.target, fx ? holdCurve(t) : strikeCurve(t), 'attack');
 
     if (fx) this.spawnFxOnTime(fx, elapsed, attack.target, attack.target);
     if (t >= 0.5 && !exec.hit) {
@@ -1548,12 +1599,15 @@ export class BattleApp {
     this.nextPhase();
   }
 
-  /** unit が target を攻撃する動き。直接攻撃は相手へ踏み込む。遠隔攻撃はその場で小さく跳ねる（k は踏み込み・跳ねる量の 0〜1） */
-  private lunge(unit: UnitData, target: Offset, k: number): void {
+  /**
+   * unit が target を id の攻撃で攻撃する動き。直接攻撃は相手へ踏み込む。遠隔攻撃（遠隔の兵種か、反撃を受けない攻撃。ブレスなど）は
+   * その場で小さく跳ねる（k は踏み込み・跳ねる量の 0〜1）
+   */
+  private lunge(unit: UnitData, target: Offset, k: number, id: AttackId): void {
     const map = this.map!;
     const a = map.layout.offsetToWorld(unit.col, unit.row);
     const b = map.layout.offsetToWorld(target.col, target.row);
-    const ranged = COMBAT_DEFS[unit.type].ranged;
+    const ranged = COMBAT_DEFS[unit.type].ranged || resolveAttack(unit.type, id).indirect;
     const lunge = ranged ? 0 : k * STRIKE_LUNGE;
     const x = a.x + (b.x - a.x) * lunge;
     const z = a.z + (b.z - a.z) * lunge;
@@ -1904,8 +1958,8 @@ export class BattleApp {
     const map = this.map!;
     const pos = BattleApp.planPos(plan);
     const options = BattleApp.moveOptions(plan);
-    const targets = attackTargets(map, plan.unit, pos);
-    const attacks = COMBAT_DEFS[plan.unit.type].attacks;
+    const attacks = attacksOf(plan.unit.type, plan.status);
+    const targets = attackTargets(map, plan.unit, pos, attacks);
     return {
       unit: plan.unit,
       status: plan.status,
@@ -1994,6 +2048,8 @@ export class BattleApp {
     for (const arrow of [v.pathArrow, v.afterPathArrow, v.attackArrow, v.supportArrow]) arrow.group.visible = arrowsShown;
     this.cameraFocus.update(performance.now());
     this.slashFx.update(this.ctx.camera);
+    this.clawFx.update(this.ctx.camera);
+    this.breathFx.update();
     this.lanceFx.update(this.ctx.camera);
     this.arrowFx.update(this.ctx.camera);
     this.thunderFx.update(this.ctx.camera);

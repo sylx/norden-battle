@@ -47,6 +47,7 @@ export const UNIT_POWER: Record<UnitType, { attack: number; defense: number }> =
   artillery: { attack: 3.0, defense: 0.5 },
   landsknecht: { attack: 1.3, defense: 1.2 },
   wizard: { attack: 1.3, defense: 0.6 },
+  dragon: { attack: 2.0, defense: 1.5 },
 };
 
 /** 攻撃 1 回の当たり方（ダメージの計算に効くところ） */

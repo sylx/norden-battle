@@ -2,9 +2,9 @@
  * 戦闘中のユニットの状態（兵士数・士気・行動力・指揮官）。マップのデータには保存しない。
  * ゲームから渡されないときは、表示確認用の仮の値を配る（demoStatuses・deployment.ts の demoTroops）。
  */
-import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
+import { UNIT_DEFS, type UnitData, type UnitType } from '@norden/map-runtime/core/units';
 import type { SkillId } from './actions';
-import type { AttackId } from './attacks';
+import type { AttackId, SpellId } from './attacks';
 import type { Condition } from './conditions';
 
 export interface UnitStatus {
@@ -42,6 +42,10 @@ export interface UnitStatus {
   cooldowns: Partial<Record<AttackId, number>>;
   /** 付いている状態（conditions.ts） */
   conditions: Condition[];
+  /** 持たせた魔法（magic の兵種だけが使える。行動メニューの攻撃に兵種の攻撃の後に並ぶ） */
+  spells: SpellId[];
+  /** 人の兵ではない部隊（ドラゴンなど。兵数を HP と呼ぶ。兵種から決まる） */
+  monster?: boolean;
 }
 
 /** 指揮官の顔を切り出す画像と範囲（大きさはどれも画像の px） */
@@ -73,6 +77,8 @@ export interface TroopInit {
   commander?: boolean;
   /** 捕縛されない部隊か */
   uncapturable?: boolean;
+  /** 持たせる魔法（magic の兵種だけが使える） */
+  spells?: readonly SpellId[];
 }
 
 /** ゲームから渡された部隊の値を、戦闘に入るときの状態にする（行動力は兵種の満タン） */
@@ -97,6 +103,8 @@ export function troopStatus(type: UnitType, init: TroopInit): UnitStatus {
     ...(init.uncapturable && { uncapturable: true }),
     cooldowns: {},
     conditions: [],
+    spells: [...(init.spells ?? [])],
+    ...(UNIT_DEFS[type].monster && { monster: true }),
   };
 }
 
@@ -112,6 +120,7 @@ const MAX_AP: Record<UnitType, number> = {
   artillery: 3,
   landsknecht: 4,
   wizard: 4,
+  dragon: 4,
 };
 
 /** 表示確認用の仮の部隊の、兵種ごとの兵数の目安（実際の兵数はこれをばらつかせる） */
@@ -124,6 +133,7 @@ const MAX_SOLDIERS: Record<UnitType, number> = {
   artillery: 300,
   landsknecht: 800,
   wizard: 400,
+  dragon: 600,
 };
 
 /** 表示確認用の指揮官ごとのスキル（仮） */
@@ -193,6 +203,8 @@ export function demoStatus(type: UnitType, commander: number, r1: number, r2: nu
     intercepting: false,
     cooldowns: {},
     conditions: [],
+    spells: [],
+    ...(UNIT_DEFS[type].monster && { monster: true }),
   };
 }
 

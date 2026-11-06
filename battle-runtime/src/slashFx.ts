@@ -1,5 +1,6 @@
 /**
- * 光の剣の斬撃のエフェクト（歩兵の通常攻撃）。相手の絵の前を光の刃が弧を描いて振り抜け、
+ * 光の剣の斬撃のエフェクト（歩兵の通常攻撃）。ドラゴンのクロウは、色を変えて 3 本の爪の跡を平行に出す（SlashOptions）。
+ * 相手の絵の前を光の刃が弧を描いて振り抜け、
  * 通った跡に三日月形の光の筋を残す。刃が相手の中心を通ったところで光がはじけ、火花が散る。
  *
  * どれもカメラ正対の板で、ユニットの絵より手前に深度テストをせず加算で描く。
@@ -37,10 +38,20 @@ const SPARK_GRAVITY = 5;
 const SPARK_SEC = 0.5;
 const SPARK_SIZE = 0.09;
 
+/** 斬撃の見た目 */
+export interface SlashOptions {
+  /** 光の色 */
+  color?: number;
+  /** 平行に出す刃の数（爪は 3） */
+  blades?: number;
+  /** 刃どうしの間隔（絵の高さ比） */
+  gap?: number;
+}
+
 interface Slash {
   /** カメラ正対。原点が相手の中心で、1 が絵の高さ */
   group: THREE.Group;
-  arc: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  arcs: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>[];
   flash: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   sparks: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   velocities: Float32Array;
@@ -54,9 +65,15 @@ export class SlashEffects {
   private readonly plane = new THREE.PlaneGeometry(2, 2);
   private readonly sparkTexture = createSparkTexture();
   private items: Slash[] = [];
+  private readonly color: number;
+  private readonly blades: number;
+  private readonly gap: number;
 
-  constructor() {
+  constructor({ color = COLOR, blades = 1, gap = 0.16 }: SlashOptions = {}) {
     this.group.name = 'slash-fx';
+    this.color = color;
+    this.blades = blades;
+    this.gap = gap;
   }
 
   /** target（攻撃される相手）を、facing の向きに攻撃するユニットが斬る */
@@ -65,13 +82,17 @@ export class SlashEffects {
     const group = new THREE.Group();
     group.scale.set(target.height * (facing === 'left' ? -1 : 1), target.height, target.height);
 
-    // 弧の中心を、弧の真ん中が相手の中心を通るところに置く
-    const arc = new THREE.Mesh(this.plane, createArcMaterial(mid + HALF_ARC, mid - HALF_ARC));
-    arc.position.set(-Math.cos(mid) * RADIUS, -Math.sin(mid) * RADIUS, 0);
-    arc.scale.setScalar(RADIUS);
+    // 弧の中心を、弧の真ん中が相手の中心を通るところに置く。刃が複数なら、刃の向きに直交してずらして平行に並べる
+    const arcs = Array.from({ length: this.blades }, (_, i) => {
+      const arc = new THREE.Mesh(this.plane, createArcMaterial(mid + HALF_ARC, mid - HALF_ARC, this.color));
+      const shift = (i - (this.blades - 1) / 2) * this.gap;
+      arc.position.set(-Math.cos(mid) * (RADIUS - shift), -Math.sin(mid) * (RADIUS - shift), 0);
+      arc.scale.setScalar(RADIUS);
+      return arc;
+    });
 
     // はじける光は、刃が中心を通る向き（弧の接線）に長く伸ばす
-    const flash = new THREE.Mesh(this.plane, createFlashMaterial(COLOR));
+    const flash = new THREE.Mesh(this.plane, createFlashMaterial(this.color));
     flash.rotation.z = mid - Math.PI / 2;
     flash.scale.setScalar(FLASH_SIZE / 2);
     flash.visible = false;
@@ -85,15 +106,15 @@ export class SlashEffects {
       velocities[i * 2] = Math.cos(a) * v;
       velocities[i * 2 + 1] = Math.sin(a) * v + 0.6;
     }
-    const sparks = createSparks(SPARKS, this.sparkTexture, COLOR, SPARK_SIZE * target.height);
+    const sparks = createSparks(SPARKS, this.sparkTexture, this.color, SPARK_SIZE * target.height);
 
-    for (const o of [arc, flash, sparks]) {
+    for (const o of [...arcs, flash, sparks]) {
       o.renderOrder = FX_RENDER_ORDER;
       o.frustumCulled = false;
       group.add(o);
     }
     this.group.add(group);
-    this.items.push({ group, arc, flash, sparks, velocities, foot: target.foot.clone(), height: target.height, start: performance.now() });
+    this.items.push({ group, arcs, flash, sparks, velocities, foot: target.foot.clone(), height: target.height, start: performance.now() });
   }
 
   /** 毎フレーム、描画の前に呼ぶ */
@@ -112,9 +133,10 @@ export class SlashEffects {
       s.group.quaternion.copy(camera.quaternion);
 
       // 刃は振り抜いた後も跡の長さだけ進めて、跡を後ろから消していく
-      const u = s.arc.material.uniforms;
-      u.uHead.value = t < SWEEP_SEC ? t / SWEEP_SEC : 1 + ((t - SWEEP_SEC) / FADE_SEC) * TRAIL;
-      s.arc.visible = t < SWEEP_SEC + FADE_SEC;
+      for (const arc of s.arcs) {
+        arc.material.uniforms.uHead.value = t < SWEEP_SEC ? t / SWEEP_SEC : 1 + ((t - SWEEP_SEC) / FADE_SEC) * TRAIL;
+        arc.visible = t < SWEEP_SEC + FADE_SEC;
+      }
 
       const ft = sinceHit / FLASH_SEC;
       s.flash.visible = ft >= 0 && ft < 1;
@@ -140,7 +162,7 @@ export class SlashEffects {
 
   private dispose(s: Slash): void {
     this.group.remove(s.group);
-    s.arc.material.dispose();
+    for (const arc of s.arcs) arc.material.dispose();
     s.flash.material.dispose();
     s.sparks.material.dispose();
     s.sparks.geometry.dispose();
@@ -148,14 +170,14 @@ export class SlashEffects {
 }
 
 /** 弧の刃と跡。弧の中心が板の中心で、板の縁（半径 1）が刃の先 */
-function createArcMaterial(a0: number, a1: number): THREE.ShaderMaterial {
+function createArcMaterial(a0: number, a1: number, color: number): THREE.ShaderMaterial {
   return createFxMaterial(
     {
       uHead: { value: 0 },
       uA0: { value: a0 },
       uA1: { value: a1 },
       uTrail: { value: TRAIL },
-      uColor: { value: new THREE.Color(COLOR) },
+      uColor: { value: new THREE.Color(color) },
     },
     /* glsl */ `
 uniform float uHead;

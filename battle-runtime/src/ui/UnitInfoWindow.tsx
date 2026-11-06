@@ -58,7 +58,7 @@ export default function UnitInfoWindow({ app }: { app: BattleApp }) {
       </div>
       <StatusCard status={status} className="in-info" />
       <dl>
-        <dt>初期兵数</dt>
+        <dt>{status.monster ? '初期HP' : '初期兵数'}</dt>
         <dd>{status.initialSoldiers}</dd>
         <dt>行動力</dt>
         <dd>

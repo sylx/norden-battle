@@ -17,8 +17,8 @@ export { demoFactions, OTHER_FACTION_NAME, teamName, unitName } from './factions
 export type { BattleFaction, BattleFactions } from './factions';
 
 // 攻撃の定義（兵種ごとの使える攻撃は COMBAT_DEFS）と、ユニットに付く状態
-export { ATTACK_DEFS, ATTACK_IDS } from './attacks';
-export type { AttackDef, AttackId, Inflict, MenuAttackId, Shape, StrikeFxKind } from './attacks';
+export { ATTACK_DEFS, ATTACK_IDS, SPELL_IDS } from './attacks';
+export type { AttackDef, AttackId, Inflict, MenuAttackId, Shape, SpellId, StrikeFxKind } from './attacks';
 export { CONDITION_DEFS, CONDITION_IDS } from './conditions';
 export type { Condition, ConditionDef, ConditionId } from './conditions';
 
@@ -29,7 +29,7 @@ export type { Portrait, TroopInit, UnitStatus } from './unitStatus';
 // ユニットそのものの力（基本攻撃力・基本防御力。戦う前の比べ合いに使う）
 export { basicAttack, basicDefense, MAX_BASIC_DEFENSE, STANDARD_UNIT } from './damage';
 export type { UnitPower } from './damage';
-export { COMBAT_DEFS, mightFor, resolveAttack } from './combat';
+export { attacksOf, COMBAT_DEFS, mightFor, resolveAttack } from './combat';
 export type { CombatDef, ResolvedAttack } from './combat';
 export type { ActionId, MenuAction, MenuChild, SkillId } from './actions';
 

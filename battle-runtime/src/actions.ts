@@ -23,7 +23,7 @@
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import { ATTACK_DEFS, type MenuAttackId } from './attacks';
-import { COMBAT_DEFS } from './combat';
+import { attacksOf } from './combat';
 import type { UnitStatus } from './unitStatus';
 
 export type ActionId =
@@ -78,7 +78,7 @@ const MENU: readonly (ActionDef | GroupDef)[] = [
   { id: 'move', name: '移動' },
   { name: '攻撃', attack: true, children: [] },
   // 騎兵はできない
-  { id: 'intercept', name: '迎撃', cost: 2, types: ['infantry', 'archer', 'mage', 'rifleman', 'artillery', 'landsknecht', 'wizard'] },
+  { id: 'intercept', name: '迎撃', cost: 2, types: ['infantry', 'archer', 'mage', 'rifleman', 'artillery', 'landsknecht', 'wizard', 'dragon'] },
   // 行動力が余ったときに行動を終える
   { id: 'wait', name: '待機', cost: 0 },
   { name: '特殊', skills: true, children: [{ id: 'retreat', name: '退却', keepDisabled: true }] },
@@ -180,7 +180,7 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
     }
     const cands: (MenuAction & { keepDisabled?: boolean })[] = [
       ...(def.skills ? status.skills.map((s) => ({ id: `skill:${s}` as const, name: SKILL_DEFS[s].name, cost: SKILL_DEFS[s].cost })) : []),
-      ...(def.attack ? attackActions(unit.type) : []),
+      ...(def.attack ? attackActions(unit.type, status) : []),
       ...def.children.filter((c) => !c.types || c.types.includes(unit.type)).map(({ id, name, cost, keepDisabled }) => ({ id, name, cost, keepDisabled })),
     ];
     if (cands.length === 0) return { name: def.name, enabled: false, reason: 'この兵種は使えない' };
@@ -214,9 +214,9 @@ export function canAct(ctx: MenuContext): boolean {
   });
 }
 
-/** 兵種の攻撃の行動メニューの項目（兵種の攻撃の一覧の順） */
-function attackActions(type: UnitType): MenuAction[] {
-  return COMBAT_DEFS[type].attacks.map((id) => ({ id, name: ATTACK_DEFS[id].name, cost: ATTACK_DEFS[id].cost }));
+/** 部隊の攻撃の行動メニューの項目（兵種の攻撃の一覧の順に、持たせた魔法が続く） */
+function attackActions(type: UnitType, status: Pick<UnitStatus, 'spells'>): MenuAction[] {
+  return attacksOf(type, status).map((id) => ({ id, name: ATTACK_DEFS[id].name, cost: ATTACK_DEFS[id].cost }));
 }
 
 function isMenuAttack(id: ActionId): id is MenuAttackId {
@@ -225,7 +225,7 @@ function isMenuAttack(id: ActionId): id is MenuAttackId {
 
 /** 兵種の攻撃（一斉攻撃を除く）のうち、いちばん少ない行動力（攻撃できない兵種は null） */
 export function minAttackCost(type: UnitType): number | null {
-  const costs = attackActions(type)
+  const costs = attackActions(type, { spells: [] })
     .filter((a) => a.id !== 'volley')
     .map((a) => a.cost ?? 0);
   return costs.length > 0 ? Math.min(...costs) : null;

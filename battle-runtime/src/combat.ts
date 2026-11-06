@@ -3,7 +3,9 @@
  *
  * - 兵種ごとの射程（minRange〜maxRange、HEX の距離）。弓兵・ライフル兵は 1〜2、魔術師・上級魔術師・砲兵は 2〜3、ほかは 1。
  *   隣接したユニットを攻撃できない兵種（魔術師・上級魔術師・砲兵）は minRange = 2 にする。攻撃の定義に射程があればそちら。
- * - 兵種は使える攻撃の一覧（attacks）を持つ。兵種と攻撃の ID から、省略を埋めた攻撃の定義を引く（resolveAttack）。
+ * - 兵種は使える攻撃の一覧（attacks）を持つ。magic の兵種は、部隊に持たせた魔法（UnitStatus.spells）も使える（attacksOf）。
+ *   兵種と攻撃の ID から、省略を埋めた攻撃の定義を引く（resolveAttack）。
+ * - ドラゴンは直接攻撃のクロウと、目標の向きへ直線 3 HEX を焼くブレス（味方にも当たる。反撃は受けない。クールタイム 1）。
  * - 当たる範囲（attacks.ts の Shape）: path・line の攻撃は、隣より遠い HEX は 6 方向の直線上だけを狙える（canAim）。
  *   範囲にいる目標以外のユニット（splashUnits。敵、friendlyFire なら味方も）は巻き添えで、目標を撃ったのと同じ計算（倍率は splashPower）で
  *   反撃は無い（splashResult）。撃ったユニットの士気は目標への攻撃の分だけ増減し、巻き添えでは増減しない。
@@ -78,9 +80,18 @@ export const COMBAT_DEFS: Record<UnitType, CombatDef> = {
   },
   artillery: { minRange: 2, maxRange: 3, ranged: true, attacks: ['attack'], fx: 'shell' },
   landsknecht: { minRange: 1, maxRange: 1, ranged: false, attacks: ['attack', 'volley'], fx: 'slash' },
-  // 上級魔術師（M007 の段階 0 では魔術師と同じ。使える魔法の違いは段階 2 以降）
+  // 上級魔術師（いまは魔術師と同じ。使える魔法は部隊に持たせる）
   wizard: { minRange: 2, maxRange: 3, ranged: true, magic: true, attacks: ['thunderfall'], fx: 'thunder' },
+  // ドラゴン（射程はクロウの分。ブレスは攻撃の定義の射程）
+  dragon: { minRange: 1, maxRange: 1, ranged: false, attacks: ['claw', 'breath'], fx: 'claw' },
 };
+
+/** 部隊が使える攻撃（兵種の攻撃の一覧と、magic の兵種なら持たせた魔法。行動メニューの「攻撃」の並び） */
+export function attacksOf(type: UnitType, status: Pick<UnitStatus, 'spells'>): MenuAttackId[] {
+  const own = COMBAT_DEFS[type].attacks;
+  const spells = COMBAT_DEFS[type].magic ? status.spells.filter((id) => !own.includes(id)) : [];
+  return [...own, ...spells];
+}
 
 /** 省略を兵種から埋めた攻撃の定義（resolveAttack） */
 export interface ResolvedAttack extends Pick<AttackDef, 'id' | 'name' | 'cost' | 'power' | 'aim' | 'special'> {
@@ -228,15 +239,15 @@ export function splashUnits(map: HexMap, unit: UnitData, from: Offset, main: Uni
   });
 }
 
-/** unit が pos から攻撃できる敵ユニット（id の攻撃。省略すれば兵種のどれかの攻撃で） */
-export function attackTargets(map: HexMap, unit: UnitData, pos: Offset, id?: AttackId): UnitData[] {
-  const ids = id ? [id] : COMBAT_DEFS[unit.type].attacks;
+/** unit が pos から攻撃できる敵ユニット（id の攻撃。一覧ならどれかの攻撃で。省略すれば兵種の攻撃のどれかで） */
+export function attackTargets(map: HexMap, unit: UnitData, pos: Offset, id?: AttackId | readonly AttackId[]): UnitData[] {
+  const ids = id === undefined ? COMBAT_DEFS[unit.type].attacks : typeof id === 'string' ? [id] : id;
   return map.allUnits().filter((u) => u.team !== unit.team && ids.some((i) => canAim(map, unit.type, i, pos, u)));
 }
 
-/** unit が pos から攻撃で狙える HEX（相手がいるかどうかに関わらない。id の攻撃。省略すれば兵種のどれかの攻撃で） */
-export function attackRange(map: HexMap, unit: UnitData, pos: Offset, id?: AttackId): Offset[] {
-  const ids = id ? [id] : COMBAT_DEFS[unit.type].attacks;
+/** unit が pos から攻撃で狙える HEX（相手がいるかどうかに関わらない。id の攻撃。一覧ならどれかで。省略すれば兵種の攻撃のどれかで） */
+export function attackRange(map: HexMap, unit: UnitData, pos: Offset, id?: AttackId | readonly AttackId[]): Offset[] {
+  const ids = id === undefined ? COMBAT_DEFS[unit.type].attacks : typeof id === 'string' ? [id] : id;
   const out: Offset[] = [];
   for (let row = 0; row < map.layout.rows; row++) {
     for (let col = 0; col < map.layout.cols; col++) {

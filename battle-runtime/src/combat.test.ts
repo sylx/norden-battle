@@ -255,6 +255,7 @@ describe('ダメージの表（移し替えの前後で変わらないこと）'
     rifleman: ['attack', 'interceptFire'],
     artillery: ['attack', 'interceptFire'],
     landsknecht: ['attack', 'volley'],
+    dragon: ['claw', 'breath'],
   };
 
   it('兵種 × 攻撃の種類 × 相手の兵種', () => {

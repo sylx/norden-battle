@@ -14,17 +14,25 @@
 import type { ConditionId } from './conditions';
 
 /** 攻撃の ID（行動メニューの行動の ID にもなる。interceptFire は迎撃の自動攻撃で、メニューには出ない） */
-export const ATTACK_IDS = ['attack', 'volley', 'charge', 'thunderfall', 'interceptFire'] as const;
+export const ATTACK_IDS = ['attack', 'volley', 'charge', 'thunderfall', 'claw', 'breath', 'flameLance', 'interceptFire'] as const;
 export type AttackId = (typeof ATTACK_IDS)[number];
 /** 行動メニューに出る攻撃 */
 export type MenuAttackId = Exclude<AttackId, 'interceptFire'>;
 
 /**
+ * 部隊に持たせる魔法（UnitStatus.spells。magic の兵種だけが使える。ゲームでは魔導書の装備から渡す）。
+ * サンダーフォールは魔術師・上級魔術師が必ず持つので含めない
+ */
+export const SPELL_IDS = ['flameLance'] as const satisfies readonly MenuAttackId[];
+export type SpellId = (typeof SPELL_IDS)[number];
+
+/**
  * 攻撃の演出の種類。slash: 光の剣で斬る（歩兵の通常攻撃）、lance: 光るランスで貫く（騎兵の通常攻撃・突撃）、
  * arrows: 光の矢の雨（弓兵の通常攻撃）、thunder: 頭上に落ちる雷（魔術師のサンダーフォール）、
- * bullets: まっすぐ飛ぶ光の弾（ライフル兵の通常攻撃）、shell: 放物線で飛ぶ大きな光の弾（砲兵の通常攻撃）
+ * bullets: まっすぐ飛ぶ光の弾（ライフル兵の通常攻撃）、shell: 放物線で飛ぶ大きな光の弾（砲兵の通常攻撃）、
+ * claw: 3 本の爪の跡（ドラゴンのクロウ）、breath: 範囲の端まで吹く炎（ドラゴンのブレス）、flame: 細く速い炎の槍（フレイムランス）
  */
-export type StrikeFxKind = 'slash' | 'lance' | 'arrows' | 'thunder' | 'bullets' | 'shell';
+export type StrikeFxKind = 'slash' | 'lance' | 'arrows' | 'thunder' | 'bullets' | 'shell' | 'claw' | 'breath' | 'flame';
 
 /** 当たる範囲 */
 export type Shape =
@@ -87,8 +95,40 @@ export const ATTACK_DEFS: Record<AttackId, AttackDef> = {
   charge: { id: 'charge', name: '突撃', cost: 3, power: 0.8, aim: 'unit', special: 'charge' },
   // 魔術師の攻撃（間接攻撃。魔法の名前はいずれ指揮官の属性で変えるかもしれない）
   thunderfall: { id: 'thunderfall', name: 'サンダーフォール', cost: 4, power: 1.0, aim: 'unit', indirect: true },
+  // ドラゴン。クロウは直接攻撃。ブレスは目標の向きへ直線 3 HEX を焼く（味方にも当たる。反撃は受けない）
+  claw: { id: 'claw', name: 'クロウ', cost: 2, power: 0.8, aim: 'unit', fx: 'claw' },
+  breath: {
+    id: 'breath',
+    name: 'ブレス',
+    cost: 4,
+    power: 1.0,
+    aim: 'unit',
+    range: { min: 1, max: 3 },
+    shape: { kind: 'line', length: 3 },
+    friendlyFire: true,
+    indirect: true,
+    cooldown: 1,
+    fx: 'breath',
+  },
+  // 魔法（部隊に持たせる）。フレイムランスはブレスの 2 HEX 版
+  flameLance: {
+    id: 'flameLance',
+    name: 'フレイムランス',
+    cost: 4,
+    power: 1.0,
+    aim: 'unit',
+    range: { min: 1, max: 2 },
+    shape: { kind: 'line', length: 2 },
+    friendlyFire: true,
+    indirect: true,
+    fx: 'flame',
+  },
   interceptFire: { id: 'interceptFire', name: '迎撃', cost: 0, power: 0.5, aim: 'unit', indirect: true },
 };
+
+export function isSpellId(id: string): id is SpellId {
+  return (SPELL_IDS as readonly string[]).includes(id);
+}
 
 export function isAttackId(id: string): id is AttackId {
   return (ATTACK_IDS as readonly string[]).includes(id);

@@ -39,6 +39,7 @@ import {
   MAX_MORALE,
   RETREAT_FAIL_CHANCE,
   SIDE_NAMES,
+  SPELL_IDS,
   teamName,
   WIPEOUT_CAPTURE_CHANCE,
   type BattleApp,
@@ -749,6 +750,7 @@ function TroopsTool({ draft, onDraft, dirty, onApply }: { draft: Rosters; onDraf
             <th>兵種</th>
             <th>兵数</th>
             <th>士気</th>
+            <th>魔法</th>
             <th />
           </tr>
         </thead>
@@ -800,6 +802,22 @@ function TroopsTool({ draft, onDraft, dirty, onApply }: { draft: Rosters; onDraf
                   <input type="number" className="num narrow" min={0} max={MAX_MORALE} value={e.morale} onChange={(ev) => setEntry(i, { morale: num(ev.target.value, MAX_MORALE) })} />
                 </td>
                 <td>
+                  {COMBAT_DEFS[e.type].magic ? (
+                    SPELL_IDS.map((id) => (
+                      <label key={id} className="spell">
+                        <input
+                          type="checkbox"
+                          checked={e.spells.includes(id)}
+                          onChange={(ev) => setEntry(i, { spells: ev.target.checked ? [...e.spells, id] : e.spells.filter((x) => x !== id) })}
+                        />
+                        {ATTACK_DEFS[id].name}
+                      </label>
+                    ))
+                  ) : (
+                    <span className="none">-</span>
+                  )}
+                </td>
+                <td>
                   <button className="remove" title="外す" onClick={() => remove(i)} disabled={roster.entries.length <= 1}>
                     ×
                   </button>
@@ -822,6 +840,7 @@ function TroopsTool({ draft, onDraft, dirty, onApply }: { draft: Rosters; onDraf
         配備できるのは 1 陣営 {MAX_DEPLOY} 部隊まで（残りは配備のときに入れ替えられる）。直した編成は「この編成で最初から」で反映する
         {dirty ? '（未反映の変更あり）' : ''}
       </p>
+      <p className="hint">魔法は魔術師・上級魔術師だけが使う（サンダーフォールは必ず使える。ゲームでは魔導書の装備から渡す）</p>
       <p className="hint">スキルはゲームの騎士にまだ無いので、表示確認用に行の順で仮に配る。配備の無いマップでは、防衛側を赤軍・攻撃側を青軍のユニットに上から順に割り当てる</p>
     </>
   );

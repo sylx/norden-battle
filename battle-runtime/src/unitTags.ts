@@ -298,6 +298,8 @@ export const STATUS_HTML = `
 /** STATUS_HTML を入れた要素に値を入れる */
 export function renderStatus(el: HTMLElement, s: UnitStatus): void {
   const q = (sel: string) => el.querySelector(sel) as HTMLElement;
+  // 人の兵ではない部隊（ドラゴンなど）は兵数を HP と呼ぶ
+  q('.soldiers .label').textContent = s.monster ? 'HP' : '兵数';
   q('.soldiers .value').textContent = String(s.soldiers);
   // 兵数のゲージは戦闘が始まったときの兵数を満タンにする
   q('.soldiers .fill').style.width = `${(100 * clamp01(s.soldiers / s.initialSoldiers)).toFixed(1)}%`;

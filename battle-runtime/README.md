@@ -128,6 +128,7 @@ src/
   barks.ts         セリフの場面・確率・吹き出しの調子と、何を喋るか（BarkSource。セリフのデータから選ぶ lineBarks、表示確認用の demoBarks）
   speechBubbles.ts セリフの吹き出し（頭上に出してユニットに付いていく。1 字ずつ出す）
   interceptFx.ts   迎撃の構えのユニットの足元の光の輪
+  breathFx.ts      範囲の端まで吹く炎の粒（ドラゴンのブレス・フレイムランス）。ドラゴンのクロウは slashFx.ts の 3 本の爪
   ui/
     BattleScreen.tsx     戦闘画面（BattleApp を置き、下の部品とカットインを重ねる）
     ActionMenu.tsx       行動メニュー（ユニットの横に毎フレーム追いかける。退却を選んだ後は退却先の拠点の一覧）

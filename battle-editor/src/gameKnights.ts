@@ -3,14 +3,27 @@
  *
  * norden-battle は nordencult のサブモジュールとして置く（../../ がゲーム）。ゲームのデータを直接読む。
  * - 陣営（攻撃側・防衛側）ごとに勢力を選ぶと、その勢力の騎士で部隊の一覧（編成）を作る（当主が先頭、あとは統率の高い順）。
- * - 編成の 1 行は騎士・兵種・兵数・士気。軍団長は陣営に 1 部隊。騎士・兵種はエディタで選び直せる（兵種は率いられないものも選べる）。
+ * - 編成の 1 行は騎士・兵種・兵数・士気・魔法（magic の兵種だけが使う）。軍団長は陣営に 1 部隊。騎士・兵種はエディタで選び直せる（兵種は率いられないものも選べる）。
  * - 部隊の能力（統率・武力・知力）・名前・顔は騎士のもの（ゲームの battleTroops.ts と同じ）。傭兵は捕縛されない。
  * - ゲームの騎士にはまだ戦闘のスキルが無いので、スキルは表示確認用に行の順で仮に配る（EDITOR_SKILLS）。
  * - 配備の無いマップ（ユニットを置いてあるマップ）では、防衛側の編成を赤軍、攻撃側の編成を青軍のユニットに上から順に割り当てる
  *   （兵種はマップのユニットのまま）。ほかの軍は表示確認用の仮の状態。
  * - 部隊の状態から騎士を引けるようにしておく（knightOfStatus。セリフを指揮官の騎士で喋らせる）。
  */
-import { demoStatuses, SIDE_TEAM, troopStatus, type BattleFactions, type Portrait, type SkillId, type StatusFactory, type Troop, type TroopFactory, type UnitStatus } from '@norden/battle-runtime';
+import {
+  demoStatuses,
+  SIDE_TEAM,
+  SPELL_IDS,
+  troopStatus,
+  type BattleFactions,
+  type Portrait,
+  type SkillId,
+  type SpellId,
+  type StatusFactory,
+  type Troop,
+  type TroopFactory,
+  type UnitStatus,
+} from '@norden/battle-runtime';
 import type { DeploySide } from '@norden/map-runtime/core/mapData';
 import { UNIT_TYPES, type UnitType } from '@norden/map-runtime/core/units';
 import characterData from '../../../src/data/characterData.json';
@@ -60,6 +73,8 @@ export interface RosterEntry {
   type: UnitType;
   soldiers: number;
   morale: number;
+  /** 持たせる魔法（magic の兵種だけが使う） */
+  spells: SpellId[];
 }
 
 /** 陣営の編成 */
@@ -76,7 +91,7 @@ export type Rosters = Record<DeploySide, SideRoster>;
 /** 編成に並べる部隊の数（配備できるのは MAX_DEPLOY まで。残りは配備のときに入れ替えられる） */
 export const ROSTER_SIZE = 8;
 /** 部隊の兵数の既定（兵種ごと。無ければ DEFAULT_SOLDIERS） */
-const SOLDIERS: Partial<Record<UnitType, number>> = { infantry: 1000, archer: 800, cavalry: 600, mage: 400, wizard: 400, rifleman: 600, artillery: 300, landsknecht: 800 };
+const SOLDIERS: Partial<Record<UnitType, number>> = { infantry: 1000, archer: 800, cavalry: 600, mage: 400, wizard: 400, rifleman: 600, artillery: 300, landsknecht: 800, dragon: 600 };
 const DEFAULT_SOLDIERS = 800;
 /** ゲームの開始時の士気（src/game/economy/balance.ts の INITIAL_MORALE） */
 export const DEFAULT_MORALE = 70;
@@ -88,7 +103,7 @@ export const defaultSoldiers = (type: UnitType): number => SOLDIERS[type] ?? DEF
 /** 騎士の部隊の既定（騎士の既定の兵種と、その兵種の兵数） */
 export function entryFor(k: GameKnight): RosterEntry {
   const type = defaultUnitType(k);
-  return { knightId: k.id, type, soldiers: defaultSoldiers(type), morale: DEFAULT_MORALE };
+  return { knightId: k.id, type, soldiers: defaultSoldiers(type), morale: DEFAULT_MORALE, spells: [] };
 }
 
 /** 勢力の騎士（当主が先頭、あとは統率の高い順） */
@@ -132,6 +147,7 @@ function entryStatus(roster: SideRoster, i: number, type: UnitType): UnitStatus 
     skills: EDITOR_SKILLS[i % EDITOR_SKILLS.length],
     commander: i === roster.commander,
     uncapturable: !!k.mercenaryInfo,
+    spells: e.spells,
   });
   knights.set(status, k);
   return status;
@@ -181,10 +197,17 @@ export function parseRosters(value: unknown): Rosters | null {
       typeof commander === 'number' &&
       Array.isArray(entries) &&
       entries.every(
-        (e) => !!knightById(e?.knightId) && (UNIT_TYPES as readonly string[]).includes(e.type) && Number.isFinite(e.soldiers) && Number.isFinite(e.morale),
+        (e) =>
+          !!knightById(e?.knightId) &&
+          (UNIT_TYPES as readonly string[]).includes(e.type) &&
+          Number.isFinite(e.soldiers) &&
+          Number.isFinite(e.morale) &&
+          (e.spells === undefined || (Array.isArray(e.spells) && e.spells.every((id) => (SPELL_IDS as readonly string[]).includes(id)))),
       )
     );
   };
+  // 魔法を覚える前に保存した編成には spells が無い
+  const fill = (r: SideRoster): SideRoster => ({ ...r, entries: r.entries.map((e) => ({ ...e, spells: e.spells ?? [] })) });
   const v = value as Partial<Rosters> | null;
-  return v && ok(v.attacker) && ok(v.defender) ? { attacker: v.attacker, defender: v.defender } : null;
+  return v && ok(v.attacker) && ok(v.defender) ? { attacker: fill(v.attacker), defender: fill(v.defender) } : null;
 }
