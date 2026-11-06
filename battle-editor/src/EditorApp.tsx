@@ -12,6 +12,7 @@
  * - 描画負荷: FPS・解像度・森の描き方・深度プリパス・影の更新。
  * - セリフ: 喋る場面で必ず喋らせる（確率を無視）・選択中か調べているユニットに場面ごとのセリフを言わせる。
  *   ゲームのセリフのデータで、部隊を率いる騎士が喋る（gameVoices.ts）。喋る騎士はユニットごとに選び直せる。言ったセリフの記録。
+ * - 状態: 選択中か調べているユニットに、状態（混乱・凍結・感電）を付け外しし、攻撃をクールタイム中にする（見え方の確認用）。
  * - 退却・捕縛: 軍ごとにダミーの退却先の拠点を渡すかどうか（渡さない軍は退却できない）・退却に失敗する確率と殲滅されて捕縛される確率・
  *   退却と殲滅の結果の記録。
  * 勢力は編成で選んだゲームの勢力。決着のカットインは攻撃側をプレイヤーとして勝利・敗北を出す。決着のウィンドウの「最初から」で、同じマップを読み込み直す。
@@ -28,7 +29,11 @@ import {
   BARK_CHANCE,
   BARK_SITUATION_NAMES,
   BARK_SITUATIONS,
+  ATTACK_DEFS,
   BattleScreen,
+  COMBAT_DEFS,
+  CONDITION_DEFS,
+  CONDITION_IDS,
   EXCHANGE_CHANCE,
   MAX_DEPLOY,
   MAX_MORALE,
@@ -73,9 +78,9 @@ import { gameBarks, knightCast } from './gameVoices';
 const MARGIN = 12;
 const GAP = 6;
 
-type Tool = 'map' | 'troops' | 'perf' | 'bark' | 'retreat';
+type Tool = 'map' | 'troops' | 'perf' | 'bark' | 'status' | 'retreat';
 
-const TOOLS: Record<Tool, string> = { map: 'マップ', troops: '部隊', perf: '描画負荷', bark: 'セリフ', retreat: '退却・捕縛' };
+const TOOLS: Record<Tool, string> = { map: 'マップ', troops: '部隊', perf: '描画負荷', bark: 'セリフ', status: '状態', retreat: '退却・捕縛' };
 /** 幅の広いウィンドウの道具 */
 const WIDE_TOOLS: ReadonlySet<Tool> = new Set(['troops']);
 
@@ -269,6 +274,7 @@ export default function EditorApp() {
           troops: <TroopsTool draft={draft} onDraft={setDraft} dirty={draft !== rosters} onApply={applyRosters} />,
           perf: app && <PerfTool app={app} />,
           bark: app && <BarkTool app={app} />,
+          status: app && <StatusTool app={app} factions={factions} />,
           retreat: app && <RetreatTool app={app} factions={factions} teams={retreatTeams} onTeams={setRetreatTeams} />,
         }}
       />
@@ -817,6 +823,63 @@ function TroopsTool({ draft, onDraft, dirty, onApply }: { draft: Rosters; onDraf
         {dirty ? '（未反映の変更あり）' : ''}
       </p>
       <p className="hint">スキルはゲームの騎士にまだ無いので、表示確認用に行の順で仮に配る。配備の無いマップでは、防衛側を赤軍・攻撃側を青軍のユニットに上から順に割り当てる</p>
+    </>
+  );
+}
+
+/** 状態を付けるときのターン数・クールタイムの回数 */
+const TEST_TURNS = 2;
+
+function StatusTool({ app, factions }: { app: BattleApp; factions: BattleFactions }) {
+  /** 選択中か調べているユニット */
+  const [unit, setUnit] = useState<UnitData | null>(app.plan?.unit ?? app.inspected);
+  const [, setVersion] = useState(0);
+  useEffect(() => {
+    const bump = () => setVersion((v) => v + 1);
+    const offs = [
+      app.on('select', setUnit),
+      app.on('load', () => setUnit(null)),
+      app.on('statusChange', bump),
+      app.on('turn', bump),
+      app.on('execute', bump),
+    ];
+    return () => offs.forEach((off) => off());
+  }, [app]);
+  const status = unit && app.statuses.get(unit);
+  if (!unit || !status) return <p className="hint">ユニットを選ぶか、相手方のユニットをクリックしてください</p>;
+  return (
+    <>
+      <p className="hint">
+        {app.leaderOf(unit) ?? UNIT_DEFS[unit.type].name}（{teamName(factions, unit.team)}）。状態は付いた軍の番が終わるたびに 1 減り、クールタイムは自分の番が始まるたびに 1 減る
+      </p>
+      {CONDITION_IDS.map((id) => {
+        const c = status.conditions.find((x) => x.id === id);
+        return (
+          <label key={id} className="row">
+            <span>
+              {CONDITION_DEFS[id].name}
+              {c ? `（あと ${c.turns}）` : ''}
+            </span>
+            <button onClick={() => app.setCondition(unit, id, TEST_TURNS)}>{TEST_TURNS} ターン付ける</button>
+            <button onClick={() => app.setCondition(unit, id, 0)} disabled={!c}>
+              外す
+            </button>
+          </label>
+        );
+      })}
+      <p className="hint">攻撃のクールタイム（行動メニューで灰色になり、あと何ターンかが出る）</p>
+      {COMBAT_DEFS[unit.type].attacks.map((id) => (
+        <label key={id} className="row">
+          <span>
+            {ATTACK_DEFS[id].name}
+            {status.cooldowns[id] ? `（あと ${status.cooldowns[id]}）` : ''}
+          </span>
+          <button onClick={() => app.setCooldown(unit, id, TEST_TURNS)}>{TEST_TURNS} ターン待たせる</button>
+          <button onClick={() => app.setCooldown(unit, id, 0)} disabled={!status.cooldowns[id]}>
+            外す
+          </button>
+        </label>
+      ))}
     </>
   );
 }

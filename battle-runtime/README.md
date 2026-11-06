@@ -111,8 +111,10 @@ src/
   app.ts           戦闘画面の本体（MapView・ポインタ操作・配備と交互のターン・予約と実行のアニメーション）。BattleEvents で知らせる
   deployment.ts    配備フェーズ（配備する部隊・配置地点への置き方・陣営の順）
   menuModel.ts     行動メニューの状態（中身・2 階層目・毎フレームの位置の基準）
-  actions.ts       行動の定義と行動メニューの項目の組み立て
-  combat.ts        攻撃の種類・射程・相手・結果
+  actions.ts       行動の定義と行動メニューの項目の組み立て（攻撃の項目は兵種の攻撃の一覧から）
+  attacks.ts       攻撃の定義（倍率・狙い方・射程・当たる範囲・巻き添え・クールタイム・付く状態・演出）
+  conditions.ts    ユニットに付く状態（混乱・凍結・感電。名前と印、残りターンの数え方。効果はまだ無い）とクールタイムの数え方
+  combat.ts        兵種ごとの攻撃（COMBAT_DEFS）、攻撃の定義の補完（resolveAttack）・狙える HEX・当たる範囲・巻き添え・結果と予測
   damage.ts        ダメージの計算（ユニットそのものの力と戦う状況の倍率。基本攻撃力・基本防御力）
   morale.ts        士気の増減
   movement.ts      移動の範囲・経路・ZOC
@@ -139,4 +141,6 @@ src/
     statusText.tsx       ステータス行の案内
     factionsContext.ts   BattleScreen に渡された勢力を中の UI に配る（useTeamName）
     battle.css           戦闘画面のスタイル（すべて .battle-screen の中）
+  test/fixtures.ts       ルールの単体テストの道具（three.js を使わない平地のマップ・ユニット・状態）
+  *.test.ts              ルールの単体テスト（vitest。combat.test.ts のダメージの表はスナップショットで、ルールを作り替えても値が変わらないことを確かめる）
 ```

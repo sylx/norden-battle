@@ -114,10 +114,10 @@ function forecastRows(app: BattleApp, cell: HexCell): InfoRow[] {
       </>,
     ]);
     const team = app.plan?.unit.team;
-    for (const p of f.pierced) {
+    for (const p of f.splash) {
       const text = `(${p.unit.col}, ${p.unit.row}) ${range(p.damage)}`;
       if (p.unit.team === team) rows.push(['巻き添え', <Err>味方 {text}</Err>]);
-      else rows.push(['手前の敵', text]);
+      else rows.push(['範囲の敵', text]);
     }
   }
   return rows;

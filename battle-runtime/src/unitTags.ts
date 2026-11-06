@@ -10,11 +10,13 @@
  * - 選択中のユニットの札は出さない（部隊のウィンドウに同じ中身を出す。renderStatus を共用する）。
  * - 行動済みのユニットは、絵の右上に E の印を付ける（setMarks。絵を暗くするのは BattleApp）。札は暗くしない。
  * - 軍団長の部隊（UnitStatus.commander）は、絵の左上に L（Leader）の印を付ける（どちらの軍も、選択中でも付ける）。
+ * - 付いている状態（UnitStatus.conditions。conditions.ts）は、札の右上に 1 文字の印を並べる（部隊のウィンドウの札も同じ）。
  */
 import * as THREE from 'three';
 import type { Offset } from '@norden/map-runtime/core/hex';
 import { TEAM_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
+import { CONDITION_DEFS } from './conditions';
 import { MAX_MORALE, type UnitStatus } from './unitStatus';
 
 /** 札の大きさ（CSS ピクセル。ui/battle.css の .unit-tag と合わせる） */
@@ -261,7 +263,7 @@ export class UnitTags {
   }
 
   private render(tag: Tag, s: UnitStatus, active: boolean): void {
-    const key = `${s.soldiers}/${s.initialSoldiers}/${s.morale}/${s.portrait?.url ?? ''}/${active}`;
+    const key = `${s.soldiers}/${s.initialSoldiers}/${s.morale}/${s.portrait?.url ?? ''}/${active}/${s.conditions.map((c) => c.id).join(',')}`;
     if (key === tag.shown) return;
     tag.shown = key;
     tag.el.classList.toggle('active', active);
@@ -290,7 +292,8 @@ export const STATUS_HTML = `
   <div class="bars">
     <div class="bar soldiers"><span class="label">兵数</span><span class="value"></span><div class="track"><div class="fill"></div></div></div>
     <div class="bar morale"><span class="label">士気</span><span class="value"></span><div class="track"><div class="fill"></div></div></div>
-  </div>`;
+  </div>
+  <div class="conds"></div>`;
 
 /** STATUS_HTML を入れた要素に値を入れる */
 export function renderStatus(el: HTMLElement, s: UnitStatus): void {
@@ -303,6 +306,18 @@ export function renderStatus(el: HTMLElement, s: UnitStatus): void {
   el.classList.toggle('low-morale', s.morale < LOW_MORALE);
   el.classList.toggle('low-soldiers', s.soldiers <= LOW_SOLDIERS);
   setFace(q('.face'), s, FACE_SIZE);
+  const conds = q('.conds');
+  conds.replaceChildren(
+    ...s.conditions.map((c) => {
+      const def = CONDITION_DEFS[c.id];
+      const mark = document.createElement('span');
+      mark.className = 'cond';
+      mark.textContent = def.mark;
+      mark.title = `${def.name}（あと ${c.turns} ターン）`;
+      mark.style.setProperty('--cond', def.color);
+      return mark;
+    }),
+  );
 }
 
 /** el の背景に指揮官の顔を入れる。portrait の範囲の短い辺を size に合わせ、真ん中を円に収める。portrait が無ければ顔を出さない */

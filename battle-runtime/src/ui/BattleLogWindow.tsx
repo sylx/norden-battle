@@ -12,14 +12,14 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSPropert
 import { ThinFrameWithTitle } from 'norden-ui';
 import type { Offset } from '@norden/map-runtime/core/hex';
 import { TEAM_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
-import type { BattleApp, ExecuteReport, PierceHit } from '../app';
+import type { BattleApp, ExecuteReport, SplashHit } from '../app';
 import type { MoraleChange } from '../morale';
 import { useTeamName, useUnitName } from './factionsContext';
 
 /** 攻撃 1 回分の記録 */
 export interface AttackLogEntry {
-  /** intercept: 迎撃の構えの間接ユニットの自動攻撃、pierce: ライフル兵の弾が目標の手前のユニットに当たった（味方なら巻き添え） */
-  kind?: 'intercept' | 'pierce';
+  /** intercept: 迎撃の構えの間接ユニットの自動攻撃、splash: 攻撃の範囲の巻き添えで当たった（ライフル兵の弾が目標の手前のユニットに当たったなど。味方なら巻き添え） */
+  kind?: 'intercept' | 'splash';
   turn: number;
   /** 記録した番の軍（迎撃は相手の番に起きる） */
   team: TeamId;
@@ -250,11 +250,11 @@ function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: Exec
   const out: AttackLogEntry[] = [];
   const captured = (u: UnitData) => wipeouts.some((w) => w.unit === u && w.captured);
   // 目標の手前で弾が当たったユニットは、撃った攻撃の記録の後に並べる（味方に当たったものは巻き添えと出す）
-  const addPierced = (shooter: UnitData, actionName: string, hits: readonly PierceHit[]) => {
+  const addSplash = (shooter: UnitData, actionName: string, hits: readonly SplashHit[]) => {
     for (const h of hits) {
       const { result } = h;
       out.push({
-        kind: 'pierce',
+        kind: 'splash',
         turn: app.turn,
         team: app.activeTeam,
         attacker: shooter,
@@ -302,7 +302,7 @@ function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: Exec
         halted: i.halted,
         targetCaptured: i.targetLeft <= 0 && captured(unit),
       });
-      addPierced(i.unit, '迎撃', i.pierced);
+      addSplash(i.unit, '迎撃', i.splash);
     }
   };
   addIntercepts(false);
@@ -330,7 +330,7 @@ function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: Exec
       attackerCaptured: captured(unit),
       targetCaptured: captured(attack.target),
     });
-    addPierced(unit, attack.action.name, attack.pierced);
+    addSplash(unit, attack.action.name, attack.splash);
   }
   addIntercepts(true);
   return out;

@@ -3,12 +3,15 @@
  *
  * - カーソルの下のユニット → 選択中のユニット → 調べている相手方のユニットの順に、1 部隊の情報を出す。どれも無ければ隠す。
  * - 顔・兵士数・士気（情報札と同じ中身）、残り行動力、指揮官の統率・武力・知力とスキル、いまの様子（行動済み・迎撃の構えなど）。
+ * - 付いている状態（と残りのターン数）、クールタイム中の攻撃（とあと何ターンで使えるか）があれば出す。
  * - 枠は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）。表示するだけなので、マウスは下のマップへ通す。
  */
 import { useEffect, useState, type CSSProperties } from 'react';
 import { ThinFrameWithTitle } from 'norden-ui';
 import { TEAM_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import { SKILL_DEFS } from '../actions';
+import { ATTACK_DEFS, type AttackId } from '../attacks';
+import { CONDITION_DEFS } from '../conditions';
 import type { BattleApp } from '../app';
 import { COMBAT_DEFS } from '../combat';
 import type { UnitStatus } from '../unitStatus';
@@ -30,6 +33,7 @@ export default function UnitInfoWindow({ app }: { app: BattleApp }) {
       app.on('planChange', bump),
       app.on('execute', bump),
       app.on('turn', bump),
+      app.on('statusChange', bump),
     ];
     return () => {
       for (const off of offs) off();
@@ -42,6 +46,7 @@ export default function UnitInfoWindow({ app }: { app: BattleApp }) {
 
   const team = TEAM_DEFS[unit.team];
   const magic = COMBAT_DEFS[unit.type].magic;
+  const cooldowns = Object.entries(status.cooldowns) as [AttackId, number][];
   return (
     <ThinFrameWithTitle title="騎士" className="battle-window unit-info" style={{ '--team': team.color } as CSSProperties}>
       <div className="info-head">
@@ -61,6 +66,18 @@ export default function UnitInfoWindow({ app }: { app: BattleApp }) {
         </dd>
         <dt>スキル</dt>
         <dd>{status.skills.length > 0 ? status.skills.map((s) => SKILL_DEFS[s].name).join('・') : <span className="none">なし</span>}</dd>
+        {status.conditions.length > 0 && (
+          <>
+            <dt>状態</dt>
+            <dd>{status.conditions.map((c) => `${CONDITION_DEFS[c.id].name}（あと ${c.turns}）`).join('・')}</dd>
+          </>
+        )}
+        {cooldowns.length > 0 && (
+          <>
+            <dt>クールタイム</dt>
+            <dd>{cooldowns.map(([id, n]) => `${ATTACK_DEFS[id].name}（あと ${n}）`).join('・')}</dd>
+          </>
+        )}
       </dl>
       {/* 指揮官の能力（0..100）。魔術師は武力の代わりに知力を使う */}
       <div className="info-stats">

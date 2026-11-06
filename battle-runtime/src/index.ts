@@ -5,7 +5,7 @@ export type { AttackLogEntry } from './ui/BattleLogWindow';
 
 // 戦闘画面の本体（three.js のマップ・ユニット・入力）
 export { BattleApp, TURN_ORDER } from './app';
-export type { BattleEvents, BattlePhase, ExecuteReport, InterceptReport, PierceHit, Plan, PlannedAttack, StatusFactory } from './app';
+export type { BattleEvents, BattlePhase, ExecuteReport, InterceptReport, Plan, PlannedAttack, SplashHit, StatusFactory } from './app';
 export type { ActionMenuModel, MenuFrame, MenuState, RetreatMenu } from './menuModel';
 
 // 配備フェーズ
@@ -16,6 +16,12 @@ export type { DeployState, Troop, TroopFactory } from './deployment';
 export { demoFactions, OTHER_FACTION_NAME, teamName, unitName } from './factions';
 export type { BattleFaction, BattleFactions } from './factions';
 
+// 攻撃の定義（兵種ごとの使える攻撃は COMBAT_DEFS）と、ユニットに付く状態
+export { ATTACK_DEFS, ATTACK_IDS } from './attacks';
+export type { AttackDef, AttackId, Inflict, MenuAttackId, Shape, StrikeFxKind } from './attacks';
+export { CONDITION_DEFS, CONDITION_IDS } from './conditions';
+export type { Condition, ConditionDef, ConditionId } from './conditions';
+
 // ユニットの戦闘中の状態
 export { demoStatus, demoStatuses, MAX_MORALE, troopStatus } from './unitStatus';
 export type { Portrait, TroopInit, UnitStatus } from './unitStatus';
@@ -23,7 +29,8 @@ export type { Portrait, TroopInit, UnitStatus } from './unitStatus';
 // ユニットそのものの力（基本攻撃力・基本防御力。戦う前の比べ合いに使う）
 export { basicAttack, basicDefense, MAX_BASIC_DEFENSE, STANDARD_UNIT } from './damage';
 export type { UnitPower } from './damage';
-export { mightFor } from './combat';
+export { COMBAT_DEFS, mightFor, resolveAttack } from './combat';
+export type { CombatDef, ResolvedAttack } from './combat';
 export type { ActionId, MenuAction, MenuChild, SkillId } from './actions';
 
 // 退却（退却先の拠点は軍ごとに使う側が渡し、結果は RetreatReport で受け取る）

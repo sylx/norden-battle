@@ -180,6 +180,29 @@
   display: none;
 }
 
+/* 付いている状態の印（unitTags.ts の renderStatus。札の右上に 1 文字ずつ並べる） */
+.battle-screen .unit-tag .conds {
+  position: absolute;
+  top: -8px;
+  right: 4px;
+  display: flex;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.battle-screen .unit-tag .cond {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  font-weight: bold;
+  color: #1a130d;
+  background: var(--cond);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
 /* 行動済みのユニットの E の印（unitTags.ts。ユニットの絵の右上。札より手前） */
 .battle-screen .unit-end-mark {
   position: absolute;
@@ -895,7 +918,8 @@
 }
 
 .battle-screen .unit-info .unit-tag.in-info {
-  position: static;
+  /* 状態の印（.conds）の基準にする */
+  position: relative;
   width: auto;
   box-shadow: none;
   will-change: auto;
@@ -1421,7 +1445,8 @@
 }
 
 .battle-screen .deploy-window .unit-tag.in-list {
-  position: static;
+  /* 状態の印（.conds）の基準にする */
+  position: relative;
   width: auto;
   box-shadow: none;
   will-change: auto;

@@ -4,6 +4,8 @@
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { SkillId } from './actions';
+import type { AttackId } from './attacks';
+import type { Condition } from './conditions';
 
 export interface UnitStatus {
   soldiers: number;
@@ -36,6 +38,10 @@ export interface UnitStatus {
   commander?: boolean;
   /** 捕縛されない部隊か（傭兵。退却は失敗せず、殲滅されても指揮官は捕まらない） */
   uncapturable?: boolean;
+  /** クールタイム中の攻撃と、あと何回の自分の番で使えるようになるか（attacks.ts の cooldown。conditions.ts の tickCooldowns） */
+  cooldowns: Partial<Record<AttackId, number>>;
+  /** 付いている状態（conditions.ts） */
+  conditions: Condition[];
 }
 
 /** 指揮官の顔を切り出す画像と範囲（大きさはどれも画像の px） */
@@ -89,6 +95,8 @@ export function troopStatus(type: UnitType, init: TroopInit): UnitStatus {
     intercepting: false,
     commander: init.commander ?? false,
     ...(init.uncapturable && { uncapturable: true }),
+    cooldowns: {},
+    conditions: [],
   };
 }
 
@@ -183,6 +191,8 @@ export function demoStatus(type: UnitType, commander: number, r1: number, r2: nu
     attacked: false,
     justAttacked: false,
     intercepting: false,
+    cooldowns: {},
+    conditions: [],
   };
 }
 

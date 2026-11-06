@@ -11,8 +11,10 @@
  * 攻撃は 1 ターンに 1 回で、攻撃を予約した後は移動できない（騎兵は除く）。
  * 退却は「特殊」の中（指揮官のスキルの後）に並べ、ターンの初め（待機・鼓舞などで行動力を使う前）だけ選べる。行動力は使わない。
  * 退却先の拠点が無い軍のユニット・ターンの初めでないときは選べない（灰色で理由を持つ）。選ぶと退却先の拠点の一覧を出し、拠点を選ぶと退却する（retreat.ts）。
+ * 「攻撃」の 2 階層目は兵種の攻撃の一覧（combat.ts の COMBAT_DEFS の attacks。定義は attacks.ts）の順に並ぶ。
  * 魔術師・上級魔術師は通常攻撃の代わりにサンダーフォール（行動力 4。最大行動力と同じなので移動した後は撃てない）。
  * 一斉攻撃は直接攻撃の兵種だけで、射程内に自分のほかの味方とも隣接している敵がいるときだけ並ぶ（hasVolleyTargets）。
+ * クールタイム中の攻撃（UnitStatus.cooldowns）は灰色で残し、あと何ターンで使えるかを理由に出す。
  * 迎撃は選んだらすぐに実行し（予約した移動があればそこまで動く）、迎撃の構えで待機して行動を終える。攻撃の後と騎兵はできない。
  * 待機（行動力 0）も選んだらすぐに実行し（予約した行動があれば実行してから）、残りの行動力を捨てて行動を終える。
  * 行動力が残っていない（待機・迎撃で行動を終えた後など）ときは待機を選べない。
@@ -20,14 +22,13 @@
  * ほかのスキルはまだ処理が無い。
  */
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
+import { ATTACK_DEFS, type MenuAttackId } from './attacks';
+import { COMBAT_DEFS } from './combat';
 import type { UnitStatus } from './unitStatus';
 
 export type ActionId =
   | 'move'
-  | 'attack'
-  | 'volley'
-  | 'charge'
-  | 'thunderfall'
+  | MenuAttackId
   | 'intercept'
   | 'wait'
   | 'retreat'
@@ -64,7 +65,7 @@ interface ActionDef {
 
 interface GroupDef {
   name: string;
-  /** 攻撃の項目（攻撃できる相手・攻撃済みかで選べるかが変わる） */
+  /** 攻撃の項目（2 階層目は兵種の攻撃の一覧。攻撃できる相手・攻撃済みかで選べるかが変わる） */
   attack?: boolean;
   /** 2 階層目の先頭に指揮官のスキルを並べる */
   skills?: boolean;
@@ -75,18 +76,7 @@ interface GroupDef {
 /** 1 階層目の並び */
 const MENU: readonly (ActionDef | GroupDef)[] = [
   { id: 'move', name: '移動' },
-  {
-    name: '攻撃',
-    attack: true,
-    children: [
-      { id: 'attack', name: '通常攻撃', cost: 2, types: ['infantry', 'archer', 'cavalry', 'rifleman', 'artillery', 'landsknecht'] },
-      // 直接攻撃の兵種だけ（間接の弓兵・魔術師・ライフル兵・砲兵はできない）
-      { id: 'volley', name: '一斉攻撃', cost: 4, types: ['infantry', 'cavalry', 'landsknecht'] },
-      { id: 'charge', name: '突撃', cost: 3, types: ['cavalry'] },
-      // 魔術師の攻撃（間接攻撃。魔法の名前はいずれ指揮官の属性で変えるかもしれない）
-      { id: 'thunderfall', name: 'サンダーフォール', cost: 4, types: ['mage', 'wizard'] },
-    ],
-  },
+  { name: '攻撃', attack: true, children: [] },
   // 騎兵はできない
   { id: 'intercept', name: '迎撃', cost: 2, types: ['infantry', 'archer', 'mage', 'rifleman', 'artillery', 'landsknecht', 'wizard'] },
   // 行動力が余ったときに行動を終える
@@ -122,6 +112,8 @@ export interface MenuContext {
   canMoveAfterAttack: boolean;
   /** 攻撃できる敵がいるか（予約した移動先から） */
   hasTargets: boolean;
+  /** 予約した移動先から狙える相手のいる攻撃（射程が攻撃ごとに違うため。無い攻撃は並べない） */
+  targetable: readonly MenuAttackId[];
   /** 一斉攻撃できる敵（攻撃できる敵のうち、自分のほかの味方とも隣接している敵）がいるか */
   hasVolleyTargets: boolean;
 }
@@ -151,16 +143,23 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
   const { unit, status, ap, canMove, zocLocked, planned } = ctx;
   const lacksAp = (cost: number | undefined) => ap < (cost ?? 0);
   /** 2 階層目の行動を選べない理由（選べるなら null） */
+  const cooldownReason = (c: MenuAction): string | null => {
+    const n = (status.cooldowns as Partial<Record<string, number>>)[c.id];
+    return n ? `あと ${n} ターン` : null;
+  };
   const childReason = (c: MenuAction): string | null =>
-    lacksAp(c.cost)
+    cooldownReason(c) ??
+    (lacksAp(c.cost)
       ? '行動力が足りない'
-      : c.id === 'volley' && !ctx.hasVolleyTargets
+      : isMenuAttack(c.id) && !ctx.targetable.includes(c.id)
+        ? '狙える敵がいない'
+        : c.id === 'volley' && !ctx.hasVolleyTargets
         ? '取り囲んだ敵がいない'
         : c.id === 'retreat' && !ctx.canRetreat
           ? '退却できる拠点がない'
           : c.id === 'retreat' && (!ctx.turnStart || status.ap < status.maxAp)
             ? 'ターンの初めしか退却できない'
-            : null;
+            : null);
   const entries = MENU.map((def): MenuEntry => {
     if ('id' in def) {
       const action = { id: def.id, name: def.name, cost: def.cost };
@@ -181,13 +180,15 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
     }
     const cands: (MenuAction & { keepDisabled?: boolean })[] = [
       ...(def.skills ? status.skills.map((s) => ({ id: `skill:${s}` as const, name: SKILL_DEFS[s].name, cost: SKILL_DEFS[s].cost })) : []),
+      ...(def.attack ? attackActions(unit.type) : []),
       ...def.children.filter((c) => !c.types || c.types.includes(unit.type)).map(({ id, name, cost, keepDisabled }) => ({ id, name, cost, keepDisabled })),
     ];
     if (cands.length === 0) return { name: def.name, enabled: false, reason: 'この兵種は使えない' };
     const children = cands.flatMap(({ keepDisabled, ...c }): MenuChild[] => {
       const reason = childReason(c);
       if (reason === null) return [c];
-      return keepDisabled ? [{ ...c, reason }] : [];
+      // クールタイム中の攻撃は灰色で残す
+      return keepDisabled || cooldownReason(c) ? [{ ...c, reason }] : [];
     });
     // 選べるものが無ければ選べない（灰色で残したものの理由を先に出す）
     if (!children.some((c) => !c.reason)) return { name: def.name, enabled: false, reason: children[0]?.reason ?? childReason(cands[0])! };
@@ -213,10 +214,19 @@ export function canAct(ctx: MenuContext): boolean {
   });
 }
 
+/** 兵種の攻撃の行動メニューの項目（兵種の攻撃の一覧の順） */
+function attackActions(type: UnitType): MenuAction[] {
+  return COMBAT_DEFS[type].attacks.map((id) => ({ id, name: ATTACK_DEFS[id].name, cost: ATTACK_DEFS[id].cost }));
+}
+
+function isMenuAttack(id: ActionId): id is MenuAttackId {
+  return id in ATTACK_DEFS;
+}
+
 /** 兵種の攻撃（一斉攻撃を除く）のうち、いちばん少ない行動力（攻撃できない兵種は null） */
 export function minAttackCost(type: UnitType): number | null {
-  const costs = MENU.flatMap((def) =>
-    'attack' in def && def.attack ? def.children.filter((c) => c.id !== 'volley' && (!c.types || c.types.includes(type))).map((c) => c.cost ?? 0) : [],
-  );
+  const costs = attackActions(type)
+    .filter((a) => a.id !== 'volley')
+    .map((a) => a.cost ?? 0);
   return costs.length > 0 ? Math.min(...costs) : null;
 }

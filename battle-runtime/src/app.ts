@@ -20,7 +20,10 @@
  *   一斉攻撃は、加わる味方も含めた全員へ寄り、それぞれの兵種の演出（斬撃・ランス）を少しずつずらして出す。
  *   突撃で駆け抜けるときは、飛び出る先の HEX まで画面に収める。
  *   兵数が 0 になったユニットは消える。
- * - ライフル兵の弾は、目標の手前の HEX にいるユニットにも敵・味方を問わず当たる（combat.ts の piercedUnits）。迎撃も同じ。
+ * - 攻撃の範囲（attacks.ts の shape）にいる目標以外のユニットにも巻き添えで当たる（combat.ts の splashUnits）。ライフル兵の弾は、
+ *   目標の手前の HEX にいるユニットにも敵・味方を問わず当たる。迎撃も同じ。攻撃の相手を選ぶときは、カーソルを乗せた相手で当たる範囲を塗る。
+ * - クールタイムのある攻撃は、使った次の自分の番から使えない（UnitStatus.cooldowns。軍の番が始まるときに減らす）。
+ * - 状態（conditions.ts）は、付いたユニットの軍の番が終わるときに残りのターンを減らす。攻撃の inflicts で付く。
  *   味方に当たったときだけ「巻き添え」と出す。手前で当たって壊滅したユニットも、実行を終えたときに消える
  *   （迎撃の構えのユニットなら、それより後の迎撃は撃たない）。
  * - 迎撃（騎兵はできない）は選んだらすぐに実行する。予約した移動があればそこまで歩き、迎撃の構えで待機して行動を終える（行動力は 0 になる）。
@@ -80,7 +83,8 @@ import { MapView } from '@norden/map-runtime/render/mapView';
 import { SceneContext } from '@norden/map-runtime/render/scene';
 import type { RangeCell } from '@norden/map-runtime/render/hexOverlay';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
-import { canAct, minAttackCost, SKILL_DEFS, type ActionId, type MenuAction, type MenuContext } from './actions';
+import { canAct, SKILL_DEFS, type MenuAction, type MenuContext } from './actions';
+import type { AttackId, MenuAttackId, StrikeFxKind } from './attacks';
 import { BARK_CHANCE, BARK_TONE, demoBarks, EXCHANGE_CHANCE, type BarkSituation, type BarkSource, type BarkSpeaker } from './barks';
 import {
   attackArc,
@@ -92,17 +96,21 @@ import {
   COMBAT_DEFS,
   hexDistance,
   interceptorsAt,
+  areaCells,
   isAttack,
-  piercedUnits,
-  pierceResult,
+  resolveAttack,
+  splashResult,
+  splashUnits,
   volleySupporters,
+  type ResolvedAttack,
   type AttackForecast,
   type AttackResult,
   type Combatant,
 } from './combat';
 import { ARROW_HIT_SEC, ARROW_RELEASE_SEC, ArrowEffects } from './arrowFx';
 import { CameraFocus, type FocusTiming } from './cameraFocus';
-import { randomRoll, type AttackKind } from './damage';
+import { setCondition, tickConditions, tickCooldowns, type ConditionId } from './conditions';
+import { randomRoll } from './damage';
 import { demoTroops, Deployment, SIDE_TEAM, type DeployState, type TroopFactory } from './deployment';
 import { InterceptEffects } from './interceptFx';
 import { LANCE_HIT_SEC, LanceEffects } from './lanceFx';
@@ -126,6 +134,8 @@ const MOVE_ZOC_COLOR = 0xff8a3a;
 /** 攻撃できる相手の HEX の色と、一斉攻撃でそのうち選べる（味方と取り囲んだ）相手の印の色 */
 const ATTACK_RANGE_COLOR = 0xff4a3a;
 const VOLLEY_MARK_COLOR = 0xffd060;
+/** 攻撃の相手を選ぶときに、カーソルを乗せた相手で当たる範囲の色 */
+const SPLASH_AREA_COLOR = 0xffa040;
 /** 一斉攻撃で、ほかの味方と取り囲んでいない相手を選んだときの知らせ */
 const NOT_SURROUNDED = '包囲していません';
 /** 移動のアニメーションの速さ（1 秒に進む HEX 数）と、最短の時間（秒） */
@@ -179,13 +189,6 @@ const RETREAT_CAPTURE_T = 0.35;
 /** 防衛拠点の HEX の地面の色 */
 const STRONGHOLD_COLOR = 0xf0c030;
 
-/**
- * 攻撃の演出の種類。slash: 光の剣で斬る（歩兵の通常攻撃）、lance: 光るランスで貫く（騎兵の通常攻撃・突撃）、
- * arrows: 光の矢の雨（弓兵の通常攻撃）、thunder: 頭上に落ちる雷（魔術師のサンダーフォール）、
- * bullets: まっすぐ飛ぶ光の弾（ライフル兵の通常攻撃）、shell: 放物線で飛ぶ大きな光の弾（砲兵の通常攻撃）
- */
-type StrikeFxKind = 'slash' | 'lance' | 'arrows' | 'thunder' | 'bullets' | 'shell';
-
 /** 一斉攻撃で、加わるユニットごとにエフェクトをずらす時間（秒） */
 const VOLLEY_FX_STAGGER_SEC = 0.06;
 
@@ -208,6 +211,8 @@ export type BattlePhase = 'deploy' | 'battle';
 /** 予約した攻撃 */
 export interface PlannedAttack {
   action: MenuAction;
+  /** 攻撃の ID（action.id と同じ） */
+  id: MenuAttackId;
   target: UnitData;
   /** 何回目の移動の後に攻撃するか（legs のうち、これより前が攻撃前の移動、以降が攻撃後の移動） */
   afterLeg: number;
@@ -240,8 +245,8 @@ export interface ExecuteReport {
     /** 攻撃の後の兵数（自分・相手） */
     unitLeft: number;
     targetLeft: number;
-    /** 目標の手前で弾が当たったユニット（ライフル兵。当たらなければ空） */
-    pierced: PierceHit[];
+    /** 範囲の巻き添えで当たったユニット（ライフル兵の弾が目標の手前で当たったものなど。当たらなければ空） */
+    splash: SplashHit[];
   };
   /** 移動の途中で受けた、迎撃の構えの間接ユニットからの自動攻撃（受けた順） */
   intercepts: InterceptReport[];
@@ -278,12 +283,12 @@ export interface InterceptReport {
   afterAttack: boolean;
   /** この迎撃で足止めされたか（同じ HEX で続けて撃たれたときは最後の 1 回） */
   halted: boolean;
-  /** 撃たれたユニットの手前で弾が当たったユニット（ライフル兵。当たらなければ空） */
-  pierced: PierceHit[];
+  /** 範囲の巻き添えで当たったユニット（ライフル兵の弾が撃たれたユニットの手前で当たったものなど。当たらなければ空） */
+  splash: SplashHit[];
 }
 
-/** ライフル兵の弾が目標の手前で当たったユニット 1 つ分（敵・味方を問わない。味方に当たったものが巻き添え） */
-export interface PierceHit {
+/** 範囲の巻き添えで当たったユニット 1 つ分（敵・味方を問わない。味方に当たったものは「巻き添え」と出す） */
+export interface SplashHit {
   unit: UnitData;
   /** 撃ったユニットの味方か（巻き添え） */
   friendly: boolean;
@@ -329,6 +334,8 @@ export interface BattleEvents {
   end: [outcome: BattleOutcome];
   /** ユニットがセリフを言うと決まったとき（掛け合いの 2 行目からなど、吹き出しを出すのは遅れることがある） */
   bark: [unit: UnitData, situation: BarkSituation | 'exchange', text: string];
+  /** 実行のほかで、ユニットの状態（付いている状態など）を書き換えたとき（表示確認用の setCondition など） */
+  statusChange: [unit: UnitData];
 }
 
 /** マップのユニットに戦闘中の状態を配る（既定は表示確認用の仮の値） */
@@ -337,7 +344,14 @@ export type StatusFactory = (units: readonly UnitData[]) => Map<UnitData, UnitSt
 /** 移動先・攻撃の相手を選んでいる状態 */
 type Targeting =
   | { kind: 'move'; cells: Map<number, MoveStep> }
-  | { kind: 'attack'; action: MenuAction; cells: Map<number, UnitData> };
+  | {
+      kind: 'attack';
+      action: MenuAction;
+      attack: ResolvedAttack;
+      cells: Map<number, UnitData>;
+      /** 狙える HEX の塗り（カーソルを乗せた相手で当たる範囲を重ねる前） */
+      range: RangeCell[];
+    };
 
 /**
  * 実行の 1 段階。
@@ -504,7 +518,7 @@ export class BattleApp {
       if (action.id === 'cancel') return this.clearPlan();
       if (action.id === 'retreat') this.openRetreat(unit);
       else if (action.id === 'move') this.startMove();
-      else if (isAttack(action.id)) this.startAttack(action);
+      else if (isAttack(action.id)) this.startAttack(action, action.id);
       this.emit('action', unit, action);
     };
     this.menu.onRetreat = (_unit, to) => this.execute('retreat', to);
@@ -730,6 +744,8 @@ export class BattleApp {
     // 番を終えると、その軍のユニットは行動を終える（防衛拠点にいれば入城）
     this.judge(this.map.allUnits().filter((u) => u.team === this.activeTeam));
     if (this.outcome || this.rout) return false;
+    // 番を終えた軍のユニットの状態の残りターンを減らす
+    for (const [unit, status] of this.statuses) if (unit.team === this.activeTeam) tickConditions(status);
     const next = this.nextTeam(this.activeTeam);
     if (TURN_ORDER.indexOf(next) <= TURN_ORDER.indexOf(this.activeTeam)) this.turn++;
     this.activeTeam = next;
@@ -779,7 +795,35 @@ export class BattleApp {
       status.moved = false;
       status.attacked = false;
       status.justAttacked = false;
+      tickCooldowns(status);
     }
+  }
+
+  /**
+   * 表示確認用: unit に id の状態を turns ターン付ける（付いていれば長いほうにする。turns が 0 以下なら外す）。
+   * ゲームの進行では攻撃の inflicts で付く
+   */
+  setCondition(unit: UnitData, id: ConditionId, turns: number): void {
+    const status = this.statuses.get(unit);
+    if (!status) return;
+    setCondition(status, id, turns);
+    this.statusChanged(unit);
+  }
+
+  /** 表示確認用: unit の id の攻撃を、あと turns 回の自分の番は使えないようにする（0 以下で外す）。ゲームの進行では攻撃の cooldown で入る */
+  setCooldown(unit: UnitData, id: AttackId, turns: number): void {
+    const status = this.statuses.get(unit);
+    if (!status) return;
+    if (turns > 0) status.cooldowns[id] = turns;
+    else delete status.cooldowns[id];
+    this.statusChanged(unit);
+  }
+
+  /** 実行のほかでユニットの状態を書き換えたら、行動メニューと行動済みの印を作り直して知らせる */
+  private statusChanged(unit: UnitData): void {
+    if (this.plan?.unit === unit && !this.targeting && !this.exec) this.openMenu();
+    this.refreshMarks();
+    this.emit('statusChange', unit);
   }
 
   /** 移動先を選ぶ状態のとき、o へ移動するときの最短経路（移動できなければ null） */
@@ -799,19 +843,20 @@ export class BattleApp {
     const target = this.targeting.cells.get(o.row * map.layout.cols + o.col);
     const ts = target && this.statuses.get(target);
     if (!target || !ts) return null;
-    const reason = this.rejectReason(this.targeting.action, target);
+    const reason = this.rejectReason(this.targeting.attack, target);
     if (reason) return { rejected: reason };
+    const id = this.targeting.attack.id;
     const attacker = { unit: plan.unit, status: plan.status, pos: BattleApp.planPos(plan) };
-    const pierced = piercedUnits(map, plan.unit, attacker.pos, target, target).flatMap((u) => {
+    const splash = splashUnits(map, plan.unit, attacker.pos, target, target, id).flatMap((u) => {
       const status = this.statuses.get(u);
       return status ? [{ unit: u, status, pos: u }] : [];
     });
-    return attackForecast(map, attacker, { unit: target, status: ts, pos: target }, this.targeting.action.id, pierced);
+    return attackForecast(map, attacker, { unit: target, status: ts, pos: target }, id, splash);
   }
 
-  /** action で target を攻撃できない理由（できれば null）。一斉攻撃は、ほかの味方とも隣接している相手しか選べない */
-  private rejectReason(action: MenuAction, target: UnitData): string | null {
-    if (action.id !== 'volley') return null;
+  /** attack で target を攻撃できない理由（できれば null）。一斉攻撃は、ほかの味方とも隣接している相手しか選べない */
+  private rejectReason(attack: ResolvedAttack, target: UnitData): string | null {
+    if (attack.special !== 'volley') return null;
     return volleySupporters(this.map!, this.plan!.unit, target).length > 0 ? null : NOT_SURROUNDED;
   }
 
@@ -878,9 +923,9 @@ export class BattleApp {
       if (t.kind === 'move' && t.cells.has(key)) this.addLeg(t.cells.get(key)!);
       else if (t.kind === 'attack' && t.cells.has(key)) {
         const target = t.cells.get(key)!;
-        const reason = this.rejectReason(t.action, target);
+        const reason = this.rejectReason(t.attack, target);
         if (reason) this.emit('targetReject', reason);
-        else this.setAttack(t.action, target);
+        else this.setAttack(t, target);
       }
       // ほかの味方は選び直し、それ以外（範囲外・自分・敵）はメニューに戻る
       else if (own && !isSelf) this.setSelected(o);
@@ -919,15 +964,18 @@ export class BattleApp {
     const moves = moveRange(map, unit, unit, ap, { escapeZoc: true });
     const out = new Map<number, RangeCell>();
     for (const [k, step] of moves) out.set(k, { col: step.col, row: step.row, mark: step.zoc });
-    const cost = minAttackCost(unit.type);
-    if (cost === null) return [...out.values()];
+    const attacks = COMBAT_DEFS[unit.type].attacks.map((id) => resolveAttack(unit.type, id));
+    if (attacks.length === 0) return [...out.values()];
     const self = unit.row * cols + unit.col;
     const froms = [{ pos: unit as Offset, spent: 0 }, ...[...moves.values()].map((step) => ({ pos: step as Offset, spent: step.cost }))];
     for (const { pos, spent } of froms) {
-      if (ap - spent < cost) continue;
-      for (const o of attackRange(map, unit, pos)) {
-        const k = o.row * cols + o.col;
-        if (k !== self && !out.has(k)) out.set(k, { ...o, alt: true });
+      for (const a of attacks) {
+        // 動いた後に残る行動力でできる攻撃の射程だけ数える
+        if (ap - spent < a.cost) continue;
+        for (const o of attackRange(map, unit, pos, a.id)) {
+          const k = o.row * cols + o.col;
+          if (k !== self && !out.has(k)) out.set(k, { ...o, alt: true });
+        }
       }
     }
     return [...out.values()];
@@ -960,22 +1008,42 @@ export class BattleApp {
   }
 
   /** 攻撃できる相手の HEX を出して、相手を選ぶ状態にする */
-  private startAttack(action: MenuAction): void {
+  private startAttack(action: MenuAction, id: MenuAttackId): void {
     const map = this.map;
     const plan = this.plan;
     if (!map || !plan) return;
     const cols = map.layout.cols;
     const pos = BattleApp.planPos(plan);
-    const cells = new Map(attackTargets(map, plan.unit, pos).map((u) => [u.row * cols + u.col, u]));
-    this.targeting = { kind: 'attack', action, cells };
+    const attack = resolveAttack(plan.unit.type, id);
+    const cells = new Map(attackTargets(map, plan.unit, pos, id).map((u) => [u.row * cols + u.col, u]));
     // 射程内の HEX を薄く塗り、相手のいる HEX は濃く塗る。一斉攻撃は、選べる（ほかの味方と取り囲んだ）相手に印を付ける
-    const range = attackRange(map, plan.unit, pos).map((o) => {
+    const range = attackRange(map, plan.unit, pos, id).map((o): RangeCell => {
       const u = cells.get(o.row * cols + o.col);
-      return u ? { ...o, mark: action.id === 'volley' && !this.rejectReason(action, u) } : { ...o, weak: true };
+      return u ? { ...o, mark: attack.special === 'volley' && !this.rejectReason(attack, u) } : { ...o, weak: true };
     });
-    this.view.setRange(range, ATTACK_RANGE_COLOR, VOLLEY_MARK_COLOR);
+    this.targeting = { kind: 'attack', action, attack, cells, range };
     this.menu.suspended = true;
     this.setHover(this.hovered);
+  }
+
+  /**
+   * 攻撃の相手を選ぶ状態の塗り。狙える HEX に、カーソルを乗せた相手で当たる範囲（目標のほかにも当たる攻撃だけ）を別の色で重ねる
+   */
+  private paintAttackRange(t: Extract<Targeting, { kind: 'attack' }>, hover: Offset | null): void {
+    const map = this.map!;
+    const plan = this.plan!;
+    const cols = map.layout.cols;
+    const target = hover && t.cells.get(hover.row * cols + hover.col);
+    const area = target && t.attack.shape.kind !== 'single' ? areaCells(map, BattleApp.planPos(plan), target, t.attack.shape) : [];
+    if (!target || area.length === 0) return this.view.setRange(t.range, ATTACK_RANGE_COLOR, VOLLEY_MARK_COLOR);
+    const cells = new Map<number, RangeCell>(t.range.map((c) => [c.row * cols + c.col, c]));
+    for (const o of area) {
+      const k = o.row * cols + o.col;
+      // 目標の HEX はそのまま濃く塗る
+      if (o.col === target.col && o.row === target.row) continue;
+      cells.set(k, { col: o.col, row: o.row, alt: true });
+    }
+    this.view.setRange(cells.values(), ATTACK_RANGE_COLOR, VOLLEY_MARK_COLOR, SPLASH_AREA_COLOR);
   }
 
   /** 移動先・攻撃の相手を選ぶ状態をやめてメニューに戻る */
@@ -1000,11 +1068,11 @@ export class BattleApp {
   }
 
   /** 攻撃を予約する */
-  private setAttack(action: MenuAction, target: UnitData): void {
+  private setAttack(t: Extract<Targeting, { kind: 'attack' }>, target: UnitData): void {
     const plan = this.plan!;
     const pos = BattleApp.planPos(plan);
-    const landing = action.id === 'charge' ? chargeLanding(this.map!, pos, target) : null;
-    plan.attack = { action, target, afterLeg: plan.legs.length, landing };
+    const landing = t.attack.special === 'charge' ? chargeLanding(this.map!, pos, target) : null;
+    plan.attack = { action: t.action, id: t.attack.id as MenuAttackId, target, afterLeg: plan.legs.length, landing };
     this.endTargeting();
     this.planChanged();
   }
@@ -1055,9 +1123,9 @@ export class BattleApp {
       this.view.setSupportAttacks([], null);
       return this.view.setAttack(null, null);
     }
-    const { action, target, landing } = plan.attack;
-    this.view.setAttack(BattleApp.attackPos(plan), target, attackArc(plan.unit.type), landing);
-    this.view.setSupportAttacks(action.id === 'volley' ? volleySupporters(this.map!, plan.unit, target) : [], target);
+    const { id, target, landing } = plan.attack;
+    this.view.setAttack(BattleApp.attackPos(plan), target, attackArc(plan.unit.type, id), landing);
+    this.view.setSupportAttacks(resolveAttack(plan.unit.type, id).special === 'volley' ? volleySupporters(this.map!, plan.unit, target) : [], target);
   }
 
   /**
@@ -1142,8 +1210,9 @@ export class BattleApp {
     if (phase.kind !== 'walk') {
       exec.phase = phase;
       const attack = exec.plan.attack;
-      exec.supporters = phase.kind === 'strike' && attack?.action.id === 'volley' ? volleySupporters(map, exec.plan.unit, attack.target) : [];
-      const kind = phase.kind === 'strike' ? BattleApp.strikeFx(exec.plan.unit, attack!.action.id) : BattleApp.interceptFx(phase.shooter);
+      const volley = phase.kind === 'strike' && !!attack && resolveAttack(exec.plan.unit.type, attack.id).special === 'volley';
+      exec.supporters = volley ? volleySupporters(map, exec.plan.unit, attack!.target) : [];
+      const kind = phase.kind === 'strike' ? BattleApp.strikeFx(exec.plan.unit, attack!.id) : BattleApp.interceptFx(phase.shooter);
       // 攻撃・迎撃の前のセリフ（演出のある攻撃は、カメラが寄ったまま読み終えるのを待ってから攻撃する）
       const talk = phase.kind === 'strike' ? this.strikeTalk(exec) : this.bark('intercept', phase.shooter, exec.plan.unit, BARK_BEFORE_SEC);
       if (kind) {
@@ -1295,8 +1364,9 @@ export class BattleApp {
     report.lost = plan.status.soldiers <= 0;
     // 移動していたユニットは、撃たれた HEX（at）で殲滅される
     const w = report.lost ? this.wipeOut(report, plan.unit, plan.status, phase.at, phase.shooter, []) : null;
-    const pierced = this.applyPierce(report, { unit: phase.shooter, status: ss, pos: phase.shooter }, plan.unit, phase.at, 'interceptFire');
-    report.intercepts.push({ unit: phase.shooter, result, targetLeft: Math.max(0, plan.status.soldiers), afterAttack: !!report.attack, halted: false, pierced });
+    if (!report.lost) this.inflict(plan.status, resolveAttack(phase.shooter.type, 'interceptFire'));
+    const splash = this.applySplash(report, { unit: phase.shooter, status: ss, pos: phase.shooter }, plan.unit, phase.at, 'interceptFire');
+    report.intercepts.push({ unit: phase.shooter, result, targetLeft: Math.max(0, plan.status.soldiers), afterAttack: !!report.attack, halted: false, splash });
     const p = this.view.units.placements().find((x) => x.unit === plan.unit);
     if (p) this.popups.show(p, `迎撃 -${result.damage}${wipeoutLabel(w)}`, 'damage');
   }
@@ -1355,29 +1425,18 @@ export class BattleApp {
     return len > 1e-6 ? { x: x / len, z: z / len } : { x: 1, z: 0 };
   }
 
-  /** 予約した攻撃の演出の種類（演出の無い攻撃は null） */
-  static strikeFx(unit: UnitData, action: ActionId): StrikeFxKind | null {
+  /** 予約した攻撃の演出の種類（攻撃の定義の fx。省略は兵種の通常攻撃の演出） */
+  static strikeFx(unit: UnitData, id: MenuAttackId): StrikeFxKind | null {
     // 一斉攻撃は、加わる兵種それぞれの通常攻撃の演出
-    const id = action === 'volley' ? 'attack' : action;
-    if ((unit.type === 'infantry' || unit.type === 'landsknecht') && id === 'attack') return 'slash';
-    if (unit.type === 'cavalry' && (id === 'attack' || id === 'charge')) return 'lance';
-    if (unit.type === 'archer' && id === 'attack') return 'arrows';
-    if (id === 'thunderfall') return 'thunder';
-    if (unit.type === 'rifleman' && id === 'attack') return 'bullets';
-    if (unit.type === 'artillery' && id === 'attack') return 'shell';
-    return null;
+    return resolveAttack(unit.type, id === 'volley' ? 'attack' : id).fx;
   }
 
   /**
-   * 迎撃の自動攻撃の演出の種類（演出の無い兵種は null）。それぞれの兵種の攻撃と同じ演出
+   * 迎撃の自動攻撃の演出の種類。それぞれの兵種の攻撃と同じ演出
    * （弓兵は矢の雨、魔術師は雷、ライフル兵は光の弾、砲兵は大きな光の弾）
    */
   static interceptFx(shooter: UnitData): StrikeFxKind | null {
-    if (shooter.type === 'archer') return 'arrows';
-    if (COMBAT_DEFS[shooter.type].magic) return 'thunder';
-    if (shooter.type === 'rifleman') return 'bullets';
-    if (shooter.type === 'artillery') return 'shell';
-    return null;
+    return resolveAttack(shooter.type, 'interceptFire').fx;
   }
 
   /** 攻撃・迎撃のアニメーションの進み具合（0〜1。半分の時点で当たる）。演出のある攻撃はカメラが寄る時間（とセリフを待つ時間）を除く */
@@ -1526,19 +1585,21 @@ export class BattleApp {
   }
 
   /**
-   * ライフル兵の弾が目標（at にいる target）の手前の HEX にいるユニットに当たった結果（ランダム係数を振る）を、兵数・士気に反映し、
-   * 頭上に減った数を出す。撃ったユニットの士気は増減しない（目標への攻撃の分だけ）
+   * 目標（at にいる target）を id の攻撃で撃ったときの範囲の巻き添え（ライフル兵の弾が目標の手前の HEX にいるユニットに当たったものなど）の
+   * 結果（ランダム係数を振る）を、兵数・士気に反映し、頭上に減った数を出す。撃ったユニットの士気は増減しない（目標への攻撃の分だけ）
    */
-  private applyPierce(report: ExecuteReport, shooter: Combatant, target: UnitData, at: Offset, kind: AttackKind): PierceHit[] {
+  private applySplash(report: ExecuteReport, shooter: Combatant, target: UnitData, at: Offset, id: AttackId): SplashHit[] {
     const map = this.map!;
     const placements = this.view.units.placements();
-    return piercedUnits(map, shooter.unit, shooter.pos, target, at).flatMap((unit): PierceHit[] => {
+    const attack = resolveAttack(shooter.unit.type, id);
+    return splashUnits(map, shooter.unit, shooter.pos, target, at, id).flatMap((unit): SplashHit[] => {
       const status = this.statuses.get(unit);
       if (!status || status.soldiers <= 0) return [];
-      const result = pierceResult(map, shooter, { unit, status, pos: unit }, kind, randomRoll());
+      const result = splashResult(map, shooter, { unit, status, pos: unit }, id, randomRoll());
       status.soldiers -= result.damage;
       applyMorale(status, result.morale.defender);
       const destroyed = status.soldiers <= 0;
+      if (!destroyed) this.inflict(status, attack);
       const w = destroyed ? this.wipeOut(report, unit, status, unit, shooter.unit, []) : null;
       // 味方に当たったときだけ巻き添えと出す
       const friendly = unit.team === shooter.unit.team;
@@ -1548,6 +1609,11 @@ export class BattleApp {
     });
   }
 
+  /** 攻撃が当たったユニット（status）に、攻撃の inflicts の状態をそれぞれの確率で付ける */
+  private inflict(status: UnitStatus, attack: ResolvedAttack): void {
+    for (const { condition, chance, turns } of attack.inflicts) if (Math.random() < chance) setCondition(status, condition, turns);
+  }
+
   /** 攻撃の結果（ランダム係数を振る）を兵数・士気に反映し、頭上に減った数を出す */
   private applyAttack(exec: Execution): void {
     const map = this.map!;
@@ -1555,11 +1621,12 @@ export class BattleApp {
     const attack = plan.attack!;
     const ts = this.statuses.get(attack.target)!;
     const rolls = { damage: randomRoll(), counter: randomRoll() };
+    const def = resolveAttack(plan.unit.type, attack.id);
     const result = attackResult(
       map,
       { unit: plan.unit, status: plan.status, pos: plan.unit },
       { unit: attack.target, status: ts, pos: attack.target },
-      attack.action.id,
+      attack.id,
       rolls,
     );
     ts.soldiers -= result.damage;
@@ -1568,6 +1635,9 @@ export class BattleApp {
     applyMorale(plan.status, result.morale.attacker);
     plan.status.attacked = true;
     plan.status.justAttacked = true;
+    // クールタイム: 使った次の自分の番から cooldown 回の番は使えない（番が始まるたびに減らすので 1 多く入れる）
+    if (def.cooldown > 0) plan.status.cooldowns[attack.id] = def.cooldown + 1;
+    if (ts.soldiers > 0) this.inflict(ts, def);
     report.attack = {
       ...attack,
       result,
@@ -1575,14 +1645,14 @@ export class BattleApp {
       unitDestroyed: plan.status.soldiers <= 0,
       unitLeft: Math.max(0, plan.status.soldiers),
       targetLeft: Math.max(0, ts.soldiers),
-      pierced: [],
+      splash: [],
     };
 
     // 殲滅されたユニットの指揮官の捕縛（相討ちなら、相手は隣接する敵に数えない）
     const both = report.attack.targetDestroyed && report.attack.unitDestroyed;
     const tw = report.attack.targetDestroyed ? this.wipeOut(report, attack.target, ts, attack.target, plan.unit, both ? [plan.unit] : []) : null;
     const uw = report.attack.unitDestroyed ? this.wipeOut(report, plan.unit, plan.status, plan.unit, attack.target, both ? [attack.target] : []) : null;
-    report.attack.pierced = this.applyPierce(report, { unit: plan.unit, status: plan.status, pos: plan.unit }, attack.target, attack.target, attack.action.id);
+    report.attack.splash = this.applySplash(report, { unit: plan.unit, status: plan.status, pos: plan.unit }, attack.target, attack.target, attack.id);
 
     const placements = this.view.units.placements();
     const at = (u: UnitData) => placements.find((p) => p.unit === u);
@@ -1623,8 +1693,8 @@ export class BattleApp {
     }
     // 弓兵の迎撃で足止めされたら行動を終える
     if (report.halted) plan.status.ap = 0;
-    const pierced = [...(report.attack?.pierced ?? []), ...report.intercepts.flatMap((i) => i.pierced)];
-    const removed = [report.attack?.targetDestroyed && report.attack.target, gone && report.unit, ...pierced.map((h) => h.destroyed && h.unit)];
+    const splash = [...(report.attack?.splash ?? []), ...report.intercepts.flatMap((i) => i.splash)];
+    const removed = [report.attack?.targetDestroyed && report.attack.target, gone && report.unit, ...splash.map((h) => h.destroyed && h.unit)];
     for (const u of removed) {
       if (!u) continue;
       map.removeUnit(u.col, u.row);
@@ -1835,6 +1905,7 @@ export class BattleApp {
     const pos = BattleApp.planPos(plan);
     const options = BattleApp.moveOptions(plan);
     const targets = attackTargets(map, plan.unit, pos);
+    const attacks = COMBAT_DEFS[plan.unit.type].attacks;
     return {
       unit: plan.unit,
       status: plan.status,
@@ -1847,7 +1918,8 @@ export class BattleApp {
       attackPlanned: !!plan.attack,
       canMoveAfterAttack: !!COMBAT_DEFS[plan.unit.type].moveAfterAttack,
       hasTargets: targets.length > 0,
-      hasVolleyTargets: targets.some((t) => volleySupporters(map, plan.unit, t).length > 0),
+      targetable: attacks.filter((id) => attackTargets(map, plan.unit, pos, id).length > 0),
+      hasVolleyTargets: attacks.includes('volley') && attackTargets(map, plan.unit, pos, 'volley').some((t) => volleySupporters(map, plan.unit, t).length > 0),
     };
   }
 
@@ -1865,6 +1937,7 @@ export class BattleApp {
   private setHover(o: Offset | null): void {
     this.hovered = o;
     this.view.setHover(o);
+    if (this.targeting?.kind === 'attack') this.paintAttackRange(this.targeting, o);
     this.emit('hover', this.cellAndUnit(o)[0]);
   }
 

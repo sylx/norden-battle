@@ -3,7 +3,7 @@
 戦闘画面の UI・演出を試し、演出のパラメータを調整するためのツール。three.js + React + TypeScript + Vite。
 
 戦闘画面は [battle-runtime](../battle-runtime/) の `BattleScreen`（ゲーム本体と同じもの）で、ここではその上にエディタの道具
-（ツールバー・マップ・部隊・描画負荷・セリフ・退却・捕縛）を重ねるだけ。マップの描画は map-editor と同じ [map-runtime](../map-runtime/) の `MapView` を使い、
+（ツールバー・マップ・部隊・描画負荷・セリフ・状態・退却・捕縛）を重ねるだけ。マップの描画は map-editor と同じ [map-runtime](../map-runtime/) の `MapView` を使い、
 地形生成などのパラメータは map-editor の初期値のまま。UI の部品は [norden-ui](https://github.com/sylx/norden-ui)（リポジトリの隣の `../../norden-ui`）。
 
 ゲーム（nordencult）のデータ（騎士・勢力・セリフ・顔の画像。`../../src/`）を直接読むので、norden-battle は nordencult のサブモジュールとして置いておくこと。
@@ -44,6 +44,11 @@ battle-editor からマップは書き換えない。
 （[src/gameVoices.ts](src/gameVoices.ts)）。ユニットごとに喋る騎士を選び直せる（吹き出しに騎士の顔は出さない）。
 norden-data でセリフを保存すると、開いている battle-editor にもそのまま反映される。
 
+## 状態
+
+ツールバーの「状態」で、選択中か調べているユニットに状態（混乱・凍結・感電）を付け外しし、攻撃をクールタイム中にできる（見え方の確認用。
+状態はまだ効果が無い）。状態は情報札の右上の印と騎士のウィンドウに、クールタイムは行動メニューの灰色の項目と騎士のウィンドウに出る。
+
 ## 退却・捕縛
 
 ツールバーの「退却・捕縛」で、軍ごとにダミーの退却先の拠点を渡すかどうかを切り替える（渡さない軍のユニットは退却を選べない。
@@ -59,7 +64,7 @@ norden-data でセリフを保存すると、開いている battle-editor に�
 ```
 src/
   main.tsx         入口
-  EditorApp.tsx    BattleScreen にツールバーと道具のウィンドウ（マップ・部隊・描画負荷・セリフ・退却・捕縛）を重ねる。JSON のドロップ
+  EditorApp.tsx    BattleScreen にツールバーと道具のウィンドウ（マップ・部隊・描画負荷・セリフ・状態・退却・捕縛）を重ねる。JSON のドロップ
   gameKnights.ts   ゲームの騎士・勢力のデータと顔。陣営ごとの編成から、配備する部隊とマップのユニットの状態を作る
   gameVoices.ts    ゲームのセリフのデータ。ユニットに喋らせる騎士の割り当て
   style.css        ツールバーと道具のウィンドウ

@@ -9,7 +9,8 @@
  *   武力     = 武力 × STRENGTH_ATTACK − 相手の武力 × STRENGTH_GUARD（兵数に関わらず一定のダメージ・軽減。魔術師は武力の代わりに知力）
  *   士気     = 1 + (士気 − 50) × MORALE_RATE（50 より高ければ増え、低ければ減る）
  *
- *   基本ダメージ = (兵の攻め × 攻撃の種類の倍率 ÷ 相手の兵の守り + 武力) × 士気（0 未満は 0）
+ *   基本ダメージ = (兵の攻め × 攻撃の倍率 ÷ 相手の兵の守り + 武力) × 士気（0 未満は 0）
+ *   攻撃の倍率は攻撃の定義（attacks.ts の power。範囲の巻き添えは splashPower）
  *
  * 戦う状況の倍率:
  *   包囲     = 相手が包囲されていれば ENCIRCLED_RATE
@@ -26,14 +27,14 @@
  * 基本攻撃力・基本防御力（basicAttack・basicDefense）は、標準のユニット（STANDARD_UNIT）を相手にした
  * 通常攻撃の基本ダメージで表す。戦う前の比べ合い（侵攻画面など）に使う。
  *
- * 魔法（魔術師の攻撃。サンダーフォール・迎撃の自動攻撃）は、相手の武力による軽減と、相手の迎撃の構えの影響を受けない。
- * 魔術師の反撃は通常攻撃として計算するので魔法ではない。
+ * 魔法（Hit.magic。魔術師の攻撃。サンダーフォール・迎撃の自動攻撃）は、相手の武力による軽減と、相手の迎撃の構えの影響を受けない。
+ * 反撃は通常攻撃として計算するので魔法ではない（COUNTER_HIT）。
  *
  * 反撃は、攻撃された側が攻撃した側へ通常攻撃をしたときのダメージ × COUNTER_RATE
  * （攻撃された側が迎撃の構えの近接ユニットなら、さらに × INTERCEPT_COUNTER）。
  */
 import type { UnitType } from '@norden/map-runtime/core/units';
-import type { ActionId } from './actions';
+import { ATTACK_DEFS } from './attacks';
 import type { UnitStatus } from './unitStatus';
 
 /** 兵種ごとの攻撃力・防御力（倍率） */
@@ -48,17 +49,18 @@ export const UNIT_POWER: Record<UnitType, { attack: number; defense: number }> =
   wizard: { attack: 1.3, defense: 0.6 },
 };
 
-/** 攻撃の種類。行動メニューの攻撃と、迎撃の構えの間接ユニットが通りかかった敵へ自動でする攻撃（interceptFire） */
-export type AttackKind = ActionId | 'interceptFire';
+/** 攻撃 1 回の当たり方（ダメージの計算に効くところ） */
+export interface Hit {
+  /** 兵種の攻撃力に掛ける倍率 */
+  power: number;
+  /** 魔法か（相手の武力で軽減されず、迎撃の構えの影響を受けない） */
+  magic: boolean;
+  /** 一斉攻撃か（攻撃する側の supporters の数でダメージが増える） */
+  volley: boolean;
+}
 
-/** 攻撃の種類ごとの、兵種の攻撃力に掛ける倍率。ここにある行動が攻撃 */
-export const ATTACK_POWER: Partial<Record<AttackKind, number>> = {
-  attack: 0.8,
-  volley: 0.8,
-  charge: 0.8,
-  thunderfall: 1.0,
-  interceptFire: 0.5,
-};
+/** 通常攻撃の当たり方（反撃と、基本攻撃力・基本防御力の物差し） */
+export const COUNTER_HIT: Hit = { power: ATTACK_DEFS.attack.power, magic: false, volley: false };
 
 /** 兵数に対する、与えるダメージの割合 */
 const DAMAGE_RATE = 0.12;
@@ -111,8 +113,6 @@ export interface Fighter extends UnitPower {
   guarding: boolean;
   /** 一斉攻撃に加わる味方の数（一斉攻撃のときだけ効く） */
   supporters: number;
-  /** 攻撃が魔法になる兵種か（魔術師。反撃を除く） */
-  magic: boolean;
   /** いる HEX の地形効果（受けるダメージを減らす割合） */
   defense: number;
   /** いる HEX が城・砦か（攻城の兵種に攻撃されると地形効果が減る） */
@@ -172,7 +172,7 @@ export function baseDamage(att: UnitPower, def: UnitPower, kind: number, magic =
 
 /** 基本攻撃力: 標準のユニット（STANDARD_UNIT）への通常攻撃の基本ダメージ（兵数） */
 export function basicAttack(unit: UnitPower): number {
-  return Math.round(baseDamage(unit, STANDARD_UNIT, ATTACK_POWER.attack!));
+  return Math.round(baseDamage(unit, STANDARD_UNIT, COUNTER_HIT.power));
 }
 
 /**
@@ -180,25 +180,24 @@ export function basicAttack(unit: UnitPower): number {
  * （標準のユニットが受ける基本ダメージ ÷ unit が受ける基本ダメージ × 100。ダメージを受けなければ MAX_BASIC_DEFENSE）
  */
 export function basicDefense(unit: UnitPower): number {
-  const standard = baseDamage(STANDARD_UNIT, STANDARD_UNIT, ATTACK_POWER.attack!);
-  const taken = baseDamage(STANDARD_UNIT, unit, ATTACK_POWER.attack!);
+  const standard = baseDamage(STANDARD_UNIT, STANDARD_UNIT, COUNTER_HIT.power);
+  const taken = baseDamage(STANDARD_UNIT, unit, COUNTER_HIT.power);
   return taken > 0 ? Math.min(MAX_BASIC_DEFENSE, Math.round((standard / taken) * 100)) : MAX_BASIC_DEFENSE;
 }
 
 /** 基本防御力の上限 */
 export const MAX_BASIC_DEFENSE = 999;
 
-/** att が def を action で攻撃したときのダメージ */
-export function calcDamage(att: Fighter, def: Fighter, action: AttackKind, roll: number): number {
+/** att が def を hit で攻撃したときのダメージ */
+export function calcDamage(att: Fighter, def: Fighter, hit: Hit, roll: number): number {
   if (att.soldiers <= 0 || def.soldiers <= 0) return 0;
-  // 反撃は通常攻撃として計算する（calcCounter）ので魔法ではない
-  const magic = att.magic && action !== 'attack';
-  const base = baseDamage(att, def, ATTACK_POWER[action] ?? 1, magic);
+  const { magic } = hit;
+  const base = baseDamage(att, def, hit.power, magic);
   const encircled = def.encircled ? ENCIRCLED_RATE : 1;
   const terrain = 1 - terrainDefense(att, def);
   const highGround = highGroundRate(highGroundLevels(att, def));
   const intercept = def.guarding && !magic ? INTERCEPT_GUARD : 1;
-  const volley = action === 'volley' ? volleyRate(att.supporters) : 1;
+  const volley = hit.volley ? volleyRate(att.supporters) : 1;
   const random = 1 + roll * RANDOM_SPREAD;
   return Math.min(def.soldiers, Math.round(base * encircled * terrain * highGround * intercept * volley * random));
 }
@@ -207,5 +206,5 @@ export function calcDamage(att: Fighter, def: Fighter, action: AttackKind, roll:
 export function calcCounter(att: Fighter, def: Fighter, roll: number): number {
   if (att.soldiers <= 0 || def.soldiers <= 0) return 0;
   const rate = COUNTER_RATE * (def.guarding ? INTERCEPT_COUNTER : 1);
-  return Math.min(att.soldiers, Math.round(calcDamage(def, att, 'attack', roll) * rate));
+  return Math.min(att.soldiers, Math.round(calcDamage(def, att, COUNTER_HIT, roll) * rate));
 }
