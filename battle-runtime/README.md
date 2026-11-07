@@ -114,10 +114,11 @@ src/
   actions.ts       行動の定義と行動メニューの項目の組み立て（攻撃の項目は兵種の攻撃の一覧から）
   attacks.ts       攻撃の定義（倍率・狙い方・射程・当たる範囲・巻き添え・クールタイム・付く状態・演出）
   conditions.ts    ユニットに付く状態（混乱・凍結・感電。名前と印、残りターンの数え方。効果は app.ts・actions.ts・combat.ts）とクールタイムの数え方
+  facilities.ts    拠点の施設（要塞砲・ガンシップ・バリスタ・魔導台）。撃つ間隔・仮の撃つ部隊・射程が伸びる量
   combat.ts        兵種ごとの攻撃（COMBAT_DEFS）、攻撃の定義の補完（resolveAttack）・狙える HEX・当たる範囲・巻き添え・結果と予測
   damage.ts        ダメージの計算（ユニットそのものの力と戦う状況の倍率。基本攻撃力・基本防御力）
   morale.ts        士気の増減
-  movement.ts      移動の範囲・経路・ZOC
+  movement.ts      移動の範囲・経路・ZOC・入城の決まり（攻撃側は番の初めに城の HEX の中かそのとなりにいたときだけ城の HEX へ入れる）
   retreat.ts       退却（退却先の拠点の型・失敗する確率・結果の RetreatReport）
   wipeout.ts       殲滅されたときの指揮官の捕縛（捕縛される確率・結果の WipeoutReport）
   victory.ts       勝敗（全滅・退却と入城の判定。決着の BattleOutcome）

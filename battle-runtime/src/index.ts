@@ -5,7 +5,7 @@ export type { AttackLogEntry } from './ui/BattleLogWindow';
 
 // 戦闘画面の本体（three.js のマップ・ユニット・入力）
 export { BattleApp, TURN_ORDER } from './app';
-export type { BattleEvents, BattlePhase, ExecuteReport, InterceptReport, Plan, PlannedAttack, SplashHit, StatusFactory } from './app';
+export type { BattleEvents, BattlePhase, ExecuteReport, FacilityReport, InterceptReport, Plan, PlannedAttack, SplashHit, StatusFactory } from './app';
 export type { ActionMenuModel, MenuFrame, MenuState, RetreatMenu } from './menuModel';
 
 // 配備フェーズ
@@ -32,6 +32,10 @@ export type { UnitPower } from './damage';
 export { attacksOf, COMBAT_DEFS, mightFor, resolveAttack } from './combat';
 export type { CombatDef, ResolvedAttack } from './combat';
 export type { ActionId, MenuAction, MenuChild, SkillId } from './actions';
+
+// 拠点の施設（陣営ごとに BattleScreen の facilities で渡す。撃った結果は BattleApp の facility で受け取る）
+export { DEFAULT_INTERVALS, FACILITY_NAMES, FORTRESS_CANNON_RANGE } from './facilities';
+export type { BattleFacilities, FiringFacility, SideFacilities } from './facilities';
 
 // 退却（退却先の拠点は軍ごとに使う側が渡し、結果は RetreatReport で受け取る）
 export { adjacentEnemies, RETREAT_FAIL_CHANCE, retreatFailChance } from './retreat';

@@ -44,10 +44,11 @@ import { TERRAIN_DEFS } from '@norden/map-runtime/core/terrainTypes';
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { ActionId } from './actions';
 import { hasCondition } from './conditions';
+import { FACILITY_SHOOTERS, type FiringFacility } from './facilities';
 import { ATTACK_DEFS, isAttackId, type AttackDef, type AttackId, type Inflict, type MenuAttackId, type Shape, type StrikeFxKind } from './attacks';
 import { calcCounter, calcDamage, highGroundLevels, terrainDefense, type Fighter, type Hit } from './damage';
 import { moraleChange, type MoraleChange } from './morale';
-import { encircled, enterCost } from './movement';
+import { encircled, entersCastle, enterCost } from './movement';
 import type { UnitStatus } from './unitStatus';
 
 export interface CombatDef {
@@ -176,12 +177,15 @@ export function hexDistance(map: HexMap, a: Offset, b: Offset): number {
   return axialDistance(l.offsetToAxial(a.col, a.row), l.offsetToAxial(b.col, b.row));
 }
 
-/** type の兵種が id の攻撃で from から to を狙えるか（射程の中か。path・line の攻撃は、隣より遠い HEX は直線上だけ。self は自分の HEX だけ） */
-export function canAim(map: HexMap, type: UnitType, id: AttackId, from: Offset, to: Offset): boolean {
+/**
+ * type の兵種が id の攻撃で from から to を狙えるか（射程の中か。path・line の攻撃は、隣より遠い HEX は直線上だけ。self は自分の HEX だけ）。
+ * bonus は施設で伸びる射程（facilities.ts の rangeBonus）
+ */
+export function canAim(map: HexMap, type: UnitType, id: AttackId, from: Offset, to: Offset, bonus = 0): boolean {
   const a = resolveAttack(type, id);
   if (a.aim === 'self') return from.col === to.col && from.row === to.row;
   const d = hexDistance(map, from, to);
-  if (d < a.range.min || d > a.range.max) return false;
+  if (d < a.range.min || d > a.range.max + bonus) return false;
   const straight = a.shape.kind === 'path' || a.shape.kind === 'line';
   return !straight || d <= 1 || cellsBetween(map, from, to) !== null;
 }
@@ -289,18 +293,18 @@ export function mainTargetAt(map: HexMap, unit: UnitData, aimed: Offset, id: Att
 }
 
 /** unit が pos から攻撃できる敵ユニット（id の攻撃。一覧ならどれかの攻撃で。省略すれば兵種の攻撃のどれかで） */
-export function attackTargets(map: HexMap, unit: UnitData, pos: Offset, id?: AttackId | readonly AttackId[]): UnitData[] {
+export function attackTargets(map: HexMap, unit: UnitData, pos: Offset, id?: AttackId | readonly AttackId[], bonus = 0): UnitData[] {
   const ids = id === undefined ? COMBAT_DEFS[unit.type].attacks : typeof id === 'string' ? [id] : id;
-  return map.allUnits().filter((u) => u.team !== unit.team && ids.some((i) => canAim(map, unit.type, i, pos, u)));
+  return map.allUnits().filter((u) => u.team !== unit.team && ids.some((i) => canAim(map, unit.type, i, pos, u, bonus)));
 }
 
 /** unit が pos から攻撃で狙える HEX（相手がいるかどうかに関わらない。id の攻撃。一覧ならどれかで。省略すれば兵種の攻撃のどれかで） */
-export function attackRange(map: HexMap, unit: UnitData, pos: Offset, id?: AttackId | readonly AttackId[]): Offset[] {
+export function attackRange(map: HexMap, unit: UnitData, pos: Offset, id?: AttackId | readonly AttackId[], bonus = 0): Offset[] {
   const ids = id === undefined ? COMBAT_DEFS[unit.type].attacks : typeof id === 'string' ? [id] : id;
   const out: Offset[] = [];
   for (let row = 0; row < map.layout.rows; row++) {
     for (let col = 0; col < map.layout.cols; col++) {
-      if (ids.some((i) => canAim(map, unit.type, i, pos, { col, row }))) out.push({ col, row });
+      if (ids.some((i) => canAim(map, unit.type, i, pos, { col, row }, bonus))) out.push({ col, row });
     }
   }
   return out;
@@ -309,8 +313,11 @@ export function attackRange(map: HexMap, unit: UnitData, pos: Offset, id?: Attac
 /** 城・砦の人工物（突撃で突き抜けられない。そこにいる相手を攻撃しても飛び出さない。砲兵に攻撃されると地形効果が半分になる） */
 const WALLED_FEATURES: ReadonlySet<string> = new Set(['castle', 'fort']);
 
-/** pos から隣の target へ突撃したときに飛び出る HEX（飛び出せなければ null。target が城・砦なら必ず null） */
-export function chargeLanding(map: HexMap, pos: Offset, target: Offset): Offset | null {
+/**
+ * pos から隣の target へ突撃したときに飛び出る HEX（飛び出せなければ null。target が城・砦なら必ず null）。
+ * castleLocked（攻撃側で、番の初めに城の HEX の中にもとなりにもいなかった）なら、城の外から城の HEX へは飛び出せない（入城の決まり）
+ */
+export function chargeLanding(map: HexMap, pos: Offset, target: Offset, castleLocked = false): Offset | null {
   const dir = dirBetween(map, pos, target);
   if (dir < 0) return null;
   const n = map.layout.neighborInDir(target.col, target.row, dir);
@@ -318,6 +325,8 @@ export function chargeLanding(map: HexMap, pos: Offset, target: Offset): Offset 
   const to = map.get(n.col, n.row);
   if (!from || !to || (from.feature && WALLED_FEATURES.has(from.feature))) return null;
   if (map.unitAt(n.col, n.row) || enterCost(from, dir, to) === null) return null;
+  const start = map.get(pos.col, pos.row);
+  if (castleLocked && start && entersCastle(start, to)) return null;
   return n;
 }
 
@@ -416,6 +425,27 @@ export function attackForecast(map: HexMap, attacker: Combatant, defender: Comba
   };
 }
 
+/**
+ * 施設（要塞砲・ガンシップ）が defender を撃った結果（facilities.ts の仮の部隊が撃ったものとして計算する。反撃は無い。roll はランダム係数）。
+ * 包囲・地形は defender の pos で判定する
+ */
+export function facilityResult(map: HexMap, kind: FiringFacility, defender: Combatant, roll: number): AttackResult {
+  const { power, hit } = FACILITY_SHOOTERS[kind];
+  const att: Fighter = { ...power, encircled: false, guarding: false, supporters: 0, defense: 0, walled: false, elevation: 0 };
+  const def = fighter(map, defender, encircled(map, defender.pos, map.allUnits().filter((u) => u.team !== defender.unit.team)));
+  const damage = calcDamage(att, def, { power: hit, magic: false, volley: false }, roll);
+  return {
+    damage,
+    counter: 0,
+    direct: false,
+    encircled: def.encircled,
+    defense: terrainDefense(att, def),
+    highGround: 0,
+    supporters: 0,
+    morale: moraleChange(damage, 0, power.strength, def.strength),
+  };
+}
+
 function fighter(map: HexMap, { unit, status, pos }: Combatant, encircled: boolean): Fighter {
   const { soldiers, morale, leadership } = status;
   const guarding = status.intercepting && !COMBAT_DEFS[unit.type].ranged;
@@ -461,11 +491,17 @@ function encircledAt(map: HexMap, who: Combatant, other: Combatant): boolean {
 }
 
 /** 迎撃の構えの間接ユニットのうち、mover が pos に入ったときに射程に入るもの */
-export function interceptorsAt(map: HexMap, statuses: ReadonlyMap<UnitData, UnitStatus>, mover: UnitData, pos: Offset): UnitData[] {
+export function interceptorsAt(
+  map: HexMap,
+  statuses: ReadonlyMap<UnitData, UnitStatus>,
+  mover: UnitData,
+  pos: Offset,
+  bonusOf: (unit: UnitData) => number = () => 0,
+): UnitData[] {
   return map.allUnits().filter((u) => {
     const status = statuses.get(u);
     // 感電したユニットは迎撃できない
     if (u.team === mover.team || !COMBAT_DEFS[u.type].ranged || !status?.intercepting || hasCondition(status, 'shock')) return false;
-    return canAim(map, u.type, 'interceptFire', u, pos);
+    return canAim(map, u.type, 'interceptFire', u, pos, bonusOf(u));
   });
 }

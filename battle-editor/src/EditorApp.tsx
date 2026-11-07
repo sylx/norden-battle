@@ -12,6 +12,7 @@
  * - 描画負荷: FPS・解像度・森の描き方・深度プリパス・影の更新。
  * - セリフ: 喋る場面で必ず喋らせる（確率を無視）・選択中か調べているユニットに場面ごとのセリフを言わせる。
  *   ゲームのセリフのデータで、部隊を率いる騎士が喋る（gameVoices.ts）。喋る騎士はユニットごとに選び直せる。言ったセリフの記録。
+ * - 拠点施設: 陣営ごとに要塞砲・ガンシップ（撃つ間隔）・バリスタ・魔導台を持たせる（すぐ反映。ブラウザに覚えておく）。
  * - 状態: 選択中か調べているユニットに、状態（混乱・凍結・感電）を付け外しし、攻撃をクールタイム中にする（見え方の確認用）。
  * - 退却・捕縛: 軍ごとにダミーの退却先の拠点を渡すかどうか（渡さない軍は退却できない）・退却に失敗する確率と殲滅されて捕縛される確率・
  *   退却と殲滅の結果の記録。
@@ -34,7 +35,10 @@ import {
   COMBAT_DEFS,
   CONDITION_DEFS,
   CONDITION_IDS,
+  DEFAULT_INTERVALS,
   EXCHANGE_CHANCE,
+  FACILITY_NAMES,
+  FORTRESS_CANNON_RANGE,
   MAX_DEPLOY,
   MAX_MORALE,
   RETREAT_FAIL_CHANCE,
@@ -43,9 +47,11 @@ import {
   teamName,
   WIPEOUT_CAPTURE_CHANCE,
   type BattleApp,
+  type BattleFacilities,
   type BattleFactions,
   type Portrait,
   type RetreatDestination,
+  type SideFacilities,
   type RetreatDestinations,
   type RetreatReport,
   type WipeoutReport,
@@ -79,9 +85,29 @@ import { gameBarks, knightCast } from './gameVoices';
 const MARGIN = 12;
 const GAP = 6;
 
-type Tool = 'map' | 'troops' | 'perf' | 'bark' | 'status' | 'retreat';
+type Tool = 'map' | 'troops' | 'facility' | 'perf' | 'bark' | 'status' | 'retreat';
 
-const TOOLS: Record<Tool, string> = { map: 'マップ', troops: '部隊', perf: '描画負荷', bark: 'セリフ', status: '状態', retreat: '退却・捕縛' };
+const TOOLS: Record<Tool, string> = {
+  map: 'マップ',
+  troops: '部隊',
+  facility: '拠点施設',
+  perf: '描画負荷',
+  bark: 'セリフ',
+  status: '状態',
+  retreat: '退却・捕縛',
+};
+
+/** 陣営ごとの拠点の施設を覚えておく localStorage のキー */
+const FACILITIES_KEY = 'battle-editor.facilities';
+
+function loadFacilities(): SideFacilities {
+  try {
+    const v = JSON.parse(localStorage.getItem(FACILITIES_KEY) ?? '{}') as unknown;
+    return v && typeof v === 'object' ? (v as SideFacilities) : {};
+  } catch {
+    return {};
+  }
+}
 /** 幅の広いウィンドウの道具 */
 const WIDE_TOOLS: ReadonlySet<Tool> = new Set(['troops']);
 
@@ -141,6 +167,16 @@ export default function EditorApp() {
   const troops = useMemo(() => rosterTroops(rosters), [rosters]);
   const statuses = useMemo(() => rosterStatuses(rosters), [rosters]);
   const factions = useMemo(() => rosterFactions(rosters), [rosters]);
+  /** 陣営ごとの拠点の施設（すぐ反映する） */
+  const [facilities, setFacilities] = useState<SideFacilities>(loadFacilities);
+  const changeFacilities = (next: SideFacilities) => {
+    setFacilities(next);
+    try {
+      localStorage.setItem(FACILITIES_KEY, JSON.stringify(next));
+    } catch {
+      // 覚えられなくても、この画面の間は使える
+    }
+  };
   const applyRosters = () => {
     setRosters(draft);
     saveRosters(draft);
@@ -247,6 +283,7 @@ export default function EditorApp() {
       statuses={statuses}
       factions={factions}
       retreats={retreats}
+      facilities={facilities}
       onEnd={() => setRestart((n) => n + 1)}
       endLabel="最初から"
       // 両軍を操作するが、決着のカットイン（勝利・敗北）は攻撃側をプレイヤーとして出す
@@ -273,6 +310,7 @@ export default function EditorApp() {
             />
           ),
           troops: <TroopsTool draft={draft} onDraft={setDraft} dirty={draft !== rosters} onApply={applyRosters} />,
+          facility: <FacilityTool facilities={facilities} factions={factions} onChange={changeFacilities} />,
           perf: app && <PerfTool app={app} />,
           bark: app && <BarkTool app={app} />,
           status: app && <StatusTool app={app} factions={factions} />,
@@ -899,6 +937,57 @@ function StatusTool({ app, factions }: { app: BattleApp; factions: BattleFaction
           </button>
         </label>
       ))}
+    </>
+  );
+}
+
+/** 撃つ施設の間隔の選択肢（ターン） */
+const INTERVALS = [1, 2, 3, 4];
+
+function FacilityTool({ facilities, factions, onChange }: { facilities: SideFacilities; factions: BattleFactions; onChange: (f: SideFacilities) => void }) {
+  const set = (side: DeploySide, patch: Partial<BattleFacilities>) => {
+    const next = { ...facilities[side], ...patch };
+    for (const k of Object.keys(next) as (keyof BattleFacilities)[]) if (next[k] === undefined || next[k] === false) delete next[k];
+    onChange({ ...facilities, [side]: next });
+  };
+  return (
+    <>
+      {SIDES.map((side) => {
+        const f = facilities[side] ?? {};
+        return (
+          <div key={side}>
+            <p className="hint">
+              {SIDE_NAMES[side]}（{side === 'attacker' ? factions.attacker.name : factions.defender.name}）
+            </p>
+            {(['fortressCannon', 'gunship'] as const).map((k) => (
+              <label key={k} className="row">
+                <span>{FACILITY_NAMES[k]}</span>
+                <select
+                  value={f[k] ? String(f[k].interval) : ''}
+                  onChange={(e) => set(side, { [k]: e.target.value ? { interval: Number(e.target.value) } : undefined })}
+                >
+                  <option value="">なし</option>
+                  {INTERVALS.map((n) => (
+                    <option key={n} value={n}>
+                      {n === 1 ? '毎ターン撃つ' : `${n} ターンごと`}
+                      {n === DEFAULT_INTERVALS[k] ? '（既定）' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+            {(['ballista', 'magicTower'] as const).map((k) => (
+              <label key={k} className="check">
+                <input type="checkbox" checked={!!f[k]} onChange={(e) => set(side, { [k]: e.target.checked || undefined })} /> {FACILITY_NAMES[k]}
+              </label>
+            ))}
+          </div>
+        );
+      })}
+      <p className="hint">
+        要塞砲は番の終わりに拠点から {FORTRESS_CANNON_RANGE} HEX 以内の敵（城の HEX を除く）を、ガンシップは全域の敵を、ランダムに 1 つ撃つ（拠点のあるマップの防衛側に持たせる）
+      </p>
+      <p className="hint">バリスタは城の HEX にいる弓兵の射程 +1、魔導台は城の HEX にいる魔術師の射程 +1 と、番の初めにクールタイムがさらに 1 減る。変更はすぐ反映する</p>
     </>
   );
 }

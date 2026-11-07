@@ -11,6 +11,7 @@
  * - 地形・騎士・戦闘記録・配備は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）、行動メニュー・ターン表示は ThinFrame で囲む。
  * - 画面の上の中央に戦況（軍ごとの兵数の合計の比の帯）を出す。
  * - 攻撃・迎撃・鼓舞・殲滅などのとき、ユニットの頭上にセリフの吹き出しを出す（BattleApp・speechBubbles.ts）。何を喋るかは barks で差し替える。
+ * - 拠点の施設（要塞砲・ガンシップ・バリスタ・魔導台）は陣営ごとに facilities で渡す（既定はどの陣営も無い）。
  * - 退却先の拠点は軍ごとに retreats で渡す（無い軍は退却できない）。退却した・捕虜になったユニットは onRetreat で知らせる。
  * - 殲滅されたユニット（指揮官が捕縛されたか）は onWipeout で知らせる。
  * - 軍団長部隊の全滅・退却、入城で決着したら、負けた陣営の残りの部隊の強制退却を先にする（BattleApp の rout）。そのときに決着の理由と
@@ -28,6 +29,7 @@
  * - 画面の下に操作の案内・予約の中身・実行した結果のステータス行を出す（notice を渡すとそちらを出す）。
  * - 親の要素いっぱいに広がる。children はその上に重ねる（エディタの道具・ゲームの見出しなど）。
  */
+import type { SideFacilities } from '../facilities';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { AlertDialog, Button, CUTIN_TEMPLATES, CutInLayer, ThinFrame, useCutIn, type CutInPlayOptions, type CutInQueue } from 'norden-ui';
 import type { MapData } from '@norden/map-runtime/core/mapData';
@@ -110,6 +112,8 @@ export interface BattleScreenProps {
   barks?: BarkSource;
   /** 軍ごとの退却先の拠点（ゲームでは戦場の拠点に街道でつながる自勢力の拠点）。無い軍は退却できない（既定はどの軍も無い） */
   retreats?: RetreatDestinations;
+  /** 陣営ごとの拠点の施設（ゲームでは都市の施設。既定はどの陣営も無い） */
+  facilities?: SideFacilities;
   /** ユニットが退却した・退却に失敗して捕虜になったとき（この戦闘のすべては BattleApp.retreated にも残る） */
   onRetreat?: (report: RetreatReport) => void;
   /** ユニットが殲滅されたとき（指揮官が捕縛されたかは report.captured。この戦闘のすべては BattleApp.wipedOut にも残る） */
@@ -136,6 +140,7 @@ export default function BattleScreen({
   cutInTexts,
   barks,
   retreats,
+  facilities,
   onRetreat,
   onWipeout,
   onEnd,
@@ -251,6 +256,10 @@ export default function BattleScreen({
   useEffect(() => {
     if (app) app.retreats = retreats ?? {};
   }, [app, retreats]);
+
+  useEffect(() => {
+    if (app) app.facilities = facilities ?? {};
+  }, [app, facilities]);
 
   const endTurn = () => {
     if (app?.endTurn()) setStatus(turnStatus(factions, app.turn, app.activeTeam));

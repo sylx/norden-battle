@@ -19,7 +19,7 @@ export interface WipeoutReport {
   /** 何ターン目に殲滅されたか */
   turn: number;
   /** 殲滅したユニット（攻撃・反撃・迎撃したユニット） */
-  by: UnitData;
+  by: UnitData | null;
   /** 殲滅されたときに隣接していた敵ユニットの数（同時に殲滅されたユニットは数えない） */
   enemies: number;
   /** 捕縛される確率（0〜1） */

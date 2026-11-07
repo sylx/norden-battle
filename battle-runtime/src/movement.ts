@@ -12,6 +12,10 @@
  *   ZOC の中から動き出せる（escapeZoc）。騎兵は攻撃の直後も動き出せる（app.ts の moveOptions）。ただし ZOC から ZOC へは移れない（周りを ZOC で囲まれると動けない＝包囲）。
  * - ZOC_IGNORE の兵種は ZOC を気にせず動ける（いまは無し。騎兵などの例外はここに足す）。
  *
+ * 入城の決まり: 城を持たない側（攻撃側）のユニットは、番の初めに城の HEX の中かそのとなりにいた（nearCastle）ときだけ城の HEX に入れる。
+ * そうでなければ、城の外から城の HEX へは入れない（castleLocked。城の中どうしは動ける。app.ts の moveOptions が決める）。
+ * 城へ入るには、一度城の前で番を終える必要がある。
+ *
  * 包囲: 隣の HEX がどれも入れない（マップの外・通れない地形）か、敵がいるか、敵の ZOC の中で、
  * 隣に敵が 1 体以上いれば包囲されている（ZOC から ZOC へは移れないので逃げ場が無い）。
  * 例えば、敵 2 体に反対側から挟まれると周りがすべて ZOC になって包囲になる。包囲されると受けるダメージが増える（damage.ts）。
@@ -56,13 +60,32 @@ export interface MoveOptions {
   spent?: number;
   /** 敵の ZOC の中からでも動き出せる（ターンの初め・騎兵の攻撃の直後） */
   escapeZoc?: boolean;
+  /** 城の外から城の HEX へは入れない（攻撃側で、番の初めに城の HEX の中にもとなりにもいなかったユニット） */
+  castleLocked?: boolean;
+}
+
+/** pos が城の HEX か、城の HEX のとなりか（攻撃側がこの番に城の HEX へ入れるか） */
+export function nearCastle(map: HexMap, pos: Offset): boolean {
+  const isCastle = (o: Offset) => map.get(o.col, o.row)?.feature === 'castle';
+  return isCastle(pos) || map.layout.neighbors(pos.col, pos.row).some(isCastle);
+}
+
+/** 城の外の from から城の to へ入るか */
+export function entersCastle(from: HexCell, to: HexCell): boolean {
+  return to.feature === 'castle' && from.feature !== 'castle';
 }
 
 /**
  * unit が from から ap の行動力で移動できる HEX（from を除く）と、そこへの最短経路。
  * キーは HEX のインデックス（row × cols + col）。
  */
-export function moveRange(map: HexMap, unit: UnitData, from: Offset, ap: number, { spent = 0, escapeZoc = false }: MoveOptions = {}): Map<number, MoveStep> {
+export function moveRange(
+  map: HexMap,
+  unit: UnitData,
+  from: Offset,
+  ap: number,
+  { spent = 0, escapeZoc = false, castleLocked = false }: MoveOptions = {},
+): Map<number, MoveStep> {
   const { cols } = map.layout;
   const key = (o: Offset) => o.row * cols + o.col;
   const zoc = ZOC_IGNORE.includes(unit.type) ? new Set<number>() : enemyZoc(map, unit);
@@ -89,6 +112,7 @@ export function moveRange(map: HexMap, unit: UnitData, from: Offset, ap: number,
       if (!to) continue;
       const other = map.unitAt(n.col, n.row);
       if (other && other !== unit && other.team !== unit.team) continue;
+      if (castleLocked && entersCastle(from, to)) continue;
       const c = enterCost(from, dir, to);
       if (c === null) continue;
       const cost = cur.cost + c;

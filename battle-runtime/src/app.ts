@@ -26,6 +26,11 @@
  * - 状態（conditions.ts）は、付いたユニットの軍の番が終わるときに残りのターンを減らす。攻撃の inflicts で付く。
  *   軍の番が始まるときに効く（startTeamTurn）: 凍結はその番に行動できない、感電は行動力が半分（迎撃もできない）、
  *   混乱は操作できず、番の初めにランダムな HEX へ勝手に移動して行動を終える（順に自動で実行する。その間は操作を受け付けない）。
+ * - 入城の決まり: 攻撃側のユニットは、番の初めに城の HEX の中かそのとなりにいたときだけ城の HEX へ入れる（UnitStatus.atCastle。
+ *   movement.ts の castleLocked。突撃の飛び出しも）。
+ * - 拠点の施設（facilities.ts。陣営ごとに facilities で渡す）: 番を終えると、その陣営の撃つ施設（要塞砲・ガンシップ）が間隔のターンごとに
+ *   1 発ずつ撃ち（salvo。カメラを寄せて演出し、その間は操作を受け付けない）、撃ち終えてから次の軍の番になる。撃つ施設で軍団長部隊が殲滅されれば
+ *   そこで決着する。バリスタ・魔導台は城の HEX にいるその陣営の弓兵・魔術師の射程を伸ばし（rangeBonusAt）、魔導台は番の初めにクールタイムをさらに減らす。
  * - 自分が中心の攻撃（乱撃）は、行動メニューで選ぶとすぐ予約する。地点を狙う攻撃（アーススパイク・メテオ）は空いた HEX も選べ、
  *   狙った HEX に敵がいればそれが目標、いなければ範囲のユニットはすべて巻き添え。目標の無い攻撃の士気は、敵に与えたダメージの合計で上がる。
  *   味方に当たったときだけ「巻き添え」と出す。手前で当たって壊滅したユニットも、実行を終えたときに消える
@@ -102,6 +107,7 @@ import {
   interceptorsAt,
   areaCells,
   attacksOf,
+  facilityResult,
   isAttack,
   mainTargetAt,
   mightOf,
@@ -127,9 +133,10 @@ import { applyMorale, moraleChange } from './morale';
 import { ActionMenuModel } from './menuModel';
 import { adjacentEnemies, retreatFailChance, type RetreatDestination, type RetreatDestinations, type RetreatReport } from './retreat';
 import { wipeoutCaptureChance, type WipeoutReport } from './wipeout';
-import { inEnemyZoc, movePath, moveRange, type MoveOptions, type MoveStep } from './movement';
+import { inEnemyZoc, movePath, moveRange, nearCastle, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
-import { BULLET_STYLE, ProjectileEffects, SHELL_STYLE } from './projectileFx';
+import { BULLET_STYLE, GUNSHIP_STYLE, ProjectileEffects, SHELL_STYLE } from './projectileFx';
+import { DEFAULT_INTERVALS, FACILITY_NAMES, firesOn, FORTRESS_CANNON_RANGE, rangeBonus, type BattleFacilities, type FiringFacility, type SideFacilities } from './facilities';
 import { SLASH_HIT_SEC, SlashEffects } from './slashFx';
 import { SpeechBubbles } from './speechBubbles';
 import { THUNDER_HIT_SEC, ThunderEffects } from './thunderFx';
@@ -191,6 +198,11 @@ const CHAIN_STRIKE_SEC = 1.4;
 const FROST_STRIKE_SEC = 0.8;
 const SPIKE_STRIKE_SEC = 0.8;
 const METEOR_STRIKE_SEC = 2 * PILLAR_HIT_SEC;
+/** 要塞砲の弾・ガンシップの掃射のアニメーションの時間（秒。半分の時点で当たる） */
+const CANNON_STRIKE_SEC = 2 * SHELL_STYLE.hitSec;
+const GUNSHIP_STRIKE_SEC = 2 * GUNSHIP_STYLE.hitSec;
+/** ガンシップの掃射を撃つところ（目標の上空。HEX の大きさ比の横・高さ） */
+const GUNSHIP_OFFSET = { x: -2.5, y: 7 };
 /** チェインライトニングの雷が次の相手へ跳ぶまでの時間（秒） */
 const CHAIN_STEP_SEC = 0.14;
 /** 混乱したユニットが勝手に動き出すまでの間（ミリ秒。番のカットインや前の動きの後） */
@@ -326,6 +338,19 @@ export interface InterceptReport {
   splash: SplashHit[];
 }
 
+/** 番の終わりに施設が撃った 1 発 */
+export interface FacilityReport {
+  kind: FiringFacility;
+  /** 施設を持つ陣営 */
+  side: DeploySide;
+  turn: number;
+  target: UnitData;
+  result: AttackResult;
+  /** 撃たれた後の兵数 */
+  left: number;
+  destroyed: boolean;
+}
+
 /** 範囲の巻き添えで当たったユニット 1 つ分（敵・味方を問わない。味方に当たったものは「巻き添え」と出す） */
 export interface SplashHit {
   unit: UnitData;
@@ -373,6 +398,8 @@ export interface BattleEvents {
   end: [outcome: BattleOutcome];
   /** ユニットがセリフを言うと決まったとき（掛け合いの 2 行目からなど、吹き出しを出すのは遅れることがある） */
   bark: [unit: UnitData, situation: BarkSituation | 'exchange', text: string];
+  /** 番の終わりに施設が撃ったとき（撃たれたユニットが殲滅されたら、この後に wipeout） */
+  facility: [report: FacilityReport];
   /** 実行のほかで、ユニットの状態（付いている状態など）を書き換えたとき（表示確認用の setCondition など） */
   statusChange: [unit: UnitData];
 }
@@ -427,6 +454,19 @@ interface Execution {
   supporters: UnitData[];
   /** strike の段階の演出（カメラを寄せる）。演出の無い攻撃は null */
   fx: StrikeFx | null;
+}
+
+/** 施設が撃つ 1 発（演出の進み具合） */
+interface SalvoShot {
+  kind: FiringFacility;
+  target: UnitData;
+  start: number;
+  /** カメラが寄るのを待つ時間・撃つアニメーションの時間・全体の時間（秒） */
+  lead: number;
+  strikeSec: number;
+  duration: number;
+  spawned: boolean;
+  hit: boolean;
 }
 
 /** 実行中の攻撃の演出 */
@@ -485,8 +525,10 @@ export class BattleApp {
   readonly thunderFx = new ThunderEffects();
   /** まっすぐ飛ぶ光の弾（ライフル兵の通常攻撃） */
   readonly bulletFx = new ProjectileEffects(BULLET_STYLE);
-  /** 放物線で飛ぶ大きな光の弾（砲兵の通常攻撃） */
+  /** 放物線で飛ぶ大きな光の弾（砲兵の通常攻撃・要塞砲） */
   readonly shellFx = new ProjectileEffects(SHELL_STYLE);
+  /** 上空から降らせる光の弾（ガンシップ） */
+  readonly gunshipFx = new ProjectileEffects(GUNSHIP_STYLE);
   /** 攻撃の演出でカメラを寄せる */
   readonly cameraFocus: CameraFocus;
   /** セリフの吹き出し */
@@ -514,6 +556,8 @@ export class BattleApp {
   deployment: Deployment | null = null;
   /** 軍ごとの退却先の拠点（無い軍は退却できない） */
   retreats: RetreatDestinations = {};
+  /** 陣営ごとの拠点の施設（ゲームは都市の施設から渡す） */
+  facilities: SideFacilities = {};
   /** この戦闘で退却した・退却に失敗して捕虜になったユニット（順に。マップを読み込むと空にする） */
   readonly retreated: RetreatReport[] = [];
   /** この戦闘で殲滅されたユニット（順に。マップを読み込むと空にする） */
@@ -550,6 +594,8 @@ export class BattleApp {
   private autoQueue: UnitData[] = [];
   private autoAt = 0;
   private autoRunning = false;
+  /** 番の終わりに施設が撃っている（queue はこれから撃つ施設、cur は撃っている 1 発）。撃ち終えたら次の軍の番にする */
+  private salvo: { side: DeploySide; queue: FiringFacility[]; cur: SalvoShot | null } | null = null;
   /** 行動メニューで隠したくない、予約した移動のルートと攻撃の矢印（ワールドの折れ線。予約が無ければ空） */
   private menuAvoid: THREE.Vector3[][] = [];
 
@@ -567,10 +613,10 @@ export class BattleApp {
     this.popups = new Popups(container);
     this.bubbles = new SpeechBubbles(container);
     this.cameraFocus = new CameraFocus(this.ctx);
-    this.ctx.overlay.add(this.interceptFx.group, this.slashFx.group, this.lanceFx.group, this.arrowFx.group, this.thunderFx.group, this.bulletFx.group, this.shellFx.group, this.clawFx.group, this.breathFx.group, this.impactFx.group, this.beamFx.group, this.pillarFx.group);
+    this.ctx.overlay.add(this.interceptFx.group, this.slashFx.group, this.lanceFx.group, this.arrowFx.group, this.thunderFx.group, this.bulletFx.group, this.shellFx.group, this.clawFx.group, this.breathFx.group, this.impactFx.group, this.beamFx.group, this.pillarFx.group, this.gunshipFx.group);
     this.menu.onAction = (unit, action) => {
-      // 混乱したユニットを勝手に動かしている間は操作を受け付けない
-      if (this.autoMoving) return;
+      // 混乱したユニットを勝手に動かしている間・施設が撃っている間は操作を受け付けない
+      if (this.autoMoving || this.salvo) return;
       if (action.id === 'confirm') return this.execute('confirm');
       if (action.id === 'intercept') return this.execute('intercept');
       if (action.id === 'wait') return this.execute('wait');
@@ -652,7 +698,9 @@ export class BattleApp {
     this.impactFx.clear();
     this.beamFx.clear();
     this.pillarFx.clear();
+    this.gunshipFx.clear();
     this.autoQueue = [];
+    this.salvo = null;
     this.lanceFx.clear();
     this.arrowFx.clear();
     this.thunderFx.clear();
@@ -805,11 +853,29 @@ export class BattleApp {
    * 移動済み・攻撃済みを消す。全軍が 1 回ずつ行動したらターンの数を進める（実行中・配備フェーズは何もしない）
    */
   endTurn(): boolean {
-    if (this.exec || !this.map || this.deployment || this.outcome || this.rout || this.autoMoving) return false;
+    if (this.exec || !this.map || this.deployment || this.outcome || this.rout || this.autoMoving || this.salvo) return false;
     this.setSelected(null);
     // 番を終えると、その軍のユニットは行動を終える（防衛拠点にいれば入城）
     this.judge(this.map.allUnits().filter((u) => u.team === this.activeTeam));
     if (this.outcome || this.rout) return false;
+    // この番に撃つ施設があれば、撃ち終えてから次の軍の番にする
+    const side = DEPLOY_SIDES.find((s) => SIDE_TEAM[s] === this.activeTeam);
+    const f = side && this.facilities[side];
+    const firing = (['fortressCannon', 'gunship'] as const).filter((k) => {
+      const w = f?.[k];
+      return !!w && firesOn(this.turn, w.interval ?? DEFAULT_INTERVALS[k]);
+    });
+    if (side && firing.length > 0) {
+      this.salvo = { side, queue: firing, cur: null };
+      return true;
+    }
+    this.passTurn();
+    return true;
+  }
+
+  /** 番を終えた軍の状態のターンを減らして、次の軍の番にする */
+  private passTurn(): void {
+    if (!this.map) return;
     // 番を終えた軍のユニットの状態の残りターンを減らす
     for (const [unit, status] of this.statuses) if (unit.team === this.activeTeam) tickConditions(status);
     const next = this.nextTeam(this.activeTeam);
@@ -818,7 +884,121 @@ export class BattleApp {
     this.startTeamTurn(next);
     this.refreshMarks();
     this.emit('turn', this.turn, this.activeTeam);
-    return true;
+  }
+
+  /** 施設が撃っている間を進める。1 発ずつ目標を選んでカメラを寄せ、演出の半分で当てる。撃ち終えたら次の軍の番にする */
+  private stepSalvo(now: number): void {
+    const salvo = this.salvo!;
+    const map = this.map;
+    if (!map) return;
+    let shot = salvo.cur;
+    if (!shot) {
+      const kind = salvo.queue.shift();
+      if (!kind) {
+        this.salvo = null;
+        return this.passTurn();
+      }
+      const targets = this.facilityTargets(kind, salvo.side);
+      if (targets.length === 0) return;
+      const target = targets[Math.floor(Math.random() * targets.length)];
+      const strikeSec = kind === 'fortressCannon' ? CANNON_STRIKE_SEC : GUNSHIP_STRIKE_SEC;
+      const lead = FX_ZOOM_IN_SEC;
+      shot = salvo.cur = { kind, target, start: now, lead, strikeSec, duration: lead + strikeSec + FX_HOLD_SEC + FX_ZOOM_OUT_SEC, spawned: false, hit: false };
+      this.focusOn([target], null, { in: FX_ZOOM_IN_SEC, hold: strikeSec + FX_HOLD_SEC, out: FX_ZOOM_OUT_SEC }, kind === 'fortressCannon' ? this.stronghold : null);
+    }
+    const elapsed = (now - shot.start) / 1000;
+    const t = (elapsed - shot.lead) / shot.strikeSec;
+    const hitSec = shot.kind === 'fortressCannon' ? SHELL_STYLE.hitSec : GUNSHIP_STYLE.hitSec;
+    if (!shot.spawned && t >= 0.5 - hitSec / shot.strikeSec) {
+      shot.spawned = true;
+      this.spawnFacilityFx(shot.kind, shot.target);
+    }
+    if (!shot.hit && t >= 0.5) {
+      shot.hit = true;
+      this.applyFacilityShot(shot.kind, salvo.side, shot.target);
+      this.cameraFocus.shake((shot.kind === 'fortressCannon' ? STRIKE_FX.shell.cameraShake : 0.05) * map.layout.size);
+    }
+    if (elapsed < shot.duration) return;
+    salvo.cur = null;
+    // 撃った施設で決着した（軍団長部隊の全滅）ら、次の軍の番にはしない
+    if (this.outcome || this.rout) this.salvo = null;
+  }
+
+  /** side の kind の施設が撃てる敵（要塞砲は拠点から射程以内で、城の HEX にいないもの。ガンシップは全域） */
+  private facilityTargets(kind: FiringFacility, side: DeploySide): UnitData[] {
+    const map = this.map!;
+    const enemies = map.allUnits().filter((u) => u.team !== SIDE_TEAM[side] && this.statuses.has(u));
+    if (kind === 'gunship') return enemies;
+    const hold = this.stronghold;
+    if (!hold) return [];
+    return enemies.filter((u) => hexDistance(map, hold, u) <= FORTRESS_CANNON_RANGE && map.get(u.col, u.row)?.feature !== 'castle');
+  }
+
+  /** 施設の弾を撃つ（要塞砲は拠点から、ガンシップは目標の上空から） */
+  private spawnFacilityFx(kind: FiringFacility, target: UnitData): void {
+    const tp = this.view.units.placements().find((p) => p.unit === target);
+    const size = this.map!.layout.size;
+    if (!tp) return;
+    if (kind === 'fortressCannon' && this.stronghold) {
+      return this.shellFx.spawn({ ...tp, foot: this.groundPoint(this.stronghold) }, tp, this.ctx.camera);
+    }
+    const sky = tp.foot.clone().add(new THREE.Vector3(GUNSHIP_OFFSET.x * size, GUNSHIP_OFFSET.y * size, 0));
+    this.gunshipFx.spawn({ ...tp, foot: sky }, tp, this.ctx.camera);
+  }
+
+  /** 施設の 1 発を兵数・士気に反映し、殲滅したら戦場から除いて知らせ、決着を調べる */
+  private applyFacilityShot(kind: FiringFacility, side: DeploySide, target: UnitData): void {
+    const map = this.map!;
+    const status = this.statuses.get(target);
+    if (!status) return;
+    const result = facilityResult(map, kind, { unit: target, status, pos: target }, randomRoll());
+    status.soldiers -= result.damage;
+    applyMorale(status, result.morale.defender);
+    const destroyed = status.soldiers <= 0;
+    const lost: { wipeouts: WipeoutReport[] } = { wipeouts: [] };
+    const w = destroyed ? this.wipeOut(lost, target, status, target, null, []) : null;
+    const p = this.view.units.placements().find((x) => x.unit === target);
+    if (p) this.popups.show(p, `${FACILITY_NAMES[kind]} -${result.damage}${wipeoutLabel(w)}`, 'damage');
+    if (w) {
+      this.removeUnits([target]);
+      this.wipedOut.push(w);
+      this.markFallen(target, status, 'commander');
+    }
+    this.emit('facility', { kind, side, turn: this.turn, target, result, left: Math.max(0, status.soldiers), destroyed });
+    if (!w) return;
+    this.emit('wipeout', w);
+    this.judge();
+  }
+
+  /** 戦場からユニットを除く（騎士の名前は記録に残す） */
+  private removeUnits(units: readonly UnitData[]): void {
+    const map = this.map!;
+    for (const u of units) {
+      map.removeUnit(u.col, u.row);
+      const leader = this.statuses.get(u)?.name;
+      if (leader) this.goneLeaders.set(u, leader);
+      this.statuses.delete(u);
+    }
+    if (units.length > 0) this.tags.setStatuses(this.statuses);
+    this.view.rebuildUnits();
+  }
+
+  /** 軍団長の部隊がいなくなったら、その陣営の負けにする（もう負けていればそのまま） */
+  private markFallen(unit: UnitData, status: UnitStatus, reason: CommanderLoss['reason']): void {
+    const side = DEPLOY_SIDES.find((s) => SIDE_TEAM[s] === unit.team);
+    if (status.commander && side && !this.fallen.has(side)) this.fallen.set(side, { unit, reason });
+  }
+
+  /** side の陣営の施設（無ければ undefined） */
+  private facilitiesOf(team: TeamId): BattleFacilities | undefined {
+    const side = DEPLOY_SIDES.find((s) => SIDE_TEAM[s] === team);
+    return side && this.facilities[side];
+  }
+
+  /** unit が pos（城の HEX）にいるときに施設で伸びる射程（バリスタ・魔導台） */
+  private rangeBonusAt(unit: UnitData, pos: Offset): number {
+    if (this.map?.get(pos.col, pos.row)?.feature !== 'castle') return 0;
+    return rangeBonus(this.facilitiesOf(unit.team), unit.type, !!COMBAT_DEFS[unit.type].magic);
   }
 
   /**
@@ -830,6 +1010,10 @@ export class BattleApp {
     const confused: UnitData[] = [];
     for (const [unit, status] of this.statuses) {
       if (unit.team !== team) continue;
+      // 入城の決まり: 番の初めに城の HEX の中かそのとなりにいれば、この番は城の HEX へ入れる
+      status.atCastle = !!this.map && nearCastle(this.map, unit);
+      // 魔導台: 城の HEX にいる魔術師はクールタイムがさらに 1 減る
+      if (this.facilitiesOf(team)?.magicTower && COMBAT_DEFS[unit.type].magic && this.map?.get(unit.col, unit.row)?.feature === 'castle') tickCooldowns(status);
       if (hasCondition(status, 'freeze')) status.ap = 0;
       else if (hasCondition(status, 'confusion')) confused.push(unit);
       else if (hasCondition(status, 'shock')) status.ap = Math.floor(status.maxAp / 2);
@@ -849,7 +1033,7 @@ export class BattleApp {
     this.setSelected({ col: unit.col, row: unit.row });
     const p = this.view.units.placements().find((x) => x.unit === unit);
     if (p) this.popups.show(p, '混乱', 'retreat');
-    const steps = [...moveRange(map, unit, unit, status.ap, { escapeZoc: true }).values()];
+    const steps = [...moveRange(map, unit, unit, status.ap, { escapeZoc: true, castleLocked: BattleApp.castleLocked(unit, status) }).values()];
     const plan = this.plan;
     if (steps.length === 0 || !plan) {
       status.ap = 0;
@@ -1000,11 +1184,17 @@ export class BattleApp {
   /**
    * 続きの移動を探すときの条件。ターンの初めは敵の ZOC から動き出せる。
    * 騎兵（moveAfterAttack）は攻撃の直後（予約した攻撃の後、または実行した攻撃の後にまだ移動していない）も動き出せる（一撃離脱）。
+   * 攻撃側のユニットは、番の初めに城の HEX の中かそのとなりにいなければ、城の外から城の HEX へ入れない（入城の決まり）。
    */
   static moveOptions(plan: Plan): MoveOptions {
     const afterAttack =
       !!COMBAT_DEFS[plan.unit.type].moveAfterAttack && (BattleApp.attackIsLast(plan) || (plan.status.justAttacked && !BattleApp.planned(plan)));
-    return { spent: BattleApp.planCost(plan), escapeZoc: BattleApp.turnStart(plan) || afterAttack };
+    return { spent: BattleApp.planCost(plan), escapeZoc: BattleApp.turnStart(plan) || afterAttack, castleLocked: BattleApp.castleLocked(plan.unit, plan.status) };
+  }
+
+  /** 入城の決まりで、unit が城の外から城の HEX へ入れないか（防衛側でない軍で、番の初めに城の HEX の中にもとなりにもいなかった） */
+  static castleLocked(unit: UnitData, status: UnitStatus): boolean {
+    return unit.team !== SIDE_TEAM.defender && !status.atCastle;
   }
 
   /** 攻撃する HEX（攻撃の前の移動の先） */
@@ -1020,7 +1210,7 @@ export class BattleApp {
   }
 
   private click(o: Offset | null): void {
-    if (this.outcome || this.rout || this.autoMoving) return;
+    if (this.outcome || this.rout || this.autoMoving || this.salvo) return;
     if (this.deployment) {
       this.deployment.click(o);
       return this.deployChanged();
@@ -1075,7 +1265,9 @@ export class BattleApp {
     if (!status) return [];
     const cols = map.layout.cols;
     const ap = status.maxAp;
-    const moves = moveRange(map, unit, unit, ap, { escapeZoc: true });
+    // 次の番は、いまの位置が番の初めの位置になる（入城の決まり）
+    const castleLocked = unit.team !== SIDE_TEAM.defender && !nearCastle(map, unit);
+    const moves = moveRange(map, unit, unit, ap, { escapeZoc: true, castleLocked });
     const out = new Map<number, RangeCell>();
     for (const [k, step] of moves) out.set(k, { col: step.col, row: step.row, mark: step.zoc });
     const attacks = attacksOf(unit.type, status).map((id) => resolveAttack(unit.type, id));
@@ -1086,7 +1278,7 @@ export class BattleApp {
       for (const a of attacks) {
         // 動いた後に残る行動力でできる攻撃の射程だけ数える
         if (ap - spent < a.cost) continue;
-        for (const o of attackRange(map, unit, pos, a.id)) {
+        for (const o of attackRange(map, unit, pos, a.id, this.rangeBonusAt(unit, pos))) {
           const k = o.row * cols + o.col;
           if (k !== self && !out.has(k)) out.set(k, { ...o, alt: true });
         }
@@ -1131,10 +1323,11 @@ export class BattleApp {
     const attack = resolveAttack(plan.unit.type, id);
     // 自分が中心の攻撃（乱撃）は相手を選ばずにすぐ予約する
     if (attack.aim === 'self') return this.setAttack(action, attack, pos);
-    const aimable = attack.aim === 'unit' ? attackTargets(map, plan.unit, pos, id) : attackRange(map, plan.unit, pos, id);
+    const bonus = this.rangeBonusAt(plan.unit, pos);
+    const aimable = attack.aim === 'unit' ? attackTargets(map, plan.unit, pos, id, bonus) : attackRange(map, plan.unit, pos, id, bonus);
     const cells = new Map(aimable.map((o): [number, Offset] => [o.row * cols + o.col, { col: o.col, row: o.row }]));
     // 射程内の HEX を薄く塗り、選べる HEX は濃く塗る。一斉攻撃は、選べる（ほかの味方と取り囲んだ）相手に印を付ける
-    const range = attackRange(map, plan.unit, pos, id).map((o): RangeCell => {
+    const range = attackRange(map, plan.unit, pos, id, bonus).map((o): RangeCell => {
       if (!cells.has(o.row * cols + o.col)) return { ...o, weak: true };
       const u = mainTargetAt(map, plan.unit, o, id);
       return { ...o, mark: attack.special === 'volley' && !!u && !this.rejectReason(attack, u) };
@@ -1194,7 +1387,7 @@ export class BattleApp {
     const plan = this.plan!;
     const pos = BattleApp.planPos(plan);
     const target = mainTargetAt(this.map!, plan.unit, at, attack.id);
-    const landing = attack.special === 'charge' && target ? chargeLanding(this.map!, pos, target) : null;
+    const landing = attack.special === 'charge' && target ? chargeLanding(this.map!, pos, target, BattleApp.castleLocked(plan.unit, plan.status)) : null;
     plan.attack = { action, id: attack.id as MenuAttackId, target, at: { col: at.col, row: at.row }, afterLeg: plan.legs.length, landing };
     this.endTargeting();
     this.planChanged();
@@ -1390,7 +1583,7 @@ export class BattleApp {
     }
     const { path } = phase;
     for (let i = 1; i < path.length; i++) {
-      const shooters = interceptorsAt(map, this.statuses, exec.plan.unit, path[i]);
+      const shooters = interceptorsAt(map, this.statuses, exec.plan.unit, path[i], (u) => this.rangeBonusAt(u, u));
       if (shooters.length === 0) continue;
       exec.phases.unshift(
         ...shooters.map((shooter): Phase => ({ kind: 'intercept', shooter, at: path[i], route: path.slice(0, i + 1) })),
@@ -1790,7 +1983,7 @@ export class BattleApp {
    * unit が pos で by に殲滅された。そのとき隣接している敵ユニット（exclude の同時に殲滅されたものを除く）の数で、
    * 指揮官が捕縛されるか（されなければ軍の最初の退却先へ落ち延びる）を決めて report に記録する
    */
-  private wipeOut(report: ExecuteReport, unit: UnitData, status: UnitStatus, pos: Offset, by: UnitData, exclude: readonly UnitData[]): WipeoutReport {
+  private wipeOut(report: Pick<ExecuteReport, 'wipeouts'>, unit: UnitData, status: UnitStatus, pos: Offset, by: UnitData | null, exclude: readonly UnitData[]): WipeoutReport {
     const enemies = adjacentEnemies(this.map!, unit, pos).filter((u) => !exclude.includes(u)).length;
     const captureChance = wipeoutCaptureChance(enemies, status.uncapturable);
     const w: WipeoutReport = {
@@ -1940,10 +2133,7 @@ export class BattleApp {
     this.setSelected(gone || wasAuto ? null : { col: report.unit.col, row: report.unit.row });
     this.refreshMarks();
     // 軍団長の部隊がいなくなったら、その陣営の負け（強制退却で退却したときは、もう決着している）
-    const loseCommander = (unit: UnitData, status: UnitStatus, reason: CommanderLoss['reason']) => {
-      const side = DEPLOY_SIDES.find((s) => SIDE_TEAM[s] === unit.team);
-      if (status.commander && side && !this.fallen.has(side)) this.fallen.set(side, { unit, reason });
-    };
+    const loseCommander = (unit: UnitData, status: UnitStatus, reason: CommanderLoss['reason']) => this.markFallen(unit, status, reason);
     if (report.retreat) {
       this.retreated.push(report.retreat);
       if (!report.retreat.forced) loseCommander(report.retreat.unit, report.retreat.status, 'commanderRetreat');
@@ -2142,7 +2332,7 @@ export class BattleApp {
     const targetable = attacks.filter((id) =>
       resolveAttack(plan.unit.type, id).aim === 'self'
         ? splashUnits(map, plan.unit, pos, null, pos, id).some((u) => u.team !== plan.unit.team)
-        : attackTargets(map, plan.unit, pos, id).length > 0,
+        : attackTargets(map, plan.unit, pos, id, this.rangeBonusAt(plan.unit, pos)).length > 0,
     );
     return {
       unit: plan.unit,
@@ -2237,6 +2427,8 @@ export class BattleApp {
     this.impactFx.update(this.ctx.camera);
     this.beamFx.update(this.ctx.camera);
     this.pillarFx.update(this.ctx.camera);
+    this.gunshipFx.update(this.ctx.camera);
+    if (this.salvo) this.stepSalvo(performance.now());
     // 混乱したユニットを順に勝手に動かす
     if (!this.exec && this.autoQueue.length > 0 && performance.now() >= this.autoAt) this.nextAuto();
     this.lanceFx.update(this.ctx.camera);

@@ -47,6 +47,30 @@ export interface ProjectileStyle {
   sparks?: { count: number; speed: number; gravity: number; sec: number; size: number };
 }
 
+/** ガンシップ: 上空から光の弾を広く連射して、目標の周りに降らせる（撃つところは目標の上空に置く） */
+export const GUNSHIP_STYLE: ProjectileStyle = {
+  shots: 44,
+  fireSpread: 0.9,
+  flight: 0.3,
+  hitSec: 0.9 / 2 + 0.3,
+  apexRate: 0,
+  apexBase: 0,
+  launchHeight: 0,
+  launchForward: 0,
+  targetHeight: 0.3,
+  launchScatter: 1.6,
+  targetScatter: 0.9,
+  trail: 0.6,
+  width: 0.02,
+  headSize: 0.045,
+  color: 0xffb860,
+  muzzleSize: 0.12,
+  muzzleSec: 0.06,
+  impactSize: 0.2,
+  impactSec: 0.16,
+  sparks: { count: 6, speed: 1.6, gravity: 5, sec: 0.3, size: 0.05 },
+};
+
 /** ライフル兵: 小さな光の弾をまっすぐ続けて撃つ */
 export const BULLET_STYLE: ProjectileStyle = {
   shots: 30,

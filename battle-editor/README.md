@@ -3,7 +3,7 @@
 戦闘画面の UI・演出を試し、演出のパラメータを調整するためのツール。three.js + React + TypeScript + Vite。
 
 戦闘画面は [battle-runtime](../battle-runtime/) の `BattleScreen`（ゲーム本体と同じもの）で、ここではその上にエディタの道具
-（ツールバー・マップ・部隊・描画負荷・セリフ・状態・退却・捕縛）を重ねるだけ。マップの描画は map-editor と同じ [map-runtime](../map-runtime/) の `MapView` を使い、
+（ツールバー・マップ・部隊・拠点施設・描画負荷・セリフ・状態・退却・捕縛）を重ねるだけ。マップの描画は map-editor と同じ [map-runtime](../map-runtime/) の `MapView` を使い、
 地形生成などのパラメータは map-editor の初期値のまま。UI の部品は [norden-ui](https://github.com/sylx/norden-ui)（リポジトリの隣の `../../norden-ui`）。
 
 ゲーム（nordencult）のデータ（騎士・勢力・セリフ・顔の画像。`../../src/`）を直接読むので、norden-battle は nordencult のサブモジュールとして置いておくこと。
@@ -45,6 +45,12 @@ battle-editor からマップは書き換えない。
 （[src/gameVoices.ts](src/gameVoices.ts)）。ユニットごとに喋る騎士を選び直せる（吹き出しに騎士の顔は出さない）。
 norden-data でセリフを保存すると、開いている battle-editor にもそのまま反映される。
 
+## 拠点施設
+
+ツールバーの「拠点施設」で、陣営ごとに要塞砲・ガンシップ（撃つ間隔）・バリスタ・魔導台を持たせる（すぐ反映する。ブラウザに覚えておく）。
+要塞砲・ガンシップはその陣営の番の終わりに撃つ（要塞砲は拠点から撃つので、拠点のあるマップの防衛側に持たせる）。
+バリスタ・魔導台は城の HEX にいるその陣営の弓兵・魔術師の射程を伸ばす。
+
 ## 状態
 
 ツールバーの「状態」で、選択中か調べているユニットに状態（混乱・凍結・感電）を付け外しし、攻撃をクールタイム中にできる（見え方の確認用。
@@ -65,7 +71,7 @@ norden-data でセリフを保存すると、開いている battle-editor に�
 ```
 src/
   main.tsx         入口
-  EditorApp.tsx    BattleScreen にツールバーと道具のウィンドウ（マップ・部隊・描画負荷・セリフ・状態・退却・捕縛）を重ねる。JSON のドロップ
+  EditorApp.tsx    BattleScreen にツールバーと道具のウィンドウ（マップ・部隊・拠点施設・描画負荷・セリフ・状態・退却・捕縛）を重ねる。JSON のドロップ
   gameKnights.ts   ゲームの騎士・勢力のデータと顔。陣営ごとの編成から、配備する部隊とマップのユニットの状態を作る
   gameVoices.ts    ゲームのセリフのデータ。ユニットに喋らせる騎士の割り当て
   style.css        ツールバーと道具のウィンドウ

@@ -50,6 +50,8 @@ export interface UnitStatus {
   steadfast?: boolean;
   /** 退却できない（ブレイン。強制退却でも退かず戦場に残る。兵種から決まる） */
   noRetreat?: boolean;
+  /** 番の初めに城の HEX の中かそのとなりにいたか（攻撃側はこのときだけ城の HEX に入れる。入城の決まり。BattleApp が番の初めに決める） */
+  atCastle?: boolean;
 }
 
 /** 兵種で決まる性質（士気が減らない・退却できない） */

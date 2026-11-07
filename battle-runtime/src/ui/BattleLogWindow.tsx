@@ -12,18 +12,24 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSPropert
 import { ThinFrameWithTitle } from 'norden-ui';
 import type { Offset } from '@norden/map-runtime/core/hex';
 import { TEAM_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
-import type { BattleApp, ExecuteReport, SplashHit } from '../app';
+import type { BattleApp, ExecuteReport, FacilityReport, SplashHit } from '../app';
+import { FACILITY_NAMES } from '../facilities';
 import type { MoraleChange } from '../morale';
 import { useTeamName, useUnitName } from './factionsContext';
 
 /** 攻撃 1 回分の記録 */
 export interface AttackLogEntry {
-  /** intercept: 迎撃の構えの間接ユニットの自動攻撃、splash: 攻撃の範囲の巻き添えで当たった（ライフル兵の弾が目標の手前のユニットに当たったなど。味方なら巻き添え） */
-  kind?: 'intercept' | 'splash';
+  /**
+   * intercept: 迎撃の構えの間接ユニットの自動攻撃、splash: 攻撃の範囲の巻き添えで当たった（ライフル兵の弾が目標の手前のユニットに当たったなど。味方なら巻き添え）、
+   * facility: 番の終わりに拠点の施設が撃った（attacker は無く、attackerName が施設の名前）
+   */
+  kind?: 'intercept' | 'splash' | 'facility';
   turn: number;
   /** 記録した番の軍（迎撃は相手の番に起きる） */
   team: TeamId;
-  attacker: UnitData;
+  /** 攻撃したユニット（施設なら null で、attackerName に名前） */
+  attacker: UnitData | null;
+  attackerName?: string;
   target: UnitData;
   /** 攻撃したユニット・相手を率いる騎士の名前（騎士がいなければ無し） */
   attackerLeader?: string;
@@ -75,16 +81,18 @@ export default function BattleLogWindow({ app }: { app: BattleApp }) {
 
   useEffect(() => {
     const offLoad = app.on('load', () => setEntries([]));
-    const offExecute = app.on('execute', (report) => {
-      const added = logEntries(app, report);
+    const add = (added: AttackLogEntry[]) => {
       if (added.length === 0) return;
       const list = listRef.current;
       stick.current = !list || list.scrollHeight - list.scrollTop - list.clientHeight <= STICK_BOTTOM;
       setEntries((prev) => [...prev, ...added]);
-    });
+    };
+    const offExecute = app.on('execute', (report) => add(logEntries(app, report)));
+    const offFacility = app.on('facility', (report) => add([facilityEntry(app, report)]));
     return () => {
       offLoad();
       offExecute();
+      offFacility();
     };
   }, [app]);
 
@@ -182,7 +190,7 @@ function Entry({ entry: e }: { entry: AttackLogEntry }) {
     // 足したときだけ光らせる（畳んで広げたときにもう一度光らないよう、終わったら外す）
     <li className={`log-entry fresh${e.kind ? ` ${e.kind}` : ''}`} onAnimationEnd={(ev) => ev.currentTarget.classList.remove('fresh')}>
       <div className="log-who">
-        <Unit unit={e.attacker} leader={e.attackerLeader} />
+        {e.attacker ? <Unit unit={e.attacker} leader={e.attackerLeader} /> : <span className="log-facility">{e.attackerName}</span>}
         <span className="log-verb">が</span>
         <Unit unit={e.target} leader={e.targetLeader} />
         <span className="log-verb">に</span>
@@ -243,6 +251,32 @@ function Loss({ label, kind, n, left, morale, captured }: { label: string; kind:
 function Morale({ n }: { n: number }) {
   if (n === 0) return null;
   return <span className={`log-morale ${n > 0 ? 'up' : 'down'}`}>士気 {n > 0 ? '+' : '−'}{Math.abs(n)}</span>;
+}
+
+/** 番の終わりに施設が撃った記録 */
+function facilityEntry(app: BattleApp, r: FacilityReport): AttackLogEntry {
+  const { result } = r;
+  return {
+    kind: 'facility',
+    turn: r.turn,
+    team: app.activeTeam,
+    attacker: null,
+    attackerName: FACILITY_NAMES[r.kind],
+    target: r.target,
+    targetLeader: app.leaderOf(r.target),
+    actionName: '砲撃',
+    damage: result.damage,
+    counter: 0,
+    direct: false,
+    encircled: result.encircled,
+    defense: result.defense,
+    highGround: 0,
+    morale: result.morale,
+    attackerLeft: 0,
+    targetLeft: r.left,
+    landing: null,
+    targetCaptured: r.destroyed && app.wipedOut.some((w) => w.unit === r.target && w.captured),
+  };
 }
 
 /** 実行の結果から記録を作る（攻撃の前の移動で受けた迎撃 → 攻撃 → 攻撃の後の移動で受けた迎撃の順） */
