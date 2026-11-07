@@ -46,13 +46,13 @@ export const UNIT_POWER: Record<UnitType, { attack: number; defense: number }> =
   archer: { attack: 1.0, defense: 0.7 },
   cavalry: { attack: 1.2, defense: 0.9 },
   mage: { attack: 1.3, defense: 0.6 },
-  rifleman: { attack: 2.2, defense: 0.7 },
+  rifleman: { attack: 1.8, defense: 0.7 },
   artillery: { attack: 2.5, defense: 0.5 },
   landsknecht: { attack: 2.2, defense: 1.5 },
   wizard: { attack: 1.3, defense: 0.6 },
   dragon: { attack: 2.0, defense: 1.5 },
   golem: { attack: 0.8, defense: 2.5 },
-  behemoth: { attack: 1.8, defense: 1.8 },
+  behemoth: { attack: 1.8, defense: 1.5 },
   // 攻撃しない（反撃もしない）
   brain: { attack: 0, defense: 3.0 },
 };
@@ -96,7 +96,7 @@ export const RANDOM_SPREAD = 0.2;
 /** 反撃の、通常攻撃のダメージに対する割合 */
 const COUNTER_RATE = 0.25;
 /** 迎撃の構えの近接ユニットが受けるダメージと、返す反撃の倍率 */
-const INTERCEPT_GUARD = 0.5;
+const INTERCEPT_GUARD = 0.75;
 const INTERCEPT_COUNTER = 1.5;
 /**
  * 一斉攻撃のダメージの倍率。添え字は加わる味方の数（相手の周りの 6 HEX のうち自分の分を除いて最大 5）。
@@ -161,7 +161,7 @@ export function randomRoll(): number {
 }
 
 /** 攻撃力が残りの兵数に依存しない兵種と、兵の攻めの計算に使う兵数（固定値） */
-export const FIXED_ATTACK_SOLDIERS: Partial<Record<UnitType, number>> = { mage: 500, wizard: 500, dragon: 600, golem: 800, behemoth: 1000 };
+export const FIXED_ATTACK_SOLDIERS: Partial<Record<UnitType, number>> = { mage: 500, wizard: 500, dragon: 600, golem: 800, behemoth: 600 };
 
 /** 兵の攻めの計算に使う兵数（FIXED_ATTACK_SOLDIERS の兵種は固定値、ほかは残りの兵数） */
 export function attackSoldiers(unit: Pick<UnitPower, 'type' | 'soldiers'>): number {
