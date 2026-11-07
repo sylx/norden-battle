@@ -8,7 +8,7 @@
  * - ドラゴンは直接攻撃のクロウと、目標の向きへ直線 3 HEX を焼くブレス（味方にも当たる。反撃は受けない。クールタイム 1）。
  * - ゴーレム・ベヒーモスは殴り（直接攻撃）。ベヒーモスの光線は目標とその周り 1 HEX に当たる（味方にも。クールタイム 3）。
  * - ランツクネヒトの乱撃は狙わずに自分の周りの敵・味方すべてに当たる（目標が無い。士気は敵に与えたダメージの合計で上がる。noMainMorale）。
- * - ブレインは攻撃しない（攻撃の一覧が空）。攻撃の無い部隊は反撃せず、一斉攻撃にも加わらない。
+ * - ブレインは攻撃しない（攻撃の一覧が空）。攻撃の無い部隊は反撃しない。
  * - 地点を狙う攻撃（cell）は、狙った HEX に敵がいればそれが目標（mainTargetAt）。いなければ目標は無く、範囲のユニットはすべて巻き添え。
  * - チェインライトニング（chain）は、目標から隣り合う敵へ順に跳ぶ（splashUnits）。
  * - 感電した迎撃の構えのユニットは撃たない（interceptorsAt）。
@@ -34,7 +34,8 @@
  *   砲兵が城・砦（WALLED_FEATURES）にいる相手を攻撃するときは、地形効果が半分になる（damage.ts の terrainDefense）。
  * - 反撃の無い攻撃か距離 2 以上からの攻撃は間接攻撃（Hit.indirect）で、ライフル兵・砲兵は受けるダメージが減る（damage.ts の INDIRECT_TAKEN）。
  *   施設（要塞砲・ガンシップ）の砲撃も間接攻撃。
- * - 一斉攻撃は直接攻撃の兵種だけで、相手が攻撃する自分のほかの味方（直接攻撃の兵種）とも隣接している（取り囲んでいる）ときにできる。
+ * - 一斉攻撃は攻撃の一覧に一斉攻撃を持つ兵種（歩兵・騎兵・ランツクネヒト）だけで、相手が攻撃する自分のほかの味方（同じく一斉攻撃を持つ兵種）とも
+ *   隣接している（取り囲んでいる）ときにできる（canVolley）。間接の兵種と、ドラゴン・ゴーレム・ベヒーモス・ブレインは一斉攻撃に加わらない。
  *   隣接している味方（volleySupporters）も一緒に攻撃する演出が入り、その数だけダメージが増える（damage.ts）。
  * - 攻撃の後、与えたダメージと反撃で受けたダメージの比で両軍の士気が増減する（一斉攻撃は加わった味方の数だけ相手の士気が大きく減る）。
  */
@@ -101,9 +102,14 @@ export const COMBAT_DEFS: Record<UnitType, CombatDef> = {
   brain: { minRange: 1, maxRange: 1, ranged: false, attacks: [], fx: 'slash' },
 };
 
-/** 攻撃できる兵種か（攻撃の無い部隊は反撃せず、一斉攻撃にも加わらない） */
+/** 攻撃できる兵種か（攻撃の無い部隊は反撃しない） */
 export function canFight(type: UnitType): boolean {
   return COMBAT_DEFS[type].attacks.length > 0;
+}
+
+/** 一斉攻撃をする・加わる兵種か（攻撃の一覧に一斉攻撃を持つ兵種。ドラゴン・ゴーレム・ベヒーモス・ブレイン・間接の兵種は除く） */
+export function canVolley(type: UnitType): boolean {
+  return COMBAT_DEFS[type].attacks.includes('volley');
 }
 
 /** 部隊が使える攻撃（兵種の攻撃の一覧と、magic の兵種なら持たせた魔法。行動メニューの「攻撃」の並び） */
@@ -477,12 +483,12 @@ export function cellDefense(cell: HexCell): number {
 
 /**
  * target を一斉攻撃するときに加わる味方（target に隣接している、attacker 以外の attacker の味方）。
- * 一斉攻撃ができる兵種（直接攻撃の兵種。間接の弓兵・魔術師は除く）だけが加わる
+ * 一斉攻撃ができる兵種（canVolley）だけが加わる
  */
 export function volleySupporters(map: HexMap, attacker: UnitData, target: Offset): UnitData[] {
   return map
     .allUnits()
-    .filter((u) => u.team === attacker.team && u !== attacker && !COMBAT_DEFS[u.type].ranged && canFight(u.type) && hexDistance(map, u, target) === 1);
+    .filter((u) => u.team === attacker.team && u !== attacker && canVolley(u.type) && hexDistance(map, u, target) === 1);
 }
 
 /** who が who.pos で包囲されているか（other は other.pos にいるとして判定する） */

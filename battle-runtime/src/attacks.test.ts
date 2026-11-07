@@ -216,6 +216,20 @@ describe('段階 3 の兵種・魔法・状態', () => {
     expect(side.damage).toBeLessThan(main.damage);
   });
 
+  it('ドラゴン・ゴーレム・ベヒーモス・ブレインは一斉攻撃に加わらない', () => {
+    for (const type of ['dragon', 'golem', 'behemoth', 'brain'] as const) {
+      const m = testMap();
+      const target = place(m, 'infantry', 'red', 3, 3);
+      const attacker = place(m, 'infantry', 'blue', 2, 3);
+      const other = place(m, type, 'blue', 4, 3);
+      expect(hexDistance(m, other, target)).toBe(1);
+      expect(volleySupporters(m, attacker, target)).toEqual([]);
+      // 歩兵なら加わる
+      const inf = place(m, 'infantry', 'blue', 3, 2);
+      expect(volleySupporters(m, attacker, target)).toEqual([inf]);
+    }
+  });
+
   it('ブレインは反撃せず、一斉攻撃にも加わらない。士気は減らない', () => {
     const m = testMap();
     const inf = place(m, 'infantry', 'blue', 3, 3);
