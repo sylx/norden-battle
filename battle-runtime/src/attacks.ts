@@ -14,7 +14,24 @@
 import type { ConditionId } from './conditions';
 
 /** 攻撃の ID（行動メニューの行動の ID にもなる。interceptFire は迎撃の自動攻撃で、メニューには出ない） */
-export const ATTACK_IDS = ['attack', 'volley', 'charge', 'thunderfall', 'claw', 'breath', 'flameLance', 'interceptFire'] as const;
+export const ATTACK_IDS = [
+  'attack',
+  'volley',
+  'charge',
+  'rampage',
+  'thunderfall',
+  'claw',
+  'breath',
+  'smash',
+  'maul',
+  'beam',
+  'flameLance',
+  'chainLightning',
+  'frostNova',
+  'earthSpike',
+  'meteorFall',
+  'interceptFire',
+] as const;
 export type AttackId = (typeof ATTACK_IDS)[number];
 /** 行動メニューに出る攻撃 */
 export type MenuAttackId = Exclude<AttackId, 'interceptFire'>;
@@ -23,16 +40,35 @@ export type MenuAttackId = Exclude<AttackId, 'interceptFire'>;
  * 部隊に持たせる魔法（UnitStatus.spells。magic の兵種だけが使える。ゲームでは魔導書の装備から渡す）。
  * サンダーフォールは魔術師・上級魔術師が必ず持つので含めない
  */
-export const SPELL_IDS = ['flameLance'] as const satisfies readonly MenuAttackId[];
+export const SPELL_IDS = ['flameLance', 'chainLightning', 'frostNova', 'earthSpike', 'meteorFall'] as const satisfies readonly MenuAttackId[];
 export type SpellId = (typeof SPELL_IDS)[number];
 
 /**
  * 攻撃の演出の種類。slash: 光の剣で斬る（歩兵の通常攻撃）、lance: 光るランスで貫く（騎兵の通常攻撃・突撃）、
  * arrows: 光の矢の雨（弓兵の通常攻撃）、thunder: 頭上に落ちる雷（魔術師のサンダーフォール）、
  * bullets: まっすぐ飛ぶ光の弾（ライフル兵の通常攻撃）、shell: 放物線で飛ぶ大きな光の弾（砲兵の通常攻撃）、
- * claw: 3 本の爪の跡（ドラゴンのクロウ）、breath: 範囲の端まで吹く炎（ドラゴンのブレス）、flame: 細く速い炎の槍（フレイムランス）
+ * claw: 3 本の爪の跡（ドラゴンのクロウ）、breath: 範囲の端まで吹く炎（ドラゴンのブレス）、flame: 細く速い炎の槍（フレイムランス）、
+ * whirl: 周りをなぎ払う斬撃（乱撃）、smash: 地面を揺らす衝撃（ゴーレム・ベヒーモスの殴り）、beam: 溜めて放つ光線と爆発（ベヒーモス）、
+ * chain: 跳ねていく雷（チェインライトニング）、frost: 氷の結晶（フロストノヴァ）、spike: 地面から突き出る岩（アーススパイク）、
+ * meteor: 空から落ちる光の柱と爆発（メテオフォール）
  */
-export type StrikeFxKind = 'slash' | 'lance' | 'arrows' | 'thunder' | 'bullets' | 'shell' | 'claw' | 'breath' | 'flame';
+export type StrikeFxKind =
+  | 'slash'
+  | 'lance'
+  | 'arrows'
+  | 'thunder'
+  | 'bullets'
+  | 'shell'
+  | 'claw'
+  | 'breath'
+  | 'flame'
+  | 'whirl'
+  | 'smash'
+  | 'beam'
+  | 'chain'
+  | 'frost'
+  | 'spike'
+  | 'meteor';
 
 /** 当たる範囲 */
 export type Shape =
@@ -93,6 +129,19 @@ export const ATTACK_DEFS: Record<AttackId, AttackDef> = {
   // 直接攻撃の兵種だけ（間接の弓兵・魔術師・ライフル兵・砲兵はできない）
   volley: { id: 'volley', name: '一斉攻撃', cost: 4, power: 0.8, aim: 'unit', special: 'volley' },
   charge: { id: 'charge', name: '突撃', cost: 3, power: 0.8, aim: 'unit', special: 'charge' },
+  // ランツクネヒト。狙わずに自分の周りの敵・味方すべてを斬る（反撃は受けない）
+  rampage: {
+    id: 'rampage',
+    name: '乱撃',
+    cost: 4,
+    power: 0.8,
+    aim: 'self',
+    shape: { kind: 'around', radius: 1 },
+    friendlyFire: true,
+    indirect: true,
+    cooldown: 1,
+    fx: 'whirl',
+  },
   // 魔術師の攻撃（間接攻撃。魔法の名前はいずれ指揮官の属性で変えるかもしれない）
   thunderfall: { id: 'thunderfall', name: 'サンダーフォール', cost: 4, power: 1.0, aim: 'unit', indirect: true },
   // ドラゴン。クロウは直接攻撃。ブレスは目標の向きへ直線 3 HEX を焼く（味方にも当たる。反撃は受けない）
@@ -110,6 +159,24 @@ export const ATTACK_DEFS: Record<AttackId, AttackDef> = {
     cooldown: 1,
     fx: 'breath',
   },
+  // ゴーレム・ベヒーモスの殴り（直接攻撃）
+  smash: { id: 'smash', name: '殴り', cost: 2, power: 0.9, aim: 'unit', fx: 'smash' },
+  maul: { id: 'maul', name: '殴り', cost: 2, power: 1.0, aim: 'unit', fx: 'smash' },
+  // ベヒーモスの光線。目標に大ダメージ、周り 1 HEX にも当たる（味方にも）
+  beam: {
+    id: 'beam',
+    name: '光線',
+    cost: 3,
+    power: 1.5,
+    aim: 'unit',
+    range: { min: 2, max: 3 },
+    shape: { kind: 'burst', radius: 1 },
+    splashPower: 0.6,
+    friendlyFire: true,
+    indirect: true,
+    cooldown: 3,
+    fx: 'beam',
+  },
   // 魔法（部隊に持たせる）。フレイムランスはブレスの 2 HEX 版
   flameLance: {
     id: 'flameLance',
@@ -121,7 +188,63 @@ export const ATTACK_DEFS: Record<AttackId, AttackDef> = {
     shape: { kind: 'line', length: 2 },
     friendlyFire: true,
     indirect: true,
+    cooldown: 1,
     fx: 'flame',
+  },
+  // サンダーフォールの強化版。目標から隣り合う敵へ跳ぶ（敵だけ）。当たった敵は感電することがある
+  chainLightning: {
+    id: 'chainLightning',
+    name: 'チェインライトニング',
+    cost: 4,
+    power: 1.0,
+    aim: 'unit',
+    shape: { kind: 'chain', jumps: 2 },
+    splashPower: 0.7,
+    indirect: true,
+    cooldown: 2,
+    inflicts: [{ condition: 'shock', chance: 0.5, turns: 1 }],
+    fx: 'chain',
+  },
+  // 近くの敵 1 体を凍らせる（ダメージは小さい）
+  frostNova: {
+    id: 'frostNova',
+    name: 'フロストノヴァ',
+    cost: 4,
+    power: 0.4,
+    aim: 'unit',
+    range: { min: 1, max: 2 },
+    indirect: true,
+    cooldown: 2,
+    inflicts: [{ condition: 'freeze', chance: 0.7, turns: 1 }],
+    fx: 'frost',
+  },
+  // 地点の周り 1 HEX から岩を突き出す（味方にも当たる）
+  earthSpike: {
+    id: 'earthSpike',
+    name: 'アーススパイク',
+    cost: 4,
+    power: 0.9,
+    aim: 'cell',
+    range: { min: 2, max: 3 },
+    shape: { kind: 'burst', radius: 1 },
+    friendlyFire: true,
+    indirect: true,
+    cooldown: 1,
+    fx: 'spike',
+  },
+  // 遠くの地点の周り 1 HEX に大ダメージ（味方にも当たる）
+  meteorFall: {
+    id: 'meteorFall',
+    name: 'メテオフォール',
+    cost: 4,
+    power: 1.8,
+    aim: 'cell',
+    range: { min: 1, max: 5 },
+    shape: { kind: 'burst', radius: 1 },
+    friendlyFire: true,
+    indirect: true,
+    cooldown: 3,
+    fx: 'meteor',
   },
   interceptFire: { id: 'interceptFire', name: '迎撃', cost: 0, power: 0.5, aim: 'unit', indirect: true },
 };

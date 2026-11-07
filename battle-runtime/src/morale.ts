@@ -43,8 +43,10 @@ export function moraleChange(dealt: number, taken: number, attackerStrength: num
   return { attacker: round(-LOSE_LOSS * t * strengthBonus(defenderStrength)), defender: 0 };
 }
 
-/** 士気を delta だけ増減する（0〜MAX_MORALE） */
+/** 士気を delta だけ増減する（0〜MAX_MORALE）。士気が減らない部隊（steadfast。ブレイン）は減らさない */
 export function applyMorale(status: UnitStatus, delta: number): void {
+  // 士気が減らない部隊（ブレイン）
+  if (delta < 0 && status.steadfast) return;
   status.morale = Math.min(MAX_MORALE, Math.max(0, status.morale + delta));
 }
 

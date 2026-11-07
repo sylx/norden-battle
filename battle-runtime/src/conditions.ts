@@ -5,7 +5,8 @@
  *   同じ状態が付いていれば、長いほうの残りターンにする。
  * - 付いたユニットの軍の番が終わるときに残りのターンを 1 減らし、0 で消す（tickConditions）。
  * - 情報札に印（mark）、部隊のウィンドウに名前と残りターン数を出す。
- * - 効果はまだ無い（M007 の段階 3 で決める）。
+ * - 効果（app.ts の startTeamTurn・actions.ts・combat.ts）: 凍結はその番に一切行動できない（迎撃の構えも解ける）。
+ *   感電は行動力が半分で、迎撃できない（構えも解け、構えもとれない）。混乱は操作できず、番の初めにランダムな HEX へ勝手に移動して行動を終える。
  */
 import type { UnitStatus } from './unitStatus';
 
@@ -42,6 +43,13 @@ export function setCondition(status: UnitStatus, id: ConditionId, turns: number)
   }
   if (i >= 0) status.conditions[i] = { id, turns: Math.max(status.conditions[i].turns, turns) };
   else status.conditions.push({ id, turns });
+  // 凍結・感電すると迎撃の構えは解ける
+  if (id === 'freeze' || id === 'shock') status.intercepting = false;
+}
+
+/** status に id の状態が付いているか */
+export function hasCondition(status: Pick<UnitStatus, 'conditions'>, id: ConditionId): boolean {
+  return status.conditions.some((c) => c.id === id);
 }
 
 /** 軍の番が終わるときに、残りのターンを 1 減らして 0 のものを消す */

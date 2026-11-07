@@ -6,6 +6,12 @@
  * - 兵種は使える攻撃の一覧（attacks）を持つ。magic の兵種は、部隊に持たせた魔法（UnitStatus.spells）も使える（attacksOf）。
  *   兵種と攻撃の ID から、省略を埋めた攻撃の定義を引く（resolveAttack）。
  * - ドラゴンは直接攻撃のクロウと、目標の向きへ直線 3 HEX を焼くブレス（味方にも当たる。反撃は受けない。クールタイム 1）。
+ * - ゴーレム・ベヒーモスは殴り（直接攻撃）。ベヒーモスの光線は目標とその周り 1 HEX に当たる（味方にも。クールタイム 3）。
+ * - ランツクネヒトの乱撃は狙わずに自分の周りの敵・味方すべてに当たる（目標が無い。士気は敵に与えたダメージの合計で上がる。noMainMorale）。
+ * - ブレインは攻撃しない（攻撃の一覧が空）。攻撃の無い部隊は反撃せず、一斉攻撃にも加わらない。
+ * - 地点を狙う攻撃（cell）は、狙った HEX に敵がいればそれが目標（mainTargetAt）。いなければ目標は無く、範囲のユニットはすべて巻き添え。
+ * - チェインライトニング（chain）は、目標から隣り合う敵へ順に跳ぶ（splashUnits）。
+ * - 感電した迎撃の構えのユニットは撃たない（interceptorsAt）。
  * - 当たる範囲（attacks.ts の Shape）: path・line の攻撃は、隣より遠い HEX は 6 方向の直線上だけを狙える（canAim）。
  *   範囲にいる目標以外のユニット（splashUnits。敵、friendlyFire なら味方も）は巻き添えで、目標を撃ったのと同じ計算（倍率は splashPower）で
  *   反撃は無い（splashResult）。撃ったユニットの士気は目標への攻撃の分だけ増減し、巻き添えでは増減しない。
@@ -37,6 +43,7 @@ import { dirBetween } from '@norden/map-runtime/core/roads';
 import { TERRAIN_DEFS } from '@norden/map-runtime/core/terrainTypes';
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { ActionId } from './actions';
+import { hasCondition } from './conditions';
 import { ATTACK_DEFS, isAttackId, type AttackDef, type AttackId, type Inflict, type MenuAttackId, type Shape, type StrikeFxKind } from './attacks';
 import { calcCounter, calcDamage, highGroundLevels, terrainDefense, type Fighter, type Hit } from './damage';
 import { moraleChange, type MoraleChange } from './morale';
@@ -79,12 +86,22 @@ export const COMBAT_DEFS: Record<UnitType, CombatDef> = {
     fx: 'bullets',
   },
   artillery: { minRange: 2, maxRange: 3, ranged: true, attacks: ['attack'], fx: 'shell' },
-  landsknecht: { minRange: 1, maxRange: 1, ranged: false, attacks: ['attack', 'volley'], fx: 'slash' },
+  landsknecht: { minRange: 1, maxRange: 1, ranged: false, attacks: ['attack', 'volley', 'rampage'], fx: 'slash' },
   // 上級魔術師（いまは魔術師と同じ。使える魔法は部隊に持たせる）
   wizard: { minRange: 2, maxRange: 3, ranged: true, magic: true, attacks: ['thunderfall'], fx: 'thunder' },
   // ドラゴン（射程はクロウの分。ブレスは攻撃の定義の射程）
   dragon: { minRange: 1, maxRange: 1, ranged: false, attacks: ['claw', 'breath'], fx: 'claw' },
+  golem: { minRange: 1, maxRange: 1, ranged: false, attacks: ['smash'], fx: 'smash' },
+  // ベヒーモス（射程は殴りの分。光線は攻撃の定義の射程）
+  behemoth: { minRange: 1, maxRange: 1, ranged: false, attacks: ['maul', 'beam'], fx: 'smash' },
+  // ブレイン（攻撃しない）
+  brain: { minRange: 1, maxRange: 1, ranged: false, attacks: [], fx: 'slash' },
 };
+
+/** 攻撃できる兵種か（攻撃の無い部隊は反撃せず、一斉攻撃にも加わらない） */
+export function canFight(type: UnitType): boolean {
+  return COMBAT_DEFS[type].attacks.length > 0;
+}
 
 /** 部隊が使える攻撃（兵種の攻撃の一覧と、magic の兵種なら持たせた魔法。行動メニューの「攻撃」の並び） */
 export function attacksOf(type: UnitType, status: Pick<UnitStatus, 'spells'>): MenuAttackId[] {
@@ -232,11 +249,43 @@ export function areaCells(map: HexMap, from: Offset, aimed: Offset, shape: Shape
  */
 export function splashUnits(map: HexMap, unit: UnitData, from: Offset, main: UnitData | null, aimed: Offset, id: AttackId): UnitData[] {
   const a = resolveAttack(unit.type, id);
+  if (a.shape.kind === 'chain') return chainUnits(map, unit, main ?? map.unitAt(aimed.col, aimed.row) ?? null, a.shape.jumps);
   return areaCells(map, from, aimed, a.shape).flatMap((o) => {
     const u = map.unitAt(o.col, o.row);
     if (!u || u === unit || u === main || (u.team === unit.team && !a.friendlyFire)) return [];
     return [u];
   });
+}
+
+/**
+ * チェインの跳び先: start から、まだ当たっていない隣り合う敵（unit の敵。並びの順で最初のもの）へ jumps 回まで跳ぶ。
+ * 跳び先が無ければそこで止まる
+ */
+function chainUnits(map: HexMap, unit: UnitData, start: UnitData | null, jumps: number): UnitData[] {
+  if (!start) return [];
+  const hit = new Set<UnitData>([unit, start]);
+  const out: UnitData[] = [];
+  let cur = start;
+  for (let j = 0; j < jumps; j++) {
+    const next = map.layout
+      .neighbors(cur.col, cur.row)
+      .map((o) => map.unitAt(o.col, o.row))
+      .find((u): u is UnitData => !!u && u.team !== unit.team && !hit.has(u));
+    if (!next) break;
+    hit.add(next);
+    out.push(next);
+    cur = next;
+  }
+  return out;
+}
+
+/** unit が aimed を id の攻撃で狙ったときの目標（unit を狙う攻撃は aimed のユニット、地点を狙う攻撃は aimed にいる敵、自分が中心の攻撃は無し） */
+export function mainTargetAt(map: HexMap, unit: UnitData, aimed: Offset, id: AttackId): UnitData | null {
+  const aim = resolveAttack(unit.type, id).aim;
+  if (aim === 'self') return null;
+  const u = map.unitAt(aimed.col, aimed.row) ?? null;
+  if (aim === 'unit') return u;
+  return u && u.team !== unit.team ? u : null;
 }
 
 /** unit が pos から攻撃できる敵ユニット（id の攻撃。一覧ならどれかの攻撃で。省略すれば兵種の攻撃のどれかで） */
@@ -316,7 +365,8 @@ export function attackResult(map: HexMap, attacker: Combatant, defender: Combata
   const supporters = volley ? volleySupporters(map, attacker.unit, defender.pos).length : 0;
   const att = { ...fighter(map, attacker, encircledAt(map, attacker, defender)), supporters };
   const def = fighter(map, defender, encircledAt(map, defender, attacker));
-  const direct = !splash && !a.indirect && hexDistance(map, attacker.pos, defender.pos) <= 1;
+  // 攻撃の無い部隊（ブレイン）は反撃しない
+  const direct = !splash && !a.indirect && hexDistance(map, attacker.pos, defender.pos) <= 1 && canFight(defender.unit.type);
   const hit: Hit = { power: splash ? a.splashPower : a.power, magic: a.magic, volley };
   const damage = calcDamage(att, def, hit, rolls.damage);
   const counter = direct ? calcCounter(att, { ...def, soldiers: def.soldiers - damage }, rolls.counter) : 0;
@@ -343,14 +393,17 @@ export function splashResult(map: HexMap, attacker: Combatant, victim: Combatant
 
 /** 攻撃の結果の予測（ランダム係数が真ん中のときの結果と、ダメージ・反撃の幅。splash は巻き添えのユニットへのダメージの幅） */
 export interface AttackForecast {
-  expected: AttackResult;
+  /** 目標への攻撃の結果（目標の無い攻撃は null） */
+  expected: AttackResult | null;
   damage: [min: number, max: number];
   counter: [min: number, max: number];
   splash: { unit: UnitData; damage: [min: number, max: number] }[];
 }
 
-/** splash は範囲の巻き添えのユニット（splashUnits） */
-export function attackForecast(map: HexMap, attacker: Combatant, defender: Combatant, id: AttackId, splash: readonly Combatant[] = []): AttackForecast {
+/** splash は範囲の巻き添えのユニット（splashUnits）。defender が null（目標の無い攻撃）なら expected は null で、幅は 0 */
+export function attackForecast(map: HexMap, attacker: Combatant, defender: Combatant | null, id: AttackId, splash: readonly Combatant[] = []): AttackForecast {
+  const splashRanges = splash.map((v) => ({ unit: v.unit, damage: [splashResult(map, attacker, v, id, -1).damage, splashResult(map, attacker, v, id, 1).damage] as [number, number] }));
+  if (!defender) return { expected: null, damage: [0, 0], counter: [0, 0], splash: splashRanges };
   const at = (damage: number, counter: number) => attackResult(map, attacker, defender, id, { damage, counter });
   // 与えるダメージが少ないほど相手の兵が残って反撃が増える
   const low = at(-1, 1);
@@ -359,7 +412,7 @@ export function attackForecast(map: HexMap, attacker: Combatant, defender: Comba
     expected: at(0, 0),
     damage: [low.damage, high.damage],
     counter: [high.counter, low.counter],
-    splash: splash.map((v) => ({ unit: v.unit, damage: [splashResult(map, attacker, v, id, -1).damage, splashResult(map, attacker, v, id, 1).damage] })),
+    splash: splashRanges,
   };
 }
 
@@ -395,7 +448,7 @@ export function cellDefense(cell: HexCell): number {
 export function volleySupporters(map: HexMap, attacker: UnitData, target: Offset): UnitData[] {
   return map
     .allUnits()
-    .filter((u) => u.team === attacker.team && u !== attacker && !COMBAT_DEFS[u.type].ranged && hexDistance(map, u, target) === 1);
+    .filter((u) => u.team === attacker.team && u !== attacker && !COMBAT_DEFS[u.type].ranged && canFight(u.type) && hexDistance(map, u, target) === 1);
 }
 
 /** who が who.pos で包囲されているか（other は other.pos にいるとして判定する） */
@@ -410,7 +463,9 @@ function encircledAt(map: HexMap, who: Combatant, other: Combatant): boolean {
 /** 迎撃の構えの間接ユニットのうち、mover が pos に入ったときに射程に入るもの */
 export function interceptorsAt(map: HexMap, statuses: ReadonlyMap<UnitData, UnitStatus>, mover: UnitData, pos: Offset): UnitData[] {
   return map.allUnits().filter((u) => {
-    if (u.team === mover.team || !COMBAT_DEFS[u.type].ranged || !statuses.get(u)?.intercepting) return false;
+    const status = statuses.get(u);
+    // 感電したユニットは迎撃できない
+    if (u.team === mover.team || !COMBAT_DEFS[u.type].ranged || !status?.intercepting || hasCondition(status, 'shock')) return false;
     return canAim(map, u.type, 'interceptFire', u, pos);
   });
 }

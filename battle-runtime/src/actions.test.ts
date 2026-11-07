@@ -40,8 +40,11 @@ describe('攻撃の項目', () => {
       wizard: ['thunderfall:4'],
       rifleman: ['attack:2'],
       artillery: ['attack:2'],
-      landsknecht: ['attack:2', 'volley:4'],
+      landsknecht: ['attack:2', 'volley:4', 'rampage:4'],
       dragon: ['claw:2', 'breath:4'],
+      golem: ['smash:2'],
+      behemoth: ['maul:2', 'beam:3'],
+      brain: undefined,
     });
   });
 
@@ -92,11 +95,21 @@ describe('攻撃の項目', () => {
       artillery: 2,
       landsknecht: 2,
       dragon: 2,
+      golem: 2,
+      behemoth: 2,
+      brain: null,
     });
   });
 });
 
 describe('ほかの項目', () => {
+  it('感電していると迎撃できない。ブレインは退却できない', () => {
+    const shocked = { ...status('archer'), conditions: [{ id: 'shock' as const, turns: 1 }] };
+    expect(buildActionMenu(ctx('archer', { status: shocked })).find((e) => e.name === '迎撃')!.reason).toBe('感電していて迎撃できない');
+    const special = buildActionMenu(ctx('brain')).find((e) => e.name === '特殊')!;
+    expect(special.reason ?? special.children?.find((c) => c.id === 'retreat')?.reason).toBe('この部隊は退却できない');
+  });
+
   it('騎兵は迎撃できない', () => {
     const entry = buildActionMenu(ctx('cavalry')).find((e) => e.name === '迎撃')!;
     expect(entry.enabled).toBe(false);

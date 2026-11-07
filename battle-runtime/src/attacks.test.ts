@@ -3,7 +3,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { Offset } from '@norden/map-runtime/core/hex';
-import { areaCells, attackResult, attacksOf, canAim, hexDistance, resolveAttack, splashUnits } from './combat';
+import { areaCells, attackResult, attacksOf, canAim, hexDistance, interceptorsAt, mainTargetAt, resolveAttack, splashUnits, volleySupporters } from './combat';
+import { applyMorale } from './morale';
 import { setCondition, tickConditions, tickCooldowns } from './conditions';
 import { combatant, place, status, testMap } from './test/fixtures';
 
@@ -166,5 +167,83 @@ describe('ドラゴン・フレイムランス（M007 段階 2）', () => {
   it('ドラゴンの兵数は HP と呼ぶ（monster）', () => {
     expect(status('dragon').monster).toBe(true);
     expect(status('infantry').monster).toBeUndefined();
+  });
+});
+
+describe('段階 3 の兵種・魔法・状態', () => {
+  it('乱撃は自分の周りの敵・味方すべてに当たり、目標は無い', () => {
+    const m = testMap();
+    const lk = place(m, 'landsknecht', 'blue', 4, 3);
+    const enemy = place(m, 'infantry', 'red', 5, 3);
+    const ally = place(m, 'infantry', 'blue', 3, 3);
+    place(m, 'infantry', 'red', 6, 3);
+    expect(mainTargetAt(m, lk, lk, 'rampage')).toBeNull();
+    expect(new Set(splashUnits(m, lk, lk, null, lk, 'rampage'))).toEqual(new Set([enemy, ally]));
+  });
+
+  it('チェインライトニングは目標から隣り合う敵へ 2 回まで跳ぶ（味方には跳ばない）', () => {
+    const m = testMap();
+    const mage = place(m, 'mage', 'blue', 1, 3);
+    const target = place(m, 'infantry', 'red', 3, 3);
+    const second = place(m, 'infantry', 'red', 4, 3);
+    place(m, 'infantry', 'blue', 3, 2);
+    const third = place(m, 'infantry', 'red', 5, 3);
+    place(m, 'infantry', 'red', 6, 3);
+    expect(splashUnits(m, mage, mage, target, target, 'chainLightning')).toEqual([second, third]);
+  });
+
+  it('地点を狙う攻撃は、狙った HEX に敵がいればそれが目標で、いなければ目標は無い', () => {
+    const m = testMap();
+    const mage = place(m, 'mage', 'blue', 1, 3);
+    const enemy = place(m, 'infantry', 'red', 4, 3);
+    const ally = place(m, 'infantry', 'blue', 3, 2);
+    expect(mainTargetAt(m, mage, enemy, 'earthSpike')).toBe(enemy);
+    expect(mainTargetAt(m, mage, ally, 'earthSpike')).toBeNull();
+    expect(mainTargetAt(m, mage, { col: 3, row: 3 }, 'earthSpike')).toBeNull();
+    // 空いた HEX を狙っても周りの敵・味方に当たる
+    expect(new Set(splashUnits(m, mage, mage, null, { col: 3, row: 3 }, 'earthSpike'))).toEqual(new Set([enemy, ally]));
+    expect(canAim(m, 'mage', 'meteorFall', mage, { col: 6, row: 3 })).toBe(true);
+  });
+
+  it('光線は目標に大きく、周りには小さく当たる（味方にも）', () => {
+    const m = testMap();
+    const beh = place(m, 'behemoth', 'blue', 1, 3);
+    const target = place(m, 'infantry', 'red', 3, 3);
+    const ally = place(m, 'infantry', 'blue', 4, 3);
+    expect(splashUnits(m, beh, beh, target, target, 'beam')).toEqual([ally]);
+    const main = attackResult(m, combatant(beh), combatant(target), 'beam', { damage: 0, counter: 0 });
+    const side = attackResult(m, combatant(beh), combatant(target), 'beam', { damage: 0, counter: 0 }, true);
+    expect(side.damage).toBeLessThan(main.damage);
+  });
+
+  it('ブレインは反撃せず、一斉攻撃にも加わらない。士気は減らない', () => {
+    const m = testMap();
+    const inf = place(m, 'infantry', 'blue', 3, 3);
+    const brain = place(m, 'brain', 'red', 4, 3);
+    expect(attackResult(m, combatant(inf), combatant(brain), 'attack', { damage: 0, counter: 0 }).counter).toBe(0);
+    const target = place(m, 'infantry', 'blue', 5, 3);
+    place(m, 'infantry', 'red', 6, 3);
+    expect(volleySupporters(m, place(m, 'infantry', 'red', 5, 2), target)).not.toContain(brain);
+    const s = status('brain');
+    expect(s.steadfast).toBe(true);
+    expect(s.noRetreat).toBe(true);
+    const morale = s.morale;
+    applyMorale(s, -20);
+    expect(s.morale).toBe(morale);
+    applyMorale(s, 5);
+    expect(s.morale).toBe(morale + 5);
+  });
+
+  it('感電した迎撃の構えのユニットは撃たない。凍結・感電すると構えが解ける', () => {
+    const m = testMap();
+    const archer = place(m, 'archer', 'red', 6, 3);
+    const mover = place(m, 'cavalry', 'blue', 1, 3);
+    const s = { ...status('archer'), intercepting: true };
+    expect(interceptorsAt(m, new Map([[archer, s]]), mover, { col: 4, row: 3 })).toEqual([archer]);
+    const shocked = { ...status('archer'), intercepting: true, conditions: [{ id: 'shock' as const, turns: 1 }] };
+    expect(interceptorsAt(m, new Map([[archer, shocked]]), mover, { col: 4, row: 3 })).toEqual([]);
+    const frozen = { ...status('archer'), intercepting: true };
+    setCondition(frozen, 'freeze', 1);
+    expect(frozen.intercepting).toBe(false);
   });
 });

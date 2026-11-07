@@ -306,15 +306,16 @@ function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: Exec
     }
   };
   addIntercepts(false);
-  if (attack) {
-    const { result } = attack;
+  // 目標の無い攻撃（乱撃・敵のいない地点）は、範囲で当たったものだけを並べる
+  if (attack?.result && attack.target) {
+    const { result, target } = attack;
     out.push({
       turn: app.turn,
       team: app.activeTeam,
       attacker: unit,
-      target: attack.target,
+      target,
       attackerLeader: app.leaderOf(unit),
-      targetLeader: app.leaderOf(attack.target),
+      targetLeader: app.leaderOf(target),
       // 一斉攻撃は加わった隊の数（自分を含む）も出す
       actionName: result.supporters > 0 ? `${attack.action.name} ${result.supporters + 1}隊` : attack.action.name,
       damage: result.damage,
@@ -328,10 +329,10 @@ function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: Exec
       targetLeft: attack.targetLeft,
       landing: attack.landing,
       attackerCaptured: captured(unit),
-      targetCaptured: captured(attack.target),
+      targetCaptured: captured(target),
     });
-    addSplash(unit, attack.action.name, attack.splash);
   }
+  if (attack) addSplash(unit, attack.action.name, attack.splash);
   addIntercepts(true);
   return out;
 }

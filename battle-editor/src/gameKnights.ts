@@ -91,7 +91,7 @@ export type Rosters = Record<DeploySide, SideRoster>;
 /** 編成に並べる部隊の数（配備できるのは MAX_DEPLOY まで。残りは配備のときに入れ替えられる） */
 export const ROSTER_SIZE = 8;
 /** 部隊の兵数の既定（兵種ごと。無ければ DEFAULT_SOLDIERS） */
-const SOLDIERS: Partial<Record<UnitType, number>> = { infantry: 1000, archer: 800, cavalry: 600, mage: 400, wizard: 400, rifleman: 600, artillery: 300, landsknecht: 800, dragon: 600 };
+const SOLDIERS: Partial<Record<UnitType, number>> = { infantry: 1000, archer: 800, cavalry: 600, mage: 400, wizard: 400, rifleman: 600, artillery: 300, landsknecht: 800, dragon: 600, golem: 800, behemoth: 1200, brain: 1000 };
 const DEFAULT_SOLDIERS = 800;
 /** ゲームの開始時の士気（src/game/economy/balance.ts の INITIAL_MORALE） */
 export const DEFAULT_MORALE = 70;

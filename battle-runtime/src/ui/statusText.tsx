@@ -45,7 +45,8 @@ export function planStatus(name: UnitNamer, plan: Plan): string {
   const parts = [
     moves(plan.legs.slice(0, split)),
     plan.attack &&
-      `${unitLabel(name, plan.attack.target)} に${plan.attack.action.name}` +
+      (plan.attack.target ? `${unitLabel(name, plan.attack.target)} に` : `(${plan.attack.at.col}, ${plan.attack.at.row}) に`) +
+        plan.attack.action.name +
         (plan.attack.landing ? `（(${plan.attack.landing.col}, ${plan.attack.landing.row}) へ突破）` : plan.attack.action.id === 'charge' ? '（突破できない）' : ''),
     moves(plan.legs.slice(split)),
   ].filter(Boolean);
@@ -128,7 +129,10 @@ export function executeStatus(name: UnitNamer, { unit, from, moveCost, attack, i
     }
   };
   interceptParts(false);
-  if (attack) {
+  if (attack && !attack.result) {
+    parts.push(`${attack.action.name}`);
+    splash(attack.splash);
+  } else if (attack?.result && attack.target) {
     const { result } = attack;
     parts.push(
       `${name(attack.target)}に${attack.action.name}: ` +

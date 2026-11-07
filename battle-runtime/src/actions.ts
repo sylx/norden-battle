@@ -24,6 +24,7 @@
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import { ATTACK_DEFS, type MenuAttackId } from './attacks';
 import { attacksOf } from './combat';
+import { hasCondition } from './conditions';
 import type { UnitStatus } from './unitStatus';
 
 export type ActionId =
@@ -78,7 +79,7 @@ const MENU: readonly (ActionDef | GroupDef)[] = [
   { id: 'move', name: '移動' },
   { name: '攻撃', attack: true, children: [] },
   // 騎兵はできない
-  { id: 'intercept', name: '迎撃', cost: 2, types: ['infantry', 'archer', 'mage', 'rifleman', 'artillery', 'landsknecht', 'wizard', 'dragon'] },
+  { id: 'intercept', name: '迎撃', cost: 2, types: ['infantry', 'archer', 'mage', 'rifleman', 'artillery', 'landsknecht', 'wizard', 'dragon', 'golem', 'behemoth', 'brain'] },
   // 行動力が余ったときに行動を終える
   { id: 'wait', name: '待機', cost: 0 },
   { name: '特殊', skills: true, children: [{ id: 'retreat', name: '退却', keepDisabled: true }] },
@@ -155,7 +156,9 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
         ? '狙える敵がいない'
         : c.id === 'volley' && !ctx.hasVolleyTargets
         ? '取り囲んだ敵がいない'
-        : c.id === 'retreat' && !ctx.canRetreat
+        : c.id === 'retreat' && status.noRetreat
+          ? 'この部隊は退却できない'
+          : c.id === 'retreat' && !ctx.canRetreat
           ? '退却できる拠点がない'
           : c.id === 'retreat' && (!ctx.turnStart || status.ap < status.maxAp)
             ? 'ターンの初めしか退却できない'
@@ -167,6 +170,7 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
       // 攻撃した（予約した・このターンに実行した）後は移動できない（騎兵は除く）
       if (def.id === 'move' && (ctx.attackPlanned || status.attacked) && !ctx.canMoveAfterAttack) return { name: def.name, enabled: false, reason: '攻撃の後は移動できない', action };
       if (def.id === 'intercept' && (ctx.attackPlanned || status.attacked)) return { name: def.name, enabled: false, reason: '攻撃の後は迎撃できない', action };
+      if (def.id === 'intercept' && hasCondition(status, 'shock')) return { name: def.name, enabled: false, reason: '感電していて迎撃できない', action };
       // 待機・迎撃などで行動を終えた後は、もう待機しても意味がない
       if (def.id === 'wait' && status.ap <= 0) return { name: def.name, enabled: false, reason: '行動は終わっている', action };
       if (def.id === 'move' && zocLocked) return { name: def.name, enabled: false, reason: '敵の ZOC の中にいる', action };

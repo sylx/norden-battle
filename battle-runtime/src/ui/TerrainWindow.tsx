@@ -92,7 +92,7 @@ function forecastRows(app: BattleApp, cell: HexCell): InfoRow[] {
   }
   const f = app.attackPreviewAt(cell);
   if (f && 'rejected' in f) rows.push(['攻撃', <Err>{f.rejected}</Err>]);
-  else if (f) {
+  else if (f?.expected) {
     const { direct, encircled, defense, highGround, supporters, morale } = f.expected;
     rows.push([
       '攻撃',
@@ -113,6 +113,9 @@ function forecastRows(app: BattleApp, cell: HexCell): InfoRow[] {
         士気 {signed(morale.attacker)} / 敵の士気 {signed(morale.defender)}（目安）
       </>,
     ]);
+  }
+  if (f && !('rejected' in f)) {
+    if (!f.expected) rows.push(['攻撃', f.splash.length > 0 ? '目標なし（範囲の全員に当たる）' : '範囲に誰もいない']);
     const team = app.plan?.unit.team;
     for (const p of f.splash) {
       const text = `(${p.unit.col}, ${p.unit.row}) ${range(p.damage)}`;

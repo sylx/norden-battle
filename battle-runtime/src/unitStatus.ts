@@ -46,6 +46,20 @@ export interface UnitStatus {
   spells: SpellId[];
   /** 人の兵ではない部隊（ドラゴンなど。兵数を HP と呼ぶ。兵種から決まる） */
   monster?: boolean;
+  /** 士気が減らない（ブレイン。兵種から決まる） */
+  steadfast?: boolean;
+  /** 退却できない（ブレイン。強制退却でも退かず戦場に残る。兵種から決まる） */
+  noRetreat?: boolean;
+}
+
+/** 兵種で決まる性質（士気が減らない・退却できない） */
+const TRAITS: Partial<Record<UnitType, Pick<UnitStatus, 'steadfast' | 'noRetreat'>>> = {
+  brain: { steadfast: true, noRetreat: true },
+};
+
+/** 兵種で決まる状態の項目（HP と呼ぶか・士気が減らないか・退却できないか） */
+function typeTraits(type: UnitType): Pick<UnitStatus, 'monster' | 'steadfast' | 'noRetreat'> {
+  return { ...(UNIT_DEFS[type].monster && { monster: true }), ...TRAITS[type] };
 }
 
 /** 指揮官の顔を切り出す画像と範囲（大きさはどれも画像の px） */
@@ -104,7 +118,7 @@ export function troopStatus(type: UnitType, init: TroopInit): UnitStatus {
     cooldowns: {},
     conditions: [],
     spells: [...(init.spells ?? [])],
-    ...(UNIT_DEFS[type].monster && { monster: true }),
+    ...typeTraits(type),
   };
 }
 
@@ -121,6 +135,9 @@ const MAX_AP: Record<UnitType, number> = {
   landsknecht: 4,
   wizard: 4,
   dragon: 4,
+  golem: 3,
+  behemoth: 3,
+  brain: 2,
 };
 
 /** 表示確認用の仮の部隊の、兵種ごとの兵数の目安（実際の兵数はこれをばらつかせる） */
@@ -134,6 +151,9 @@ const MAX_SOLDIERS: Record<UnitType, number> = {
   landsknecht: 800,
   wizard: 400,
   dragon: 600,
+  golem: 800,
+  behemoth: 1200,
+  brain: 1000,
 };
 
 /** 表示確認用の指揮官ごとのスキル（仮） */
@@ -204,7 +224,7 @@ export function demoStatus(type: UnitType, commander: number, r1: number, r2: nu
     cooldowns: {},
     conditions: [],
     spells: [],
-    ...(UNIT_DEFS[type].monster && { monster: true }),
+    ...typeTraits(type),
   };
 }
 

@@ -48,6 +48,10 @@ export const UNIT_POWER: Record<UnitType, { attack: number; defense: number }> =
   landsknecht: { attack: 1.3, defense: 1.2 },
   wizard: { attack: 1.3, defense: 0.6 },
   dragon: { attack: 2.0, defense: 1.5 },
+  golem: { attack: 1.6, defense: 2.0 },
+  behemoth: { attack: 2.5, defense: 2.0 },
+  // 攻撃しない（反撃もしない）
+  brain: { attack: 0, defense: 3.0 },
 };
 
 /** 攻撃 1 回の当たり方（ダメージの計算に効くところ） */
