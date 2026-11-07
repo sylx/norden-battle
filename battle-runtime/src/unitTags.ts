@@ -11,7 +11,7 @@
  * - 選択中のユニットの詳しい札は出さない（部隊のウィンドウに同じ中身を出す。renderStatus を共用する）。小さい札は出す。
  * - 行動済みのユニットは、絵の右上に E の印を付ける（setMarks。絵を暗くするのは BattleApp）。札は暗くしない。
  * - 軍団長の部隊（UnitStatus.commander）は、絵の左上に L（Leader）の印を付ける（どちらの軍も、選択中でも付ける）。
- * - 付いている状態（UnitStatus.conditions。conditions.ts）は、札の右上に 1 文字の印を並べる（部隊のウィンドウの札も同じ）。
+ * - 付いている状態（UnitStatus.conditions。conditions.ts）は、札の右下の外に 1 文字の印を並べる（部隊のウィンドウの札も同じ）。
  */
 import * as THREE from 'three';
 import type { Offset } from '@norden/map-runtime/core/hex';
@@ -20,12 +20,12 @@ import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { CONDITION_DEFS } from './conditions';
 import { MAX_MORALE, type UnitStatus } from './unitStatus';
 
-/** 詳しい札の大きさ（CSS ピクセル。ui/battle.css の .unit-tags .unit-tag と合わせる） */
+/** 詳しい札の大きさ（CSS ピクセル。ui/battle.css の .unit-tag.is-large と合わせる） */
 const TAG_W = 172;
 const TAG_H = 56;
-/** 詳しい札の顔の円の直径（枠を除く） */
-const TAG_FACE_SIZE = 48;
-/** ウィンドウの中の札（StatusCard.tsx。ui/battle.css の .unit-tag）の顔の円の直径（枠を除く） */
+/** 大きい札（詳しい札・部隊のウィンドウの札）の顔の円の直径（枠を除く） */
+export const LARGE_FACE_SIZE = 48;
+/** 配備のウィンドウの札（StatusCard.tsx。ui/battle.css の .unit-tag）の顔の円の直径（枠を除く） */
 const FACE_SIZE = 32;
 /**
  * 詳しい札の位置。絵の右上の角（E の印の中心）から、札の左端を右へ離す量（TAG_GAP_X）と、
@@ -306,7 +306,7 @@ export class UnitTags {
     if (tag) return tag;
     const color = TEAM_DEFS[unit.team].color;
     const el = document.createElement('div');
-    el.className = 'unit-tag';
+    el.className = 'unit-tag is-large';
     el.style.setProperty('--team', color);
     el.innerHTML = STATUS_HTML;
     el.hidden = true;
@@ -353,7 +353,7 @@ export class UnitTags {
     tag.shown = key;
     tag.el.classList.toggle('active', active);
     tag.line.classList.toggle('active', active);
-    renderStatus(tag.el, s, TAG_FACE_SIZE);
+    renderStatus(tag.el, s, LARGE_FACE_SIZE);
   }
 
   private renderMini(tag: Tag, s: UnitStatus): void {

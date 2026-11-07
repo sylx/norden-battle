@@ -7,7 +7,7 @@
  * - 枠は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）。表示するだけなので、マウスは下のマップへ通す。
  */
 import { useEffect, useState, type CSSProperties } from 'react';
-import { ThinFrameWithTitle } from 'norden-ui';
+import { KnightStats, ThinFrameWithTitle } from 'norden-ui';
 import { TEAM_DEFS, type UnitData } from '@norden/map-runtime/core/units';
 import { SKILL_DEFS } from '../actions';
 import { ATTACK_DEFS, type AttackId } from '../attacks';
@@ -56,7 +56,7 @@ export default function UnitInfoWindow({ app }: { app: BattleApp }) {
         </span>
         <State app={app} unit={unit} status={status} />
       </div>
-      <StatusCard status={status} className="in-info" />
+      <StatusCard status={status} large className="in-info" />
       <dl>
         <dt>{status.monster ? '初期HP' : '初期兵数'}</dt>
         <dd>{status.initialSoldiers}</dd>
@@ -79,12 +79,16 @@ export default function UnitInfoWindow({ app }: { app: BattleApp }) {
           </>
         )}
       </dl>
-      {/* 指揮官の能力（0..100）。魔術師は武力の代わりに知力を使う */}
-      <div className="info-stats">
-        <Stat label="統率" n={status.leadership} />
-        <Stat label="武力" n={status.strength} unused={magic} />
-        <Stat label="知力" n={status.intelligence} unused={!magic} />
-      </div>
+      {/* 指揮官の能力（0..100）。norden-ui の KnightCard と同じ出し方（題の下に大きな数字。高さで色分け）。
+          魔術師は武力の代わりに知力を使うので、使わないほうを薄くする（.is-magic） */}
+      <KnightStats
+        className={`info-stats${magic ? ' is-magic' : ''}`}
+        stats={[
+          { label: '統率', value: status.leadership },
+          { label: '武力', value: status.strength },
+          { label: '知力', value: status.intelligence },
+        ]}
+      />
     </ThinFrameWithTitle>
   );
 }
@@ -101,17 +105,4 @@ function State({ app, unit, status }: { app: BattleApp; unit: UnitData; status: 
       </span>
     );
   return <span className="info-state">行動可能</span>;
-}
-
-/** 指揮官の能力の値とグラフ */
-function Stat({ label, n, unused = false }: { label: string; n: number; unused?: boolean }) {
-  return (
-    <div className={`stat${unused ? ' unused' : ''}`}>
-      <span className="label">{label}</span>
-      <span className="value">{n}</span>
-      <div className="track">
-        <div className="fill" style={{ width: `${Math.max(0, Math.min(100, n))}%` }} />
-      </div>
-    </div>
-  );
 }

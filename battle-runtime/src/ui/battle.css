@@ -80,7 +80,6 @@
   padding: 2px 6px 2px 2px;
   background: linear-gradient(rgba(44, 33, 22, 0.9), rgba(26, 19, 13, 0.9));
   border: 1px solid var(--team);
-  border-left-width: 3px;
   border-radius: 20px 4px 4px 20px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
   will-change: transform;
@@ -180,10 +179,10 @@
   display: none;
 }
 
-/* 付いている状態の印（unitTags.ts の renderStatus。札の右上に 1 文字ずつ並べる） */
+/* 付いている状態の印（unitTags.ts の renderStatus。札の右下の外に 1 文字ずつ並べる） */
 .battle-screen .unit-tag .conds {
   position: absolute;
-  top: -8px;
+  bottom: -20px;
   right: 4px;
   display: flex;
   gap: 2px;
@@ -203,9 +202,9 @@
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
 }
 
-/* マップに重ねる詳しい札（unitTags.ts。カーソルの下・Shift で全員）はウィンドウの中の札より大きく。
-   大きさは TAG_W・TAG_H・TAG_FACE_SIZE と合わせる */
-.battle-screen .unit-tags .unit-tag {
+/* 大きい札（.is-large）: マップに重ねる詳しい札（unitTags.ts。カーソルの下・Shift で全員）と部隊のウィンドウの札。
+   配備のウィンドウの札より大きく。大きさは unitTags.ts の TAG_W・TAG_H・LARGE_FACE_SIZE と合わせる */
+.battle-screen .unit-tag.is-large {
   width: 172px;
   height: 56px;
   gap: 7px;
@@ -214,36 +213,32 @@
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.6);
 }
 
-.battle-screen .unit-tags .unit-tag .face {
+.battle-screen .unit-tag.is-large .face {
   width: 50px;
   height: 50px;
 }
 
-.battle-screen .unit-tags .unit-tag .bars {
+.battle-screen .unit-tag.is-large .bars {
   gap: 4px;
 }
 
-.battle-screen .unit-tags .unit-tag .bar {
+.battle-screen .unit-tag.is-large .bar {
   line-height: 14px;
 }
 
-.battle-screen .unit-tags .unit-tag .label {
+.battle-screen .unit-tag.is-large .label {
   font-size: 11px;
 }
 
-.battle-screen .unit-tags .unit-tag .value {
+.battle-screen .unit-tag.is-large .value {
   font-size: 14px;
 }
 
-.battle-screen .unit-tags .unit-tag .track {
+.battle-screen .unit-tag.is-large .track {
   height: 6px;
 }
 
-.battle-screen .unit-tags .unit-tag .conds {
-  top: -10px;
-}
-
-.battle-screen .unit-tags .unit-tag .cond {
+.battle-screen .unit-tag.is-large .cond {
   width: 18px;
   height: 18px;
   font-size: 11px;
@@ -1080,9 +1075,8 @@
 }
 
 .battle-screen .unit-info .unit-tag.in-info {
-  /* 状態の印（.conds）の基準にする */
+  /* 状態の印（.conds）の基準にする。大きさはマップの詳しい札と同じ（.is-large） */
   position: relative;
-  width: auto;
   box-shadow: none;
   will-change: auto;
 }
@@ -1112,52 +1106,55 @@
   color: var(--text-dim);
 }
 
-/* 指揮官の統率・武力・知力（0..100） */
+/* 指揮官の統率・武力・知力（0..100。norden-ui の KnightStats。KnightCard より小さく、暗い地に合わせた色にする） */
 .battle-screen .unit-info .info-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  margin-top: 8px;
+  gap: 6px;
+  margin-block: 8px;
 }
 
-.battle-screen .unit-info .info-stats .stat {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: baseline;
-  line-height: 13px;
+.battle-screen .unit-info .info-stats .norden-knight-stat {
+  min-width: 0;
+  padding: 2px 4px 1px;
+  --stat-color: #e2c48a;
+  --stat-wash: rgba(226, 196, 138, 0.08);
 }
 
-.battle-screen .unit-info .info-stats .label {
-  font-size: 11px;
+.battle-screen .unit-info .info-stats .norden-knight-stat.is-low {
+  --stat-color: #e48a72;
+  --stat-wash: rgba(228, 138, 114, 0.1);
+}
+
+.battle-screen .unit-info .info-stats .norden-knight-stat.is-mid {
+  --stat-color: #e2c48a;
+  --stat-wash: rgba(226, 196, 138, 0.08);
+}
+
+.battle-screen .unit-info .info-stats .norden-knight-stat.is-high {
+  --stat-color: #8fd08a;
+  --stat-wash: rgba(143, 208, 138, 0.1);
+}
+
+.battle-screen .unit-info .info-stats .norden-knight-stat.is-exceptional {
+  --stat-color: #c9a2ee;
+  --stat-wash: rgba(201, 162, 238, 0.12);
+}
+
+.battle-screen .unit-info .info-stats .norden-knight-stat-label {
+  font-size: 10px;
   color: var(--text-dim);
 }
 
-.battle-screen .unit-info .info-stats .value {
-  font-size: 12px;
-  font-weight: 600;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
+.battle-screen .unit-info .info-stats .norden-knight-stat b {
+  font-size: 20px;
+  line-height: 1.1;
 }
 
-/* 兵種で使わない能力（魔術師の武力・ほかの兵種の知力）は薄く */
-.battle-screen .unit-info .info-stats .stat.unused {
-  opacity: 0.5;
-}
-
-.battle-screen .unit-info .info-stats .track {
-  grid-column: 1 / -1;
-  height: 3px;
-  margin-top: 2px;
-  background: rgba(0, 0, 0, 0.55);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.battle-screen .unit-info .info-stats .fill {
-  height: 100%;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #8a6a3a, #e2b75a);
+/* 兵種で使わない能力（魔術師の武力・ほかの兵種の知力）は薄く。並びは統率・武力・知力 */
+.battle-screen .unit-info .info-stats:not(.is-magic) .norden-knight-stat:nth-child(3),
+.battle-screen .unit-info .info-stats.is-magic .norden-knight-stat:nth-child(2) {
+  opacity: 0.45;
 }
 
 /* --- 戦闘記録（BattleLogWindow.tsx。画面の右下、ターン表示の上） --- */
