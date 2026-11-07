@@ -4,7 +4,7 @@
  * - ユニットの絵（移動を予約したら予約した移動先に置いた絵）の横に置き、カメラを動かしても毎フレーム追いかける
  *   （位置は再描画せずに DOM を直接動かす）。置く位置は、絵の右・左に上端をそろえる・下端をそろえるの 4 通りのうち、
  *   予約した移動のルート・攻撃の矢印をいちばん隠さないところ（同じくらいなら右に上端をそろえる・前のフレームと同じ位置）。
- * - 上部はユニットの名前と残り行動力だけ（顔・兵士数・士気・指揮官の能力は、地形の横の部隊のウィンドウ UnitInfoWindow.tsx に出す）。
+ * - 上部は指揮官の顔とユニットの名前・残り行動力だけ（兵士数・士気・指揮官の能力は、地形の横の部隊のウィンドウ UnitInfoWindow.tsx に出す）。
  * - 2 階層目は 1 階層目の項目の横に開く。マウスは項目に乗せる、タッチはタップで開く。
  *   選べない項目（退却先の無い退却など）は灰色で出し、理由を title に持たせる。
  * - 退却を選んだ後は、項目の代わりに退却先の拠点の一覧と失敗する確率を出す（「戻る」で項目に戻る）。
@@ -12,13 +12,17 @@
  * - 選べる行動が無い（行動済みの E の印が付く。待機は数えない）ときは、項目の上に赤い「行動終了」の帯を出す。
  * - パネルは norden-ui の細いベゼル（ThinFrame）で囲む。
  */
-import { useEffect, useRef, useSyncExternalStore, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useSyncExternalStore, type CSSProperties } from 'react';
 import { ThinFrame } from 'norden-ui';
 import { TEAM_DEFS } from '@norden/map-runtime/core/units';
 import { canAct, type MenuAction, type MenuEntry } from '../actions';
 import { lengthInRect, type ActionMenuModel, type MenuFrame, type RetreatMenu, type ScreenRect } from '../menuModel';
+import { setFace } from '../unitTags';
+import type { UnitStatus } from '../unitStatus';
 import { useUnitName } from './factionsContext';
 
+/** 上部の顔の円の直径（枠を除く。ui/battle.css の .menu-face と合わせる） */
+const FACE_SIZE = 40;
 /** ユニットの絵とメニューの間隔（CSS ピクセル） */
 const GAP = 14;
 /** 画面の端からの余白 */
@@ -61,19 +65,20 @@ export default function ActionMenu({ model }: { model: ActionMenuModel }) {
         <ThinFrame />
         <div className="menu-body">
           <div className="menu-head">
-            <div className="menu-title">
-              {unitName(unit, status.name)}
-            </div>
-            <div className="menu-ap">
-              <span className="label">行動力</span>
-              <span className="value">{ctx.ap}</span>
-              <span className="max">/{status.maxAp}</span>
-              {/* 予約で使う分は欠けて見せる（0.5 刻みなので半分の印もある） */}
-              <span className="pips">
-                {Array.from({ length: status.maxAp }, (_, i) => (
-                  <i key={i} className={i + 1 <= ctx.ap ? 'on' : i < ctx.ap ? 'half' : i < status.ap ? 'spent' : ''} />
-                ))}
-              </span>
+            {status.portrait && <Face status={status} />}
+            <div className="menu-head-text">
+              <div className="menu-title">{unitName(unit, status.name)}</div>
+              <div className="menu-ap">
+                <span className="label">行動力</span>
+                <span className="value">{ctx.ap}</span>
+                <span className="max">/{status.maxAp}</span>
+                {/* 予約で使う分は欠けて見せる（0.5 刻みなので半分の印もある） */}
+                <span className="pips">
+                  {Array.from({ length: status.maxAp }, (_, i) => (
+                    <i key={i} className={i + 1 <= ctx.ap ? 'on' : i < ctx.ap ? 'half' : i < status.ap ? 'spent' : ''} />
+                  ))}
+                </span>
+              </div>
             </div>
           </div>
           {!retreat && !ctx.planned && !canAct(ctx) && (
@@ -276,4 +281,13 @@ function menuRect(sprite: ScreenRect, right: boolean, top: boolean, mw: number, 
   const x = Math.min(Math.max(right ? sprite.r + GAP : sprite.l - GAP - mw, MARGIN), w - MARGIN - mw);
   const y = Math.min(Math.max(top ? sprite.t : sprite.b - mh, MARGIN), h - MARGIN - mh);
   return { l: x, t: y, r: x + mw, b: y + mh };
+}
+
+/** 指揮官の顔（円。縁は軍の色） */
+function Face({ status }: { status: UnitStatus }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (ref.current) setFace(ref.current, status, FACE_SIZE);
+  });
+  return <div ref={ref} className="menu-face" />;
 }

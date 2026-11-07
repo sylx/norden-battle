@@ -203,6 +203,147 @@
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
 }
 
+/* マップに重ねる詳しい札（unitTags.ts。カーソルの下・Shift で全員）はウィンドウの中の札より大きく。
+   大きさは TAG_W・TAG_H・TAG_FACE_SIZE と合わせる */
+.battle-screen .unit-tags .unit-tag {
+  width: 172px;
+  height: 56px;
+  gap: 7px;
+  padding: 3px 9px 3px 3px;
+  border-radius: 28px 5px 5px 28px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.6);
+}
+
+.battle-screen .unit-tags .unit-tag .face {
+  width: 50px;
+  height: 50px;
+}
+
+.battle-screen .unit-tags .unit-tag .bars {
+  gap: 4px;
+}
+
+.battle-screen .unit-tags .unit-tag .bar {
+  line-height: 14px;
+}
+
+.battle-screen .unit-tags .unit-tag .label {
+  font-size: 11px;
+}
+
+.battle-screen .unit-tags .unit-tag .value {
+  font-size: 14px;
+}
+
+.battle-screen .unit-tags .unit-tag .track {
+  height: 6px;
+}
+
+.battle-screen .unit-tags .unit-tag .conds {
+  top: -10px;
+}
+
+.battle-screen .unit-tags .unit-tag .cond {
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* 小さい札（unitTags.ts。どのユニットにも絵の右上に固定で出す。高さは MINI_H と合わせる。詳しい札より奥） */
+.battle-screen .unit-mini {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  width: 60px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  background: rgba(26, 19, 13, 0.85);
+  border: 1px solid var(--team);
+  border-left-width: 3px;
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  will-change: transform;
+}
+
+.battle-screen .unit-mini[hidden] {
+  display: none;
+}
+
+.battle-screen .unit-mini .n {
+  flex: none;
+  min-width: 22px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  text-shadow: 0 0 2px #000;
+}
+
+.battle-screen .unit-mini.low-soldiers .n {
+  color: #ff8a70;
+}
+
+.battle-screen .unit-mini .gauges {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.battle-screen .unit-mini .g {
+  display: block;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+
+.battle-screen .unit-mini .g > b {
+  display: block;
+  height: 100%;
+}
+
+.battle-screen .unit-mini .soldiers > b {
+  background: #7cc350;
+}
+
+.battle-screen .unit-mini.low-soldiers .soldiers > b {
+  background: #e8553a;
+}
+
+.battle-screen .unit-mini .morale > b {
+  background: #e2b450;
+}
+
+.battle-screen .unit-mini.low-morale .morale > b {
+  background: #d0643a;
+}
+
+/* 付いている状態の色の点（札の右上に並べる） */
+.battle-screen .unit-mini .cdots {
+  position: absolute;
+  top: -4px;
+  right: -2px;
+  display: flex;
+  gap: 1px;
+}
+
+.battle-screen .unit-mini .cdots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cond);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8);
+}
+
 /* 行動済みのユニットの E の印（unitTags.ts。ユニットの絵の右上。札より手前） */
 .battle-screen .unit-end-mark {
   position: absolute;
@@ -287,9 +428,30 @@
 }
 
 .battle-screen .action-menu .menu-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 0 4px 6px;
   margin-bottom: 4px;
   border-bottom: 1px solid rgba(138, 106, 58, 0.6);
+}
+
+/* 指揮官の顔（ActionMenu.tsx の FACE_SIZE ＋枠） */
+.battle-screen .action-menu .menu-face {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid var(--team);
+  background-color: #3a2c1e;
+  background-repeat: no-repeat;
+  background-origin: padding-box;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+.battle-screen .action-menu .menu-head-text {
+  flex: 1;
+  min-width: 0;
 }
 
 .battle-screen .action-menu .menu-title {
@@ -1386,7 +1548,7 @@
 .battle-screen .deploy-window {
   right: 12px;
   bottom: 50px;
-  width: min(330px, calc(100% - 24px));
+  width: min(350px, calc(100% - 24px));
   max-height: calc(100% - 130px);
   display: flex;
   flex-direction: column;
@@ -1406,7 +1568,7 @@
 .battle-screen .deploy-window .deploy-troop {
   display: grid;
   /* 兵種（下に軍団長の印）・情報札・外すボタン。兵種の列は狭く決めて情報札に幅を回し、ボタンの列は未配備でも空けて位置を揃える */
-  grid-template-columns: 4.6em minmax(0, 1fr) 20px;
+  grid-template-columns: 8.0rem minmax(0, 1fr) 20px;
   align-items: center;
   gap: 8px;
   padding: 4px 6px;
