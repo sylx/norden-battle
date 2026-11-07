@@ -29,8 +29,8 @@ export interface FeatureDef {
 export const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
   bridge: { id: 'bridge', name: '橋', onWater: true, moveCost: 1 },
   village: { id: 'village', name: '村', onWater: false },
-  fort: { id: 'fort', name: '砦', onWater: false, defense: 0.3 },
-  castle: { id: 'castle', name: '城', onWater: false, defense: 0.5 },
+  fort: { id: 'fort', name: '砦', onWater: false, defense: 0.2 },
+  castle: { id: 'castle', name: '城', onWater: false, defense: 0.3 },
 };
 
 /** 城の郭の段の最大（3 = 三重の城壁） */

@@ -174,8 +174,8 @@ describe('地形', () => {
     const target = combatant(place(map, 'infantry', 'red', 5, 3));
     const art = attackResult(map, combatant(place(map, 'artillery', 'blue', 3, 3)), target, 'attack', ROLL0);
     const archer = attackResult(map, combatant(place(map, 'archer', 'blue', 4, 1)), target, 'attack', ROLL0);
-    expect(archer.defense).toBe(0.5);
-    expect(art.defense).toBe(0.25);
+    expect(archer.defense).toBe(0.3);
+    expect(art.defense).toBe(0.15);
   });
 
   it('弓兵は高い HEX から撃つとダメージが増える', () => {

@@ -351,7 +351,7 @@ body,
 
 .damage-calc .dc-headline {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 8px;
 }
 
@@ -380,6 +380,18 @@ body,
 
 .damage-calc .dc-headline strong.none {
   color: var(--text-dim);
+}
+
+.damage-calc .dc-headline strong.up {
+  color: #7fd07f;
+}
+
+.damage-calc .dc-headline strong.down {
+  color: #e07a6a;
+}
+
+.damage-calc table.dc-morale {
+  margin-top: 8px;
 }
 
 .damage-calc table {

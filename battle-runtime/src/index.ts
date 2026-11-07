@@ -23,17 +23,17 @@ export { CONDITION_DEFS, CONDITION_IDS } from './conditions';
 export type { Condition, ConditionDef, ConditionId } from './conditions';
 
 // ユニットの戦闘中の状態
-export { demoStatus, demoStatuses, MAX_MORALE, troopStatus } from './unitStatus';
+export { demoStatus, demoStatuses, MAX_MORALE, troopStatus, typeTraits } from './unitStatus';
 export type { Portrait, TroopInit, UnitStatus } from './unitStatus';
 
 // ユニットそのものの力（基本攻撃力・基本防御力。戦う前の比べ合いに使う）
 export { basicAttack, basicDefense, MAX_BASIC_DEFENSE, STANDARD_UNIT } from './damage';
 export type { UnitPower } from './damage';
 // ダメージの計算そのもの（battle-editor のダメージ計算機で使う）
-export { calcCounter, calcDamage, counterRate, damageFactors, guard, offense, RANDOM_SPREAD, UNIT_POWER } from './damage';
+export { attackSoldiers, calcCounter, calcDamage, counterRate, damageFactors, FIXED_ATTACK_SOLDIERS, guard, INDIRECT_TAKEN, MAGIC_TAKEN, offense, RANDOM_SPREAD, UNIT_POWER } from './damage';
 export type { DamageFactors, Fighter, Hit } from './damage';
-export { moraleChange } from './morale';
-export type { MoraleChange } from './morale';
+export { LOSING_RATIO, moraleBreakdown, moraleChange, STRONG_FROM, volleyMoraleRate } from './morale';
+export type { MoraleBreakdown, MoraleChange } from './morale';
 export { attacksOf, canFight, COMBAT_DEFS, mightFor, resolveAttack, WALLED_FEATURES } from './combat';
 export type { CombatDef, ResolvedAttack } from './combat';
 export type { ActionId, MenuAction, MenuChild, SkillId } from './actions';

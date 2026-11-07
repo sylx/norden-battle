@@ -94,7 +94,7 @@ export const TERRAIN_DEFS: Record<TerrainId, TerrainDef> = {
     bushDensity: 0.45,
     isWater: false,
     moveCost: 2,
-    defense: 0.2,
+    defense: 0.1,
     overlay: '#2f7a2f',
   },
   hills: {

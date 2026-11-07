@@ -128,7 +128,7 @@ export const ATTACK_DEFS: Record<AttackId, AttackDef> = {
   attack: { id: 'attack', name: '通常攻撃', cost: 2, power: 0.8, aim: 'unit' },
   // 直接攻撃の兵種だけ（間接の弓兵・魔術師・ライフル兵・砲兵はできない）
   volley: { id: 'volley', name: '一斉攻撃', cost: 4, power: 0.8, aim: 'unit', special: 'volley' },
-  charge: { id: 'charge', name: '突撃', cost: 3, power: 0.8, aim: 'unit', special: 'charge' },
+  charge: { id: 'charge', name: '突撃', cost: 3, power: 0.7, aim: 'unit', special: 'charge' },
   // ランツクネヒト。狙わずに自分の周りの敵・味方すべてを斬る（反撃は受けない）
   rampage: {
     id: 'rampage',
@@ -182,7 +182,7 @@ export const ATTACK_DEFS: Record<AttackId, AttackDef> = {
     id: 'flameLance',
     name: 'フレイムランス',
     cost: 4,
-    power: 1.0,
+    power: 1.2,
     aim: 'unit',
     range: { min: 1, max: 2 },
     shape: { kind: 'line', length: 2 },
@@ -196,7 +196,7 @@ export const ATTACK_DEFS: Record<AttackId, AttackDef> = {
     id: 'chainLightning',
     name: 'チェインライトニング',
     cost: 4,
-    power: 1.0,
+    power: 1.1,
     aim: 'unit',
     shape: { kind: 'chain', jumps: 2 },
     splashPower: 0.7,
@@ -210,7 +210,7 @@ export const ATTACK_DEFS: Record<AttackId, AttackDef> = {
     id: 'frostNova',
     name: 'フロストノヴァ',
     cost: 4,
-    power: 0.4,
+    power: 0.5,
     aim: 'unit',
     range: { min: 1, max: 2 },
     indirect: true,

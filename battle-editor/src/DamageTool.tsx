@@ -1,13 +1,13 @@
 /**
  * ダメージ計算機（battle-editor の道具）。部隊を組んで攻撃しなくても、攻撃 1 回のダメージを入力から直接出す。
  *
- * - 計算は戦闘と同じ battle-runtime の calcDamage・calcCounter・moraleChange（damage.ts の値を直せばそのまま反映される）。
+ * - 計算は戦闘と同じ battle-runtime の calcDamage・calcCounter・moraleBreakdown（damage.ts・morale.ts の値を直せばそのまま反映される）。
  * - 攻撃側: 兵種・兵数・士気・統率・武力・知力（magic の兵種は武力の代わりに知力を使う。mightFor）・攻撃（魔術師・上級魔術師は全魔法）・
  *   当たり方（直撃: 狙った相手 / 範囲: 巻き添え（splashPower。反撃なし・撃った側の士気は増減しない）/ 迎撃: 迎撃の構えの間接ユニットの自動攻撃）。
  * - 防御側: 兵種・兵数・士気・統率・武力・知力・地形（人工物の城・砦は攻城の兵種に攻撃されると地形効果が減る）。
  * - 状況: 包囲・迎撃の構え（近接の兵種）・標高差（高所の兵種）・一斉攻撃に加わる味方の数・隣接しているか（反撃を受けるか）。
  *   反撃は攻撃側の HEX の地形・包囲も効くので、攻撃側にも地形・包囲を置く。
- * - 結果: ダメージ（ランダムの真ん中と幅）・反撃・士気の増減・計算の内訳・同じ攻撃を続けたときに倒すまでの回数・防御側の兵種ごとの比較。
+ * - 結果: ダメージ（ランダムの真ん中と幅）・反撃・両軍の士気の増減（士気が減らない兵種も反映）・計算と士気の増減の内訳・同じ攻撃を続けたときに倒すまでの回数・防御側の兵種ごとの比較。
  * 入力はブラウザに覚えておく。騎士を選ぶと統率・武力・知力をその騎士の値にする。
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -17,6 +17,7 @@ import { isUnitType, UNIT_DEFS, UNIT_TYPES, type UnitType } from '@norden/map-ru
 import {
   ATTACK_DEFS,
   attacksOf,
+  attackSoldiers,
   basicAttack,
   basicDefense,
   calcCounter,
@@ -27,17 +28,21 @@ import {
   counterRate,
   damageFactors,
   guard,
+  LOSING_RATIO,
   MAX_MORALE,
   mightFor,
-  moraleChange,
+  moraleBreakdown,
   offense,
   RANDOM_SPREAD,
   resolveAttack,
   SPELL_IDS,
+  STRONG_FROM,
+  typeTraits,
   UNIT_POWER,
   WALLED_FEATURES,
   type Fighter,
   type Hit,
+  type MoraleBreakdown,
   type MenuAttackId,
   type ResolvedAttack,
 } from '@norden/battle-runtime';
@@ -194,7 +199,9 @@ function fighterOf(s: SideInput, extra: Pick<Fighter, 'guarding' | 'supporters' 
 interface Outcome {
   damage: number;
   counter: number;
+  /** 士気の増減（巻き添え・士気が減らない兵種を反映したもの）と、その内訳 */
   morale: { attacker: number; defender: number };
+  moraleDetail: MoraleBreakdown;
 }
 
 /** 計算の場面（入力から組み立てたもの） */
@@ -211,9 +218,19 @@ interface Scene {
 function outcome({ att, def, hit, direct, splash }: Scene, damageRoll: number, counterRoll: number): Outcome {
   const damage = calcDamage(att, def, hit, damageRoll);
   const counter = direct ? calcCounter(att, { ...def, soldiers: def.soldiers - damage }, counterRoll) : 0;
-  const morale = moraleChange(damage, counter, att.strength, def.strength);
-  return { damage, counter, morale: splash ? { ...morale, attacker: 0 } : morale };
+  const detail = moraleBreakdown(damage, counter, att.strength, def.strength, hit.volley ? att.supporters : 0);
+  // 巻き添えでは撃った側の士気は増減しない。士気が減らない兵種（ドラゴン・ゴーレム・ベヒーモス・ブレイン）は減らない（morale.ts の applyMorale）
+  const keep = (type: Fighter['type'], d: number) => (d < 0 && typeTraits(type).steadfast ? 0 : d);
+  return {
+    damage,
+    counter,
+    morale: { attacker: splash ? 0 : keep(att.type, detail.attacker), defender: keep(def.type, detail.defender) },
+    moraleDetail: detail,
+  };
 }
+
+/** 士気に増減を足した値（0〜MAX_MORALE） */
+const addMorale = (m: number, d: number) => Math.max(0, Math.min(MAX_MORALE, m + d));
 
 /** 同じ攻撃を続けたとき（ランダムは真ん中。兵数・士気の増減を反映）に防御側を倒すまでの回数。倒せなければ null */
 function roundsToRout(scene: Scene): { rounds: number; attackerLeft: number } | null {
@@ -222,9 +239,8 @@ function roundsToRout(scene: Scene): { rounds: number; attackerLeft: number } | 
   for (let n = 1; n <= MAX_ROUNDS; n++) {
     const o = outcome({ ...scene, att, def }, 0, 0);
     if (o.damage <= 0) return null;
-    const morale = (m: number, d: number) => Math.max(0, Math.min(MAX_MORALE, m + d));
-    def = { ...def, soldiers: def.soldiers - o.damage, morale: morale(def.morale, o.morale.defender) };
-    att = { ...att, soldiers: att.soldiers - o.counter, morale: morale(att.morale, o.morale.attacker) };
+    def = { ...def, soldiers: def.soldiers - o.damage, morale: addMorale(def.morale, o.morale.defender) };
+    att = { ...att, soldiers: att.soldiers - o.counter, morale: addMorale(att.morale, o.morale.attacker) };
     if (def.soldiers <= 0) return { rounds: n, attackerLeft: att.soldiers };
     if (att.soldiers <= 0) return null;
   }
@@ -258,7 +274,8 @@ export default function DamageTool() {
 
   const scene = useMemo((): Scene | null => {
     if (!r || !mode) return null;
-    const hit: Hit = { power: mode === 'splash' ? r.splashPower : r.power, magic: r.magic, volley: r.special === 'volley' };
+    // 間接攻撃: 反撃の無い攻撃か、離れた所から
+    const hit: Hit = { power: mode === 'splash' ? r.splashPower : r.power, magic: r.magic, volley: r.special === 'volley', indirect: r.indirect || !adjacent };
     return {
       att: fighterOf(attacker, { guarding: false, supporters: hit.volley ? input.supporters : 0, elevation: Math.max(0, input.elevation) }),
       def: fighterOf(defender, { guarding: input.guarding && guardable, supporters: 0, elevation: Math.max(0, -input.elevation) }),
@@ -300,7 +317,7 @@ export default function DamageTool() {
               </div>
               <label className="check">
                 <input type="checkbox" checked={adjacent} disabled={adjacentFixed !== null} onChange={(e) => set({ adjacent: e.target.checked })} />
-                隣接して攻撃（直接攻撃なら反撃を受ける）
+                隣接して攻撃（直接攻撃なら反撃を受ける。離れていれば間接攻撃）
               </label>
               <NumRow
                 label="一斉攻撃"
@@ -480,7 +497,7 @@ function Results({
   const g = guard(def);
   const rout = roundsToRout(scene);
   const left = def.soldiers - mid.damage;
-  const counterF = scene.direct ? damageFactors(def, att, { power: ATTACK_DEFS.attack.power, magic: false, volley: false }) : null;
+  const counterF = scene.direct ? damageFactors(def, att, { power: ATTACK_DEFS.attack.power, magic: false, volley: false, indirect: false }) : null;
 
   return (
     <section className="dc-result">
@@ -502,13 +519,13 @@ function Results({
           <strong>{left}</strong>
           <span className="dc-range">{def.soldiers > 0 ? `${Math.round((mid.damage / def.soldiers) * 100)}% 減` : ''}</span>
         </div>
+        <MoraleBox label="攻撃側の士気" before={att.morale} deltas={[mid.morale.attacker, low.morale.attacker, high.morale.attacker]} />
+        <MoraleBox label="防御側の士気" before={def.morale} deltas={[mid.morale.defender, low.morale.defender, high.morale.defender]} />
       </div>
       <p className="hint">
         {MODE_NAMES[mode]}・{r.name}（倍率 ×{hit.power}
         {hit.magic ? '・魔法' : ''}
-        {r.indirect ? '・反撃なし' : ''}）。ランダム ±{Math.round(RANDOM_SPREAD * 100)}% の幅。士気の増減: 攻撃側 {signed(mid.morale.attacker)}（{att.morale}→
-        {Math.max(0, Math.min(MAX_MORALE, att.morale + mid.morale.attacker))}）・防御側 {signed(mid.morale.defender)}（{def.morale}→
-        {Math.max(0, Math.min(MAX_MORALE, def.morale + mid.morale.defender))}）
+        {r.indirect ? '・反撃なし' : ''}）。ランダム ±{Math.round(RANDOM_SPREAD * 100)}% の幅
       </p>
       {r.inflicts.length > 0 && (
         <p className="hint">
@@ -524,7 +541,10 @@ function Results({
           <tr>
             <th>兵の攻め</th>
             <td>{fmt(o.troops)}</td>
-            <td>兵数 × 兵種の攻撃力 {UNIT_POWER[att.type].attack} × 統率</td>
+            <td>
+              兵数 {attackSoldiers(att)}
+              {attackSoldiers(att) !== att.soldiers ? '（固定）' : ''} × 兵種の攻撃力 {UNIT_POWER[att.type].attack} × 統率
+            </td>
           </tr>
           <tr>
             <th>× 攻撃の倍率</th>
@@ -567,6 +587,8 @@ function Results({
           />
           <Factor name="迎撃の構え" v={f.intercept} note={def.guarding && hit.magic ? '魔法には効かない' : ''} />
           <Factor name="一斉攻撃" v={f.volley} note={hit.volley ? `味方 ${att.supporters} 隊` : ''} />
+          <Factor name="魔法相性" v={f.magic} note={f.magic > 1 ? `${UNIT_DEFS[def.type].name}は魔法に弱い` : f.magic < 1 ? `${UNIT_DEFS[def.type].name}は魔法に強い` : ''} />
+          <Factor name="間接攻撃" v={f.indirect} note={f.indirect < 1 ? `${UNIT_DEFS[def.type].name}は間接攻撃に強い` : hit.indirect ? '間接攻撃' : ''} />
           <tr className="sum">
             <th>= ダメージ</th>
             <td>{mid.damage}</td>
@@ -585,8 +607,79 @@ function Results({
           )}
         </tbody>
       </table>
+      <MoraleTable scene={scene} o={mid} />
       <TypeComparison scene={scene} defender={defender} />
     </section>
+  );
+}
+
+/** 士気の増減の見出し（ランダムの真ん中の増減と、幅・増減した後の士気） */
+function MoraleBox({ label, before, deltas: [mid, a, b] }: { label: string; before: number; deltas: [number, number, number] }) {
+  const lo = Math.min(a, b, mid);
+  const hi = Math.max(a, b, mid);
+  return (
+    <div>
+      <span className="dc-label">{label}</span>
+      <strong className={mid > 0 ? 'up' : mid < 0 ? 'down' : 'none'}>{mid === 0 ? '±0' : signed(mid)}</strong>
+      <span className="dc-range">
+        {before}→{addMorale(before, mid)}
+        {lo !== hi ? `（${signed(lo)}〜${signed(hi)}）` : ''}
+      </span>
+    </div>
+  );
+}
+
+/** 士気の増減の内訳（与えたダメージと反撃の比で決まる。morale.ts） */
+function MoraleTable({ scene, o }: { scene: Scene; o: Outcome }) {
+  const d = o.moraleDetail;
+  const { att, def } = scene;
+  const might = (type: Fighter['type']) => (COMBAT_DEFS[type].magic ? '知力' : '武力');
+  const ratio = d.ratio === Infinity ? '∞' : fmt(d.ratio);
+  return (
+    <table className="dc-breakdown dc-morale">
+      <tbody>
+        <tr>
+          <th>士気の比</th>
+          <td>{ratio}</td>
+          <td>
+            反撃 {o.counter} ÷ 与えた {o.damage}。{LOSING_RATIO} 以下なら優勢（攻撃側が上がり防御側が下がる）、超えると劣勢（攻撃側だけ下がる）
+          </td>
+        </tr>
+        {d.winning !== null && (
+          <>
+            <tr>
+              <th>{d.winning ? '優勢' : '劣勢'}の強さ</th>
+              <td>{fmt(d.scale)}</td>
+              <td>
+                {d.winning ? `比 0 で 1、${LOSING_RATIO} で 0。最大 攻撃側 ${signed(d.max.attacker)}・防御側 ${signed(d.max.defender)}` : `比 ${LOSING_RATIO} で 0、1 以上で 1。最大 攻撃側 ${signed(d.max.attacker)}`}
+              </td>
+            </tr>
+            <tr className={d.bonus === 1 ? 'idle' : ''}>
+              <th>× {d.winning ? '攻撃側' : '防御側'}の{might(d.winning ? att.type : def.type)}</th>
+              <td>{fmt(d.bonus)}</td>
+              <td>{d.winning ? att.strength : def.strength}（{STRONG_FROM} を超えると増える）</td>
+            </tr>
+            <tr className={d.volley === 1 || !d.winning ? 'idle' : ''}>
+              <th>× 一斉攻撃（防御側）</th>
+              <td>{fmt(d.volley)}</td>
+              <td>{scene.hit.volley ? `味方 ${att.supporters} 隊。防御側の士気の減り方だけに掛かる` : '一斉攻撃のときだけ'}</td>
+            </tr>
+          </>
+        )}
+        <tr className="sum">
+          <th>= 士気の増減</th>
+          <td>
+            {signed(o.morale.attacker)} / {signed(o.morale.defender)}
+          </td>
+          <td>
+            攻撃側 / 防御側
+            {scene.splash ? '。巻き添えなので攻撃側は増減しない' : ''}
+            {o.morale.defender !== d.defender ? `。${UNIT_DEFS[def.type].name}は士気が減らない` : ''}
+            {d.winning === null ? '。ダメージも反撃も無いので増減しない' : ''}
+          </td>
+        </tr>
+      </tbody>
+    </table>
   );
 }
 

@@ -46,7 +46,7 @@ export interface UnitStatus {
   spells: SpellId[];
   /** 人の兵ではない部隊（ドラゴンなど。兵数を HP と呼ぶ。兵種から決まる） */
   monster?: boolean;
-  /** 士気が減らない（ブレイン。兵種から決まる） */
+  /** 士気が減らない（ドラゴン・ゴーレム・ベヒーモス・ブレイン。兵種から決まる） */
   steadfast?: boolean;
   /** 退却できない（ブレイン。強制退却でも退かず戦場に残る。兵種から決まる） */
   noRetreat?: boolean;
@@ -56,11 +56,14 @@ export interface UnitStatus {
 
 /** 兵種で決まる性質（士気が減らない・退却できない） */
 const TRAITS: Partial<Record<UnitType, Pick<UnitStatus, 'steadfast' | 'noRetreat'>>> = {
+  dragon: { steadfast: true },
+  golem: { steadfast: true },
+  behemoth: { steadfast: true },
   brain: { steadfast: true, noRetreat: true },
 };
 
 /** 兵種で決まる状態の項目（HP と呼ぶか・士気が減らないか・退却できないか） */
-function typeTraits(type: UnitType): Pick<UnitStatus, 'monster' | 'steadfast' | 'noRetreat'> {
+export function typeTraits(type: UnitType): Pick<UnitStatus, 'monster' | 'steadfast' | 'noRetreat'> {
   return { ...(UNIT_DEFS[type].monster && { monster: true }), ...TRAITS[type] };
 }
 

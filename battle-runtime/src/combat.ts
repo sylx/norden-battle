@@ -32,9 +32,11 @@
  * - 地形効果（cellDefense。森・砦・城など）のある HEX にいる相手へのダメージは減り、
  *   弓兵・砲兵が相手より高い HEX から攻撃するとダメージが増える（damage.ts）。
  *   砲兵が城・砦（WALLED_FEATURES）にいる相手を攻撃するときは、地形効果が半分になる（damage.ts の terrainDefense）。
+ * - 反撃の無い攻撃か距離 2 以上からの攻撃は間接攻撃（Hit.indirect）で、ライフル兵・砲兵は受けるダメージが減る（damage.ts の INDIRECT_TAKEN）。
+ *   施設（要塞砲・ガンシップ）の砲撃も間接攻撃。
  * - 一斉攻撃は直接攻撃の兵種だけで、相手が攻撃する自分のほかの味方（直接攻撃の兵種）とも隣接している（取り囲んでいる）ときにできる。
  *   隣接している味方（volleySupporters）も一緒に攻撃する演出が入り、その数だけダメージが増える（damage.ts）。
- * - 攻撃の後、与えたダメージと反撃で受けたダメージの比で両軍の士気が増減する。
+ * - 攻撃の後、与えたダメージと反撃で受けたダメージの比で両軍の士気が増減する（一斉攻撃は加わった味方の数だけ相手の士気が大きく減る）。
  */
 import { axialDistance, type Offset } from '@norden/map-runtime/core/hex';
 import { FEATURE_DEFS } from '@norden/map-runtime/core/features';
@@ -376,7 +378,9 @@ export function attackResult(map: HexMap, attacker: Combatant, defender: Combata
   const def = fighter(map, defender, encircledAt(map, defender, attacker));
   // 攻撃の無い部隊（ブレイン）は反撃しない
   const direct = !splash && !a.indirect && hexDistance(map, attacker.pos, defender.pos) <= 1 && canFight(defender.unit.type);
-  const hit: Hit = { power: splash ? a.splashPower : a.power, magic: a.magic, volley };
+  // 間接攻撃: 反撃の無い攻撃か、距離 2 以上から
+  const indirect = a.indirect || hexDistance(map, attacker.pos, defender.pos) >= 2;
+  const hit: Hit = { power: splash ? a.splashPower : a.power, magic: a.magic, volley, indirect };
   const damage = calcDamage(att, def, hit, rolls.damage);
   const counter = direct ? calcCounter(att, { ...def, soldiers: def.soldiers - damage }, rolls.counter) : 0;
   return {
@@ -387,7 +391,7 @@ export function attackResult(map: HexMap, attacker: Combatant, defender: Combata
     defense: terrainDefense(att, def),
     highGround: highGroundLevels(att, def),
     supporters,
-    morale: moraleChange(damage, counter, att.strength, def.strength),
+    morale: moraleChange(damage, counter, att.strength, def.strength, supporters),
   };
 }
 
@@ -433,7 +437,7 @@ export function facilityResult(map: HexMap, kind: FiringFacility, defender: Comb
   const { power, hit } = FACILITY_SHOOTERS[kind];
   const att: Fighter = { ...power, encircled: false, guarding: false, supporters: 0, defense: 0, walled: false, elevation: 0 };
   const def = fighter(map, defender, encircled(map, defender.pos, map.allUnits().filter((u) => u.team !== defender.unit.team)));
-  const damage = calcDamage(att, def, { power: hit, magic: false, volley: false }, roll);
+  const damage = calcDamage(att, def, { power: hit, magic: false, volley: false, indirect: true }, roll);
   return {
     damage,
     counter: 0,
