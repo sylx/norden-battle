@@ -9,6 +9,7 @@
  *   （既定は初期配置地点のある最初の範囲）。「最初から」で配備からやり直す。
  * - 部隊: 陣営ごとに、ゲーム（nordencult）の勢力と騎士で編成を組む（gameKnights.ts）。騎士・兵種・兵数・士気・軍団長を選び直せる。
  *   直した編成は「この編成で最初から」で反映する（ブラウザに覚えておき、開き直しても同じ編成で始める）。
+ * - ダメージ計算: 攻撃側・防御側の兵種・兵数・士気・能力と状況から、攻撃 1 回のダメージを出す（DamageTool.tsx。戦闘と同じ計算）。
  * - 描画負荷: FPS・解像度・森の描き方・深度プリパス・影の更新。
  * - セリフ: 喋る場面で必ず喋らせる（確率を無視）・選択中か調べているユニットに場面ごとのセリフを言わせる。
  *   ゲームのセリフのデータで、部隊を率いる騎士が喋る（gameVoices.ts）。喋る騎士はユニットごとに選び直せる。言ったセリフの記録。
@@ -56,18 +57,18 @@ import {
   type RetreatReport,
   type WipeoutReport,
 } from '@norden/battle-runtime';
-import { CHARACTER_TYPE_LABELS } from '../../../src/data/character.ts';
 import {
   canLead,
   DEFAULT_ROSTERS,
   defaultRoster,
   defaultSoldiers,
   entryFor,
-  factionIdOf,
   factionKnights,
   GAME_FACTIONS,
   GAME_KNIGHTS,
+  KNIGHT_GROUPS,
   knightById,
+  knightLabel,
   NO_FACTION,
   parseRosters,
   portraitOf,
@@ -75,21 +76,22 @@ import {
   rosterFactions,
   rosterStatuses,
   rosterTroops,
-  type GameKnight,
   type Rosters,
   type SideRoster,
 } from './gameKnights';
 import { gameBarks, knightCast } from './gameVoices';
+import DamageTool from './DamageTool';
 
 /** 画面の端・ツールバーとの間（CSS ピクセル） */
 const MARGIN = 12;
 const GAP = 6;
 
-type Tool = 'map' | 'troops' | 'facility' | 'perf' | 'bark' | 'status' | 'retreat';
+type Tool = 'map' | 'troops' | 'damage' | 'facility' | 'perf' | 'bark' | 'status' | 'retreat';
 
 const TOOLS: Record<Tool, string> = {
   map: 'マップ',
   troops: '部隊',
+  damage: 'ダメージ計算',
   facility: '拠点施設',
   perf: '描画負荷',
   bark: 'セリフ',
@@ -109,7 +111,7 @@ function loadFacilities(): SideFacilities {
   }
 }
 /** 幅の広いウィンドウの道具 */
-const WIDE_TOOLS: ReadonlySet<Tool> = new Set(['troops']);
+const WIDE_TOOLS: ReadonlySet<Tool> = new Set(['troops', 'damage']);
 
 /** 反映した編成を覚えておく localStorage のキー */
 const ROSTERS_KEY = 'battle-editor.rosters';
@@ -310,6 +312,7 @@ export default function EditorApp() {
             />
           ),
           troops: <TroopsTool draft={draft} onDraft={setDraft} dirty={draft !== rosters} onApply={applyRosters} />,
+          damage: <DamageTool />,
           facility: <FacilityTool facilities={facilities} factions={factions} onChange={changeFacilities} />,
           perf: app && <PerfTool app={app} />,
           bark: app && <BarkTool app={app} />,
@@ -729,15 +732,6 @@ function Face({ portrait }: { portrait: Portrait }) {
     />
   );
 }
-
-/** 騎士の選択肢（勢力ごとにまとめる） */
-const KNIGHT_GROUPS: { name: string; knights: GameKnight[] }[] = [...GAME_FACTIONS, NO_FACTION].map((f) => ({
-  name: f.name,
-  knights: f.id ? factionKnights(f.id) : GAME_KNIGHTS.filter((k) => !factionIdOf(k)),
-}));
-
-const knightLabel = (k: GameKnight) =>
-  `${k.name}（${CHARACTER_TYPE_LABELS[k.type]} 統${k.leadership} 武${k.strength} 知${k.intelligence}${k.mercenaryInfo ? ' 傭兵' : ''}）`;
 
 const SIDES: readonly DeploySide[] = ['attacker', 'defender'];
 

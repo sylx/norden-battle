@@ -193,23 +193,58 @@ export function basicDefense(unit: UnitPower): number {
 /** 基本防御力の上限 */
 export const MAX_BASIC_DEFENSE = 999;
 
+/** ダメージの内訳（calcDamage の基本ダメージと、戦う状況の倍率。ランダムは含まない） */
+export interface DamageFactors {
+  /** 基本ダメージ */
+  base: number;
+  /** 包囲の倍率 */
+  encircled: number;
+  /** 効いた地形効果（受けるダメージを減らす割合。攻城の兵種が城・砦を攻撃するときは減らした値） */
+  defense: number;
+  /** 地形の倍率（1 − defense） */
+  terrain: number;
+  /** 高所からの攻撃でダメージが増えた標高レベルの差 */
+  highGroundLevels: number;
+  /** 高所の倍率 */
+  highGround: number;
+  /** 迎撃の構えの倍率 */
+  intercept: number;
+  /** 一斉攻撃の倍率 */
+  volley: number;
+}
+
+/** att が def を hit で攻撃したときのダメージの内訳 */
+export function damageFactors(att: Fighter, def: Fighter, hit: Hit): DamageFactors {
+  const { magic } = hit;
+  const defense = terrainDefense(att, def);
+  const levels = highGroundLevels(att, def);
+  return {
+    base: baseDamage(att, def, hit.power, magic),
+    encircled: def.encircled ? ENCIRCLED_RATE : 1,
+    defense,
+    terrain: 1 - defense,
+    highGroundLevels: levels,
+    highGround: highGroundRate(levels),
+    intercept: def.guarding && !magic ? INTERCEPT_GUARD : 1,
+    volley: hit.volley ? volleyRate(att.supporters) : 1,
+  };
+}
+
 /** att が def を hit で攻撃したときのダメージ */
 export function calcDamage(att: Fighter, def: Fighter, hit: Hit, roll: number): number {
   if (att.soldiers <= 0 || def.soldiers <= 0) return 0;
-  const { magic } = hit;
-  const base = baseDamage(att, def, hit.power, magic);
-  const encircled = def.encircled ? ENCIRCLED_RATE : 1;
-  const terrain = 1 - terrainDefense(att, def);
-  const highGround = highGroundRate(highGroundLevels(att, def));
-  const intercept = def.guarding && !magic ? INTERCEPT_GUARD : 1;
-  const volley = hit.volley ? volleyRate(att.supporters) : 1;
+  const f = damageFactors(att, def, hit);
   const random = 1 + roll * RANDOM_SPREAD;
-  return Math.min(def.soldiers, Math.round(base * encircled * terrain * highGround * intercept * volley * random));
+  return Math.min(def.soldiers, Math.round(f.base * f.encircled * f.terrain * f.highGround * f.intercept * f.volley * random));
+}
+
+/** 反撃する def の、通常攻撃のダメージに対する反撃の割合（迎撃の構えなら増える） */
+export function counterRate(def: Pick<Fighter, 'guarding'>): number {
+  return COUNTER_RATE * (def.guarding ? INTERCEPT_COUNTER : 1);
 }
 
 /** att に攻撃された def（兵数は攻撃を受けた後）の反撃で、att が受けるダメージ */
 export function calcCounter(att: Fighter, def: Fighter, roll: number): number {
   if (att.soldiers <= 0 || def.soldiers <= 0) return 0;
-  const rate = COUNTER_RATE * (def.guarding ? INTERCEPT_COUNTER : 1);
-  return Math.min(att.soldiers, Math.round(calcDamage(def, att, COUNTER_HIT, roll) * rate));
+  return Math.min(att.soldiers, Math.round(calcDamage(def, att, COUNTER_HIT, roll) * counterRate(def)));
 }

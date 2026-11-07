@@ -29,7 +29,7 @@ import { UNIT_TYPES, type UnitType } from '@norden/map-runtime/core/units';
 import characterData from '../../../src/data/characterData.json';
 import characterStart from '../../../src/data/characterStart.json';
 import factionData from '../../../src/data/factionData.json';
-import type { Character, CharacterStart } from '../../../src/data/character.ts';
+import { CHARACTER_TYPE_LABELS, type Character, type CharacterStart } from '../../../src/data/character.ts';
 import { characterSheet } from '../../../src/data/characterSheets.ts';
 import { DEFAULT_UNIT_TYPES, UNIT_TYPES_BY_CHARACTER_TYPE } from '../../../src/data/unitTypes.ts';
 
@@ -112,6 +112,16 @@ export function factionKnights(factionId: string): GameKnight[] {
     (a, b) => Number(!!b.isPatriarch) - Number(!!a.isPatriarch) || b.leadership - a.leadership || a.id.localeCompare(b.id),
   );
 }
+
+/** 騎士の選択肢（勢力ごとにまとめる。勢力に仕えていない騎士は最後） */
+export const KNIGHT_GROUPS: { name: string; knights: GameKnight[] }[] = [...GAME_FACTIONS, NO_FACTION].map((f) => ({
+  name: f.name,
+  knights: f.id ? factionKnights(f.id) : GAME_KNIGHTS.filter((k) => !factionIdOf(k)),
+}));
+
+/** 騎士の選択肢の表示（名前・種別・統率・武力・知力） */
+export const knightLabel = (k: GameKnight) =>
+  `${k.name}（${CHARACTER_TYPE_LABELS[k.type]} 統${k.leadership} 武${k.strength} 知${k.intelligence}${k.mercenaryInfo ? ' 傭兵' : ''}）`;
 
 /** 勢力の騎士で組んだ既定の編成（先頭の騎士が軍団長） */
 export function defaultRoster(factionId: string): SideRoster {

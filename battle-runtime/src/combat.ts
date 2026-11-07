@@ -311,7 +311,7 @@ export function attackRange(map: HexMap, unit: UnitData, pos: Offset, id?: Attac
 }
 
 /** 城・砦の人工物（突撃で突き抜けられない。そこにいる相手を攻撃しても飛び出さない。砲兵に攻撃されると地形効果が半分になる） */
-const WALLED_FEATURES: ReadonlySet<string> = new Set(['castle', 'fort']);
+export const WALLED_FEATURES: ReadonlySet<string> = new Set(['castle', 'fort']);
 
 /**
  * pos から隣の target へ突撃したときに飛び出る HEX（飛び出せなければ null。target が城・砦なら必ず null）。

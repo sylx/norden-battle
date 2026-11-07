@@ -283,3 +283,162 @@ body,
 .tool-window table.roster .none {
   color: var(--text-dim);
 }
+
+/* ダメージ計算 */
+.damage-calc .dc-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .damage-calc .dc-sides {
+    grid-template-columns: 1fr;
+  }
+}
+
+.damage-calc fieldset.dc-side {
+  margin: 0;
+  padding: 4px 8px 8px;
+  min-width: 0;
+  border: 1px solid #5a4630;
+  border-radius: 4px;
+}
+
+.damage-calc legend {
+  padding: 0 4px;
+  color: var(--accent);
+}
+
+.damage-calc label.row.dc-num input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.damage-calc label.row.dc-num input.num {
+  flex: none;
+  width: 64px;
+}
+
+.damage-calc label.row.dc-num em {
+  font-style: normal;
+  color: var(--text-dim);
+}
+
+.damage-calc label.row.dc-num.dim {
+  opacity: 0.45;
+}
+
+.damage-calc .dc-modes button {
+  font-size: 11px;
+  padding: 3px 2px;
+}
+
+.damage-calc button:disabled,
+.damage-calc input:disabled,
+.damage-calc select:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.damage-calc .dc-result {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.damage-calc .dc-headline {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.damage-calc .dc-headline > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px;
+  background: var(--input-bg);
+  border: 1px solid #5a4630;
+  border-radius: 4px;
+}
+
+.damage-calc .dc-label,
+.damage-calc .dc-range {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.damage-calc .dc-headline strong {
+  font-size: 26px;
+  line-height: 1.2;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.damage-calc .dc-headline strong.none {
+  color: var(--text-dim);
+}
+
+.damage-calc table {
+  width: 100%;
+  margin-top: 6px;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.damage-calc table th,
+.damage-calc table td {
+  padding: 1px 4px;
+  text-align: left;
+  font-weight: normal;
+  vertical-align: top;
+}
+
+.damage-calc .dc-breakdown th {
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.damage-calc .dc-breakdown td:nth-child(2) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.damage-calc .dc-breakdown td:nth-child(3) {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.damage-calc .dc-breakdown tr.sum th,
+.damage-calc .dc-breakdown tr.sum td:nth-child(2) {
+  color: var(--accent);
+  border-top: 1px solid #5a4630;
+}
+
+.damage-calc .dc-breakdown tr.idle {
+  opacity: 0.45;
+}
+
+.damage-calc .dc-compare {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.damage-calc .dc-compare summary {
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.damage-calc .dc-compare td,
+.damage-calc .dc-compare thead th {
+  text-align: right;
+}
+
+.damage-calc .dc-compare tr.current th,
+.damage-calc .dc-compare tr.current td {
+  color: var(--accent);
+}
