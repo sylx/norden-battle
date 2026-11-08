@@ -3,13 +3,15 @@
  *
  * - ImpactEffects: 地面に広がる衝撃の輪と、はじける光・飛び散る破片（ゴーレム・ベヒーモスの殴り、フロストノヴァの氷、
  *   アーススパイクの岩、光線・メテオの爆発）。見た目は ImpactStyle で変える。
- * - BeamEffects: 口元に光を溜めてから、目標へ太い光線を放つ（ベヒーモスの光線）。着弾の爆発は ImpactEffects。
+ * - BeamEffects: 口元に光を溜めてから光線を放ち、範囲をさっと横切るように薙ぎ払って焼き尽くす（ベヒーモスの光線）。
+ *   光線の先が通った HEX から炎がはじけ（ImpactEffects）、焼け跡が燃え上がる。
  * - PillarEffects: 地点を中心に魔法陣が描かれて回り、中心へ縮むと同時に空から細い光線が降りてきて太くなり、
  *   範囲が光で飽和して爆発する（メテオフォール）。飛び散る破片は ImpactEffects。
  *
  * どれもユニットの絵より手前に、深度テストをせず加算で描く（fxShared.ts）。
  */
 import * as THREE from 'three';
+import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { createFlashMaterial, createFxMaterial, createSparks, createSparkTexture, FX_RENDER_ORDER, moveSparks } from './fxShared';
 
 /** 衝撃の見た目 */
@@ -182,82 +184,212 @@ function orientStreak(mesh: THREE.Mesh, a: THREE.Vector3, b: THREE.Vector3, widt
   mesh.matrixWorldNeedsUpdate = true;
 }
 
-/** 光線の溜め・放つ時間（秒） */
+/**
+ * 光線の出どころ（ベヒーモスの口）。x は絵の幅比で、絵の中心から向いている側へ。y は足元から絵の高さ比。
+ * 元の絵（右向き）で口に見えるところに合わせる。左向きの絵では x を左右反転する。
+ * 絵はカメラ正対なので、幅はカメラの右、高さはカメラの上の向きに測る
+ */
+export const BEAM_MOUTH = { x: 0.14, y: 0.68 };
+/** 溜め・薙ぎ払い・焼け跡が燃えて消えるまでの時間（秒） */
 const BEAM_CHARGE_SEC = 0.7;
-const BEAM_FIRE_SEC = 0.55;
-/** 出してから当たるまでの時間（秒）: 溜め終えて光線が届いたとき */
-export const BEAM_HIT_SEC = BEAM_CHARGE_SEC + 0.05;
+const BEAM_SWEEP_SEC = 0.55;
+const BEAM_BURN_SEC = 1.0;
+/** 薙ぎ払い終えてから光線が消えるまで（秒） */
+const BEAM_FADE_SEC = 0.15;
+/** 出してから当たるまでの時間（秒）: 範囲を薙ぎ払い終えて、焼け跡が一斉に燃え上がるとき */
+export const BEAM_HIT_SEC = BEAM_CHARGE_SEC + BEAM_SWEEP_SEC;
 const BEAM_COLOR = 0xffe0a0;
+/** 光線の太さ・焼け跡の幅・範囲の外へはみ出して薙ぐ長さ（HEX の大きさ比） */
+const BEAM_WIDTH = 0.45;
+const BURN_WIDTH = 1.1;
+const SWEEP_OVERSHOOT = 0.7;
+/** 光線が通ったところではじける炎 */
+const BURN_STYLE: ImpactStyle = { color: 0xffa040, ringColor: 0xff5010, size: 0.75, shards: 16, speed: 1.6, gravity: 1.2, sec: 0.75 };
 
 interface Beam {
   glow: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   streak: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
-  from: THREE.Vector3;
-  to: THREE.Vector3;
-  width: number;
+  /** 光線の先が地面に当たるところの光 */
+  tip: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  /** 地面に寝かせた焼け跡（薙ぐ線に沿う帯） */
+  trail: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  /** 口元: 足元と、そこからカメラの右・上の向きへずらす量（ワールド） */
+  foot: THREE.Vector3;
+  mouthX: number;
+  mouthY: number;
+  /** 薙ぐ線の始まりと終わり（地面） */
+  sweepFrom: THREE.Vector3;
+  sweepTo: THREE.Vector3;
+  /** 範囲の HEX の地面の点と、光線の先がそこを通る薙ぎ払いの進み具合（0〜1）。はじけたら done */
+  burns: { at: THREE.Vector3; k: number; done: boolean }[];
+  hexSize: number;
   start: number;
 }
 
 export class BeamEffects {
   readonly group = new THREE.Group();
   private readonly plane = new THREE.PlaneGeometry(2, 2);
+  private readonly impacts = new ImpactEffects();
   private items: Beam[] = [];
 
   constructor() {
     this.group.name = 'beam-fx';
+    this.group.add(this.impacts.group);
   }
 
-  /** from（口元）に光を溜めて、to へ光線を放つ。width は光線の太さ（ワールド） */
-  spawn(from: THREE.Vector3, to: THREE.Vector3, width: number): void {
+  /**
+   * shooter の口元（BEAM_MOUTH）に光を溜めて光線を放ち、範囲（area の HEX の地面の点。center が狙った HEX）を横切るように薙ぎ払って焼く。
+   * 薙ぐ向きは、撃つユニットから center への向きに直交する向き
+   */
+  spawn(shooter: UnitPlacement, center: THREE.Vector3, area: readonly THREE.Vector3[], hexSize: number): void {
+    const mouthX = (shooter.facing === 'left' ? -1 : 1) * BEAM_MOUTH.x * shooter.width;
+    const mouthY = BEAM_MOUTH.y * shooter.height;
+    // 薙ぐ線: 撃つ向きに直交する向きに、範囲の端から端まで（少し奥へ斜めに）
+    const forward = center.clone().sub(shooter.foot).setY(0);
+    if (forward.lengthSq() < 1e-9) forward.set(1, 0, 0);
+    forward.normalize();
+    const across = new THREE.Vector3(-forward.z, 0, forward.x).multiplyScalar(Math.random() < 0.5 ? 1 : -1);
+    const points = area.length > 0 ? area : [center];
+    const along = points.map((p) => p.clone().sub(center).dot(across));
+    const lo = Math.min(...along) - SWEEP_OVERSHOOT * hexSize;
+    const hi = Math.max(...along) + SWEEP_OVERSHOOT * hexSize;
+    const lift = new THREE.Vector3(0, hexSize * 0.05, 0);
+    const sweepFrom = center.clone().addScaledVector(across, lo).addScaledVector(forward, -0.3 * hexSize).add(lift);
+    const sweepTo = center.clone().addScaledVector(across, hi).addScaledVector(forward, 0.3 * hexSize).add(lift);
+    const burns = points.map((at, i) => ({ at: at.clone(), k: (along[i] - lo) / (hi - lo), done: false }));
+
     const glow = new THREE.Mesh(this.plane, createFlashMaterial(BEAM_COLOR));
     const streak = new THREE.Mesh(this.plane, createStreakMaterial(BEAM_COLOR));
-    for (const o of [glow, streak]) {
+    const tip = new THREE.Mesh(this.plane, createFlashMaterial(0xffc070));
+    const trail = new THREE.Mesh(this.plane, createBurnTrailMaterial());
+    // 焼け跡の板: x が薙ぐ向き、y が幅、法線が上
+    const dir = sweepTo.clone().sub(sweepFrom);
+    const len = dir.length();
+    dir.normalize();
+    const width = new THREE.Vector3(0, 1, 0).cross(dir).normalize();
+    trail.matrixAutoUpdate = false;
+    trail.matrix
+      .makeBasis(dir.clone().multiplyScalar(len / 2), width.multiplyScalar((BURN_WIDTH * hexSize) / 2), new THREE.Vector3(0, 1, 0))
+      .setPosition(sweepFrom.clone().add(sweepTo).multiplyScalar(0.5));
+    for (const o of [trail, glow, streak, tip]) {
       o.renderOrder = FX_RENDER_ORDER;
       o.frustumCulled = false;
     }
-    streak.visible = false;
-    this.group.add(glow, streak);
-    this.items.push({ glow, streak, from: from.clone(), to: to.clone(), width, start: performance.now() });
+    streak.visible = tip.visible = trail.visible = false;
+    this.group.add(trail, glow, streak, tip);
+    this.items.push({ glow, streak, tip, trail, foot: shooter.foot.clone(), mouthX, mouthY, sweepFrom, sweepTo, burns, hexSize, start: performance.now() });
   }
 
   update(camera: THREE.Camera): void {
+    this.impacts.update(camera);
     if (this.items.length === 0) return;
     const now = performance.now();
     this.items = this.items.filter((b) => {
       const t = (now - b.start) / 1000;
-      if (t > BEAM_CHARGE_SEC + BEAM_FIRE_SEC) {
-        this.group.remove(b.glow, b.streak);
-        b.glow.material.dispose();
-        b.streak.material.dispose();
+      if (t > BEAM_HIT_SEC + BEAM_BURN_SEC) {
+        this.dispose(b);
         return false;
       }
-      // 溜め: 口元の光が脈打ちながら大きくなる。放つ間は小さくなって消える
       const charge = Math.min(1, t / BEAM_CHARGE_SEC);
-      const firing = t >= BEAM_CHARGE_SEC;
-      const f = firing ? (t - BEAM_CHARGE_SEC) / BEAM_FIRE_SEC : 0;
-      b.glow.position.copy(b.from);
+      const s = (t - BEAM_CHARGE_SEC) / BEAM_SWEEP_SEC;
+      const firing = s >= 0;
+      const fade = Math.max(0, (t - BEAM_HIT_SEC) / BEAM_FADE_SEC);
+      const beamOn = firing && fade < 1;
+      // 薙ぎ払いは素早く始まり、終わりで少し緩む
+      const head = THREE.MathUtils.clamp(s, 0, 1);
+      const k = 1 - (1 - head) ** 2;
+      const width = BEAM_WIDTH * b.hexSize;
+
+      // 溜め: 口元の光が脈打ちながら大きくなる。放っている間は大きく光り、終わると消える
+      const from = b.foot
+        .clone()
+        .addScaledVector(new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion), b.mouthX)
+        .addScaledVector(new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion), b.mouthY);
+      b.glow.position.copy(from);
       b.glow.quaternion.copy(camera.quaternion);
       const pulse = 1 + 0.15 * Math.sin(t * 40);
-      b.glow.scale.setScalar(b.width * (firing ? 2.2 * (1 - f) : 0.4 + 1.8 * charge * charge) * pulse);
-      b.glow.material.uniforms.uT.value = firing ? 0.3 + 0.7 * f : 0.6 * (1 - charge);
-      // 光線: 出た瞬間が最も太く、細くなって消える
-      b.streak.visible = firing;
+      b.glow.visible = fade < 1;
+      b.glow.scale.setScalar(width * (firing ? 2.2 * (1 - fade) : 0.4 + 1.8 * charge * charge) * pulse);
+      b.glow.material.uniforms.uT.value = firing ? 0.3 + 0.7 * fade : 0.6 * (1 - charge);
+
+      // 光線: 口元から薙ぐ線の上の点へ。出た瞬間が最も太い
+      const end = b.sweepFrom.clone().lerp(b.sweepTo, k);
+      b.streak.visible = b.tip.visible = beamOn;
+      if (beamOn) {
+        const flicker = 1 + 0.12 * Math.sin(t * 90);
+        orientStreak(b.streak, from, end, width * (1.4 - 0.4 * head) * (1 - 0.7 * fade) * flicker, camera);
+        b.streak.material.uniforms.uOpacity.value = 1.3 * (1 - fade);
+        b.tip.position.copy(end);
+        b.tip.quaternion.copy(camera.quaternion);
+        b.tip.scale.setScalar(width * 2.2 * flicker * (1 - fade));
+        b.tip.material.uniforms.uT.value = 0.25 + 0.5 * fade;
+      }
+
+      // 光線の先が通った HEX から炎がはじける
+      for (const burn of b.burns) {
+        if (burn.done || !firing || k < burn.k) continue;
+        burn.done = true;
+        this.impacts.spawn(burn.at, b.hexSize, BURN_STYLE);
+      }
+
+      // 焼け跡: 光線の先まで焼け、通った直後は白く熱く、冷めながら赤く燃える。薙ぎ終えると一斉に燃え上がってから消える
+      b.trail.visible = firing;
       if (firing) {
-        orientStreak(b.streak, b.from, b.to, b.width * (1.6 - 1.2 * f), camera);
-        b.streak.material.uniforms.uOpacity.value = (1 - f) ** 0.7;
+        const u = b.trail.material.uniforms;
+        const after = t - BEAM_HIT_SEC;
+        u.uHead.value = k;
+        u.uTime.value = t;
+        u.uFlare.value = after < 0 ? 0 : Math.exp(-after * 5) * 1.5;
+        u.uFade.value = after < 0 ? 1 : Math.max(0, 1 - after / BEAM_BURN_SEC) ** 1.5;
       }
       return true;
     });
   }
 
   clear(): void {
-    for (const b of this.items) {
-      this.group.remove(b.glow, b.streak);
-      b.glow.material.dispose();
-      b.streak.material.dispose();
-    }
+    for (const b of this.items) this.dispose(b);
     this.items = [];
+    this.impacts.clear();
   }
+
+  private dispose(b: Beam): void {
+    const meshes = [b.glow, b.streak, b.tip, b.trail];
+    this.group.remove(...meshes);
+    for (const m of meshes) m.material.dispose();
+  }
+}
+
+/**
+ * 地面の焼け跡（板の x が薙ぐ向き、y が幅）。uHead（0〜1）まで焼けていて、先端ほど白く熱く、離れるほど赤く燃える。
+ * uFlare は一斉に燃え上がる明るさ、uFade は全体の濃さ、uTime は炎の揺らぎ
+ */
+function createBurnTrailMaterial(): THREE.ShaderMaterial {
+  return createFxMaterial(
+    { uHead: { value: 0 }, uFlare: { value: 0 }, uFade: { value: 1 }, uTime: { value: 0 } },
+    /* glsl */ `
+uniform float uHead;
+uniform float uFlare;
+uniform float uFade;
+uniform float uTime;
+varying vec2 vUv;
+void main() {
+  float x = vUv.x;
+  float y = abs(vUv.y * 2.0 - 1.0);
+  float behind = uHead - x;
+  float burnt = smoothstep(-0.01, 0.01, behind);
+  // 縁が炎のように揺らぐ
+  float n = 0.5 + 0.25 * sin(x * 47.0 + uTime * 13.0) + 0.25 * sin(x * 91.0 - uTime * 21.0 + vUv.y * 9.0);
+  float edge = 1.0 - smoothstep(0.35 + 0.35 * n, 0.95, y);
+  float ends = smoothstep(0.0, 0.06, x) * smoothstep(0.0, 0.06, 1.0 - x);
+  // 先端ほど熱い
+  float hot = exp(-max(behind, 0.0) * 9.0);
+  float heat = clamp(hot + uFlare + 0.35, 0.0, 2.5);
+  vec3 col = mix(vec3(0.6, 0.08, 0.02), vec3(1.0, 0.55, 0.15), clamp(heat, 0.0, 1.0));
+  col = mix(col, vec3(1.0, 0.95, 0.8), clamp(heat - 1.0, 0.0, 1.0));
+  float a = burnt * edge * ends * heat * (0.8 + 0.2 * n) * uFade;
+  gl_FragColor = vec4(col * a, 1.0);
+}`,
+  );
 }
 
 /**

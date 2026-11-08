@@ -58,6 +58,8 @@ export interface UnitPlacement {
   /** 画像の幅と高さ（カメラ正対なので、画面上ではカメラの右・上方向に広がる） */
   width: number;
   height: number;
+  /** 絵の向き */
+  facing: Facing;
 }
 
 export class UnitLayer {
@@ -212,7 +214,7 @@ export class UnitLayer {
 
   /** 置いたユニットの画像の位置と大きさ（足元のワールド座標・ワールド単位の幅と高さ）。画面上に情報を重ねる用 */
   placements(): readonly UnitPlacement[] {
-    return this.sprites.map(({ sprite, unit }) => ({ unit, foot: sprite.position, width: sprite.scale.x, height: sprite.scale.y }));
+    return this.sprites.map(({ sprite, unit, image }) => ({ unit, foot: sprite.position, width: sprite.scale.x, height: sprite.scale.y, facing: image.facing }));
   }
 
   /** レイの先で描かれているユニット（手前優先）。画像の透明部分は素通りする */

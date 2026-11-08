@@ -190,7 +190,7 @@ const SHELL_STRIKE_SEC = 1.9;
 const CLAW_STRIKE_SEC = 0.7;
 const BREATH_STRIKE_SEC = 2 * breathHitSec(BREATH_STYLE);
 const FLAME_STRIKE_SEC = 2 * breathHitSec(FLAME_LANCE_STYLE);
-/** 周りをなぎ払う（乱撃）、地面を揺らす（殴り）、溜めて光線を放つ（光線）、雷が跳ねる（チェイン）、凍らせる（フロスト）、岩が突き出る（スパイク）、魔法陣から光の柱が降って爆発する（メテオ） */
+/** 周りをなぎ払う（乱撃）、地面を揺らす（殴り）、溜めた光線で範囲を薙ぎ払う（光線）、雷が跳ねる（チェイン）、凍らせる（フロスト）、岩が突き出る（スパイク）、魔法陣から光の柱が降って爆発する（メテオ） */
 const WHIRL_STRIKE_SEC = 0.8;
 const SMASH_STRIKE_SEC = 0.6;
 const BEAM_STRIKE_SEC = 2 * BEAM_HIT_SEC;
@@ -483,7 +483,7 @@ interface StrikeFx {
   shots: FxShot[];
   /** 範囲の端の HEX（直線に吹く炎は、目標ではなくここまで届かせる。範囲の無い攻撃は null） */
   end: Offset | null;
-  /** 範囲のエフェクトを出す HEX（なぎ払い・岩・メテオ・跳ねる雷。順に出すものは並びの順） */
+  /** 範囲のエフェクトを出す HEX（なぎ払い・岩・メテオ・光線・跳ねる雷。順に出すものは並びの順） */
   area: Offset[];
 }
 
@@ -1822,7 +1822,7 @@ export class BattleApp {
     return areaCells(this.map!, plan.unit, attack.at, def.shape).at(-1) ?? null;
   }
 
-  /** kind の演出で、範囲のエフェクトを出す HEX（なぎ払いは当たるユニット、岩・メテオは範囲、跳ねる雷は目標から跳ぶ順） */
+  /** kind の演出で、範囲のエフェクトを出す HEX（なぎ払いは当たるユニット、岩・メテオ・光線は範囲、跳ねる雷は目標から跳ぶ順） */
   private fxArea(plan: Plan, kind: StrikeFxKind): Offset[] {
     const attack = plan.attack;
     const map = this.map!;
@@ -1830,7 +1830,7 @@ export class BattleApp {
     const splash = splashUnits(map, plan.unit, plan.unit, attack.target, attack.at, attack.id);
     if (kind === 'whirl') return splash.map((u) => ({ col: u.col, row: u.row }));
     if (kind === 'chain') return [...(attack.target ? [attack.target] : []), ...splash].map((u) => ({ col: u.col, row: u.row }));
-    if (kind === 'spike' || kind === 'meteor') return areaCells(map, plan.unit, attack.at, resolveAttack(plan.unit.type, attack.id).shape);
+    if (kind === 'spike' || kind === 'meteor' || kind === 'beam') return areaCells(map, plan.unit, attack.at, resolveAttack(plan.unit.type, attack.id).shape);
     return [];
   }
 
@@ -1881,9 +1881,8 @@ export class BattleApp {
       return void blastAt(PILLAR_HIT_SEC);
     }
     if (kind === 'beam' && up) {
-      const from = up.foot.clone().add(new THREE.Vector3(0, up.height * 0.55, 0));
-      const to = this.groundPoint(at).add(new THREE.Vector3(0, up.height * 0.3, 0));
-      this.beamFx.spawn(from, to, size * 0.45);
+      // 範囲を薙ぎ払い終えたところで、狙った HEX が爆発する
+      this.beamFx.spawn(up, this.groundPoint(at), area.map((o) => this.groundPoint(o)), size);
       return void blastAt(BEAM_HIT_SEC);
     }
     if (kind === 'chain') {

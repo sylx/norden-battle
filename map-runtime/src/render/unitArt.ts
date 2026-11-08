@@ -24,6 +24,8 @@ export interface UnitImage {
   texture: THREE.Texture;
   /** 幅 / 高さ */
   aspect: number;
+  /** 絵の向き（元の絵は右向き。left は左右反転したもの） */
+  facing: Facing;
   /** クリック判定用の不透明度（uv は画像そのものの向き） */
   alphaAt(u: number, v: number): number;
 }
@@ -51,7 +53,7 @@ export class UnitArt {
         : teamUrl
           ? canvas
           : this.tint(`${url}:${team}`, canvas, TEAM_DEFS[team].color);
-      out = makeUnitImage(src, facing === 'left');
+      out = makeUnitImage(src, facing);
       this.cache.set(key, out);
     }
     return out;
@@ -97,7 +99,8 @@ export class UnitArt {
   }
 }
 
-function makeUnitImage(canvas: HTMLCanvasElement, flip: boolean): UnitImage {
+function makeUnitImage(canvas: HTMLCanvasElement, facing: Facing): UnitImage {
+  const flip = facing === 'left';
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
@@ -110,6 +113,7 @@ function makeUnitImage(canvas: HTMLCanvasElement, flip: boolean): UnitImage {
   return {
     texture,
     aspect: w / h,
+    facing,
     alphaAt(u, v) {
       const x = Math.min(Math.max(Math.floor((flip ? 1 - u : u) * w), 0), w - 1);
       const y = Math.min(Math.max(Math.floor((1 - v) * h), 0), h - 1);
