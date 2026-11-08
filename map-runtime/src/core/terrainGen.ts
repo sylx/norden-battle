@@ -92,6 +92,7 @@ export interface TerrainData {
 }
 
 const NT = TERRAIN_IDS.length;
+const WASTELAND = TERRAIN_INDEX.wasteland;
 const MAX_K = 7;
 
 interface CellProps {
@@ -215,6 +216,16 @@ export class TerrainField {
       out[0] += w * lerp(def.color[0], def.color2[0], v);
       out[1] += w * lerp(def.color[1], def.color2[1], v);
       out[2] += w * lerp(def.color[2], def.color2[2], v);
+    }
+    // 荒地: 乾いて暗くなった土のまだらと、明るい砂利のまだら（色だけでは草原と見分けにくいため）
+    const waste = this.colorWeights[WASTELAND];
+    if (waste > 1e-4) {
+      const dark = smoothstep(0.15, 0.55, this.colorNoise.fbm((x / s) * 3.1 + 17, (z / s) * 3.1 - 41, 2));
+      const light = smoothstep(0.35, 0.75, this.colorNoise.simplex((x / s) * 4.3 - 63, (z / s) * 4.3 + 29));
+      const k = 1 + waste * (0.1 * light - 0.2 * dark);
+      out[0] *= k;
+      out[1] *= k * 0.99;
+      out[2] *= k * 0.97;
     }
     // 大きなスケールの明度ムラ
     const m = 0.9 + 0.2 * (0.5 + 0.5 * this.colorNoise.fbm((x / s) * 0.25 + 91, (z / s) * 0.25, 2));
