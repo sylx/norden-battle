@@ -275,8 +275,7 @@ const PILLAR_BLAST_SEC = 1.1;
 const PILLAR_FADE_SEC = 0.35;
 /** 出してから当たるまでの時間（秒）: 光線が範囲いっぱいに太くなって爆発したとき */
 export const PILLAR_HIT_SEC = PILLAR_DRAW_SEC + PILLAR_SPIN_SEC + PILLAR_CHARGE_SEC;
-/** 魔法陣の色と、光線・爆発の色 */
-const CIRCLE_COLOR = 0x6cc0ff;
+/** 光線・爆発の色（魔法陣は画像の青白い光を使う） */
 const PILLAR_COLOR = 0xc8e8ff;
 /**
  * 光線が降りてくる長さ（カメラから地点までの距離比）。光線は画面の真上から降りるよう、カメラの上の向きに伸ばす
@@ -307,6 +306,8 @@ interface Pillar {
 export class PillarEffects {
   readonly group = new THREE.Group();
   private readonly plane = new THREE.PlaneGeometry(2, 2);
+  // 戦闘画面を作る時点で読み込み始め、初回の詠唱に備える。
+  private readonly circleTexture = getMagicCircleTexture();
   private items: Pillar[] = [];
 
   constructor() {
@@ -318,7 +319,7 @@ export class PillarEffects {
    * radius は範囲の半径（ワールド。魔法陣と爆発の大きさ）
    */
   spawn(at: THREE.Vector3, hexSize: number, radius: number): void {
-    const circle = new THREE.Mesh(this.plane, createMagicCircleMaterial(CIRCLE_COLOR));
+    const circle = new THREE.Mesh(this.plane, createMagicCircleMaterial(this.circleTexture));
     circle.rotation.x = -Math.PI / 2;
     circle.position.copy(at).add(new THREE.Vector3(0, hexSize * 0.04, 0));
     const blast = new THREE.Mesh(this.plane, createBlastMaterial(PILLAR_COLOR));
@@ -419,92 +420,60 @@ export class PillarEffects {
   }
 }
 
+/** 複数の詠唱・戦闘画面で共有する画像。個々のエフェクトの破棄時には解放しない。 */
+let magicCircleTexture: THREE.Texture | undefined;
+function getMagicCircleTexture(): THREE.Texture {
+  if (!magicCircleTexture) {
+    magicCircleTexture = new THREE.TextureLoader().load(
+      new URL('../../../assets/fx/pillar-magic-circle.webp', import.meta.url).href,
+    );
+    magicCircleTexture.colorSpace = THREE.SRGBColorSpace;
+    magicCircleTexture.anisotropy = 4;
+  }
+  return magicCircleTexture;
+}
+
 /**
- * 地面に寝かせる魔法陣（板の縁が外の輪）。外の輪・文字の帯・六芒星・内の輪と、逆に回る内側の紋様。
- * uDraw は描かれた割合（0〜1。外の輪から角度の順に、内側は少し遅れて描かれる）、uAngle は回転、uGlow は明るさ
+ * 透過画像の魔法陣。外周と中央の紋様を隙間で分け、中央だけ逆向きに回す。
+ * uDraw は描かれた割合（0〜1。外周から角度順に現れ、中央は少し遅れる）、uAngle は回転、uGlow は明るさ。
  */
-function createMagicCircleMaterial(color: number): THREE.ShaderMaterial {
+function createMagicCircleMaterial(texture: THREE.Texture): THREE.ShaderMaterial {
   return createFxMaterial(
-    { uDraw: { value: 0 }, uAngle: { value: 0 }, uGlow: { value: 1 }, uColor: { value: new THREE.Color(color) } },
+    { uMap: { value: texture }, uDraw: { value: 0 }, uAngle: { value: 0 }, uGlow: { value: 1 } },
     /* glsl */ `
 #define PI 3.14159265
+uniform sampler2D uMap;
 uniform float uDraw;
 uniform float uAngle;
 uniform float uGlow;
-uniform vec3 uColor;
 varying vec2 vUv;
 
 vec2 rot(vec2 p, float a) {
   float c = cos(a), s = sin(a);
   return vec2(c * p.x - s * p.y, s * p.x + c * p.y);
 }
-/** 線からの距離 d、太さ w の線の濃さ */
-float stroke(float d, float w) {
-  return exp(-d * d / (w * w));
-}
-/** 角度 ang（0〜1）が描かれた割合 d まで来ているか（先端は少しぼかす） */
-float reveal(float ang, float d) {
-  return 1.0 - smoothstep(d - 0.015, d, ang);
-}
-float hash(float n) {
-  return fract(sin(n * 127.1) * 43758.5453);
+float reveal(vec2 p, float d) {
+  float angle = atan(p.y, p.x) / (2.0 * PI) + 0.5;
+  return 1.0 - smoothstep(d - 0.025, d, angle);
 }
 
 void main() {
   vec2 p0 = vUv * 2.0 - 1.0;
   float r = length(p0);
   if (r > 1.0) discard;
-  // 外側の層は uAngle で回り、内側の層は逆向きに速く回る
-  vec2 p = rot(p0, uAngle);
-  vec2 q = rot(p0, -uAngle * 1.7);
-  float angP = atan(p.y, p.x) / (2.0 * PI) + 0.5;
-  float angQ = atan(q.y, q.x) / (2.0 * PI) + 0.5;
-  float dOuter = uDraw * 1.03;
-  float dInner = clamp((uDraw - 0.3) / 0.7, 0.0, 1.0) * 1.03;
-
-  // 外の二重の輪
-  float outer = stroke(r - 0.965, 0.012) + stroke(r - 0.905, 0.006) * 0.8;
-  // 文字の帯（0.79〜0.88）: 区画ごとに形の違う短い線で、文字のように見せる
-  float band = stroke(r - 0.785, 0.005) * 0.8;
-  const float CELLS = 40.0;
-  float cell = floor(angP * CELLS);
-  float cu = (fract(angP * CELLS) - 0.5) * (2.0 * PI * 0.835 / CELLS);
-  float cv = r - 0.835;
-  float h1 = hash(cell), h2 = hash(cell + 17.0), h3 = hash(cell + 41.0);
-  float inGlyph = step(abs(cu), 0.05) * step(abs(cv), 0.032);
-  float glyph = stroke(cu - (h1 - 0.5) * 0.04, 0.004) * step(abs(cv), 0.03 * (0.5 + 0.5 * h2));
-  glyph += stroke(cv - (h2 - 0.5) * 0.04, 0.004) * step(abs(cu), 0.012 + 0.02 * h3);
-  glyph += stroke(cu - cv * (h3 * 2.0 - 1.0), 0.004) * step(0.5, h1) * step(abs(cv), 0.028);
-  glyph *= inGlyph;
-  float ringsOuter = (outer + band + glyph * 0.9) * reveal(angP, dOuter);
-
-  // 六芒星（頂点が文字の帯の内側の輪に触れる）と、その内側の輪
-  const float R = 0.785;
-  float star = 0.0;
-  for (int k = 0; k < 6; k++) {
-    float a = PI / 6.0 + float(k) * PI / 3.0;
-    vec2 n = vec2(cos(a), sin(a));
-    vec2 t = vec2(-n.y, n.x);
-    star += stroke(dot(p, n) - R * 0.5, 0.006) * step(abs(dot(p, t)), R * 0.866);
-  }
-  float innerRing = stroke(r - R * 0.5, 0.006);
-  float starLayer = (star + innerRing) * reveal(angP, dInner);
-
-  // 逆に回る内側の紋様: 目盛りの輪と、中心の小さな輪・十字
-  float ticks = step(abs(fract(angQ * 24.0) - 0.5), 0.12) * step(abs(r - 0.33), 0.025) * 0.7;
-  float core = stroke(r - 0.28, 0.005) + stroke(r - 0.12, 0.006);
-  core += (stroke(q.x, 0.005) * step(abs(q.y), 0.12) + stroke(q.y, 0.005) * step(abs(q.x), 0.12)) * 0.8;
-  float innerLayer = (ticks + core) * reveal(angQ, dInner);
-
-  // 描いている先端の光と、陣の中のうっすらした光
-  float tipD = (angP - uDraw) * 30.0;
-  float tip = exp(-tipD * tipD) * step(uDraw, 0.999) * smoothstep(0.6, 0.95, r) * 1.5;
-  float fill = 0.12 * (1.0 - r * r) * uDraw;
-
-  float lines = ringsOuter + starLayer + innerLayer;
-  float a = (lines + tip + fill) * uGlow;
-  vec3 col = mix(uColor, vec3(1.0), clamp(lines * 0.5 + tip, 0.0, 1.0));
-  gl_FragColor = vec4(col * a, 1.0);
+  vec2 outerUv = rot(p0, uAngle);
+  vec2 innerUv = rot(p0, -uAngle * 1.7);
+  vec4 outer = texture2D(uMap, outerUv * 0.5 + 0.5);
+  vec4 inner = texture2D(uMap, innerUv * 0.5 + 0.5);
+  // 画像の中央の紋様と外周の間にある隙間で、回転する層を切り替える。
+  float outerMask = smoothstep(0.28, 0.32, r);
+  float outerDraw = reveal(outerUv, uDraw * 1.03);
+  float innerDraw = reveal(innerUv, clamp((uDraw - 0.3) / 0.7, 0.0, 1.0) * 1.03);
+  // 加算合成なので、透過部分の RGB が発光しないよう画像の alpha を掛ける。
+  vec3 light = outer.rgb * outer.a * outerMask * outerDraw;
+  light += inner.rgb * inner.a * (1.0 - outerMask) * innerDraw;
+  float edgeFade = 1.0 - smoothstep(0.97, 1.0, r);
+  gl_FragColor = vec4(light * uGlow * edgeFade, 1.0);
 }`,
   );
 }

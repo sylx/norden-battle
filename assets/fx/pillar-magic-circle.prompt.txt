@@ -1,0 +1,10 @@
+Generator: built-in image_gen (transparent_background: true)
+Asset: pillar-magic-circle.webp
+Export: 1254x1254 RGBA PNG -> 768x768 RGBA WebP, Lanczos, quality=88, method=6
+
+Use case: stylized-concept
+Asset type: transparent magic-circle texture for a real-time fantasy strategy game attack, sampled on a horizontal plane with additive blending.
+Primary request: One beautifully intricate celestial summoning sigil, luminous ice-blue and silver-white, with concentric engraved rings, an outer band of elegant invented runic glyphs, interlocking six-point star geometry, fine ornamental arcs, and a distinct small central rosette. Rich hand-etched fantasy illustration, not plain vector graphics.
+Composition/framing: perfectly centered, perfectly circular, viewed straight from above with no perspective. Square 1024x1024 canvas. Main outer ring at 90 percent of canvas width; all glow fades completely before the edges. Center and gaps between strokes are transparent. Keep a subtle clean gap separating the small central medallion from the larger outer geometry at about 36 percent of the outer radius, to allow the center to rotate independently.
+Lighting/mood: controlled luminous strokes with crisp silver-white cores and delicate pale cyan halos. Fine details but strong major rings readable at 512 pixels. Sparse etched imperfections give artistry, without noisy background.
+Constraints: actual transparent RGBA background, only the circular sigil and its restrained glow. No background disc, no surface, no scene, no characters, no beam, no extraneous particles, no drop shadow, no letters or readable text, no watermark. No large opaque center flare.
