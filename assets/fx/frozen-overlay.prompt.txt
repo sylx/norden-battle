@@ -1,0 +1,13 @@
+Generator: built-in image_gen (transparent_background: true)
+Asset: frozen-overlay.webp
+Export: 1254x1254 RGBA PNG -> 512x512 RGBA WebP, Lanczos, quality=88, method=6
+Runtime: normal alpha blending, opacity=0.85 multiplied by unit opacity,
+         scale=1.08 times unit dimensions, ground anchor=4% from bottom.
+
+Use case: stylized-concept
+Asset type: one transparent RGBA frozen-status overlay texture for compositing directly IN FRONT OF a fantasy strategy game's unit illustration.
+Primary request: a beautiful translucent shell of jagged pale-blue ice encasing the space where a unit will be. Empty ice shell only, no subject inside. Hand-painted fantasy game illustration, sharp crystalline facets, fine branching frost, delicate hairline fractures, white-blue glints on broken edges, thicker small ice shards growing around the feet.
+Composition: single centered roughly square crystalline ice enclosure, frontal view with slight visibility of upper facets. Irregular chiseled silhouette, broad enough to cover a whole character or creature, not a tall narrow crystal. Ice occupies about 88% of the square canvas width and 90% height. Leave clear transparent padding outside. Ground contact centered near 94% of canvas height.
+COMPOSITING REQUIREMENT: this is an OVERLAY, not a solid ice prop. The central 65% of the enclosure must be almost transparent with only a very faint translucent blue wash, a few fine frost veins, and sparse thin angular glints. The character behind the image must remain clearly legible. Most visible paint and opacity should be concentrated on the outer jagged rim and the lower 15% with several small sharp ice shards. Glassy broad inner faces with low alpha, not opaque white, not filled with cloudy frost. No opaque backing or dark interior. No solid rectangular outline. Genuine variable alpha transparency through the ice as well as fully transparent outside the shape.
+Palette: pale icy cyan and blue-gray, restrained silver-white highlights, no purple or warm colors.
+Constraints: exactly one isolated still asset, no animation grid, no unit, no people, no animal, no figure silhouette, no terrain or floor, no floating snowflakes outside, no letters, no UI icon, no frame border, no text, no watermark, no painted checkerboard.

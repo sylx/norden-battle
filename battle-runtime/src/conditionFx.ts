@@ -3,8 +3,7 @@
  *
  * - 混乱: 頭の上で楕円の輪の上を円弧がぐるぐる回り、星が周りを回る。小さな光もまたたく。
  *   カメラ正対の板をシェーダで描く（輪の手前側＝下半分を明るく太くして、奥行きがあるように見せる）。
- * - 凍結: 絵の全体を氷で覆う。いまは仮で、絵と同じ大きさの青い半透明の四角を重ねる
- *   （氷の画像ができたら ICE_MATERIAL の map に差し替える）。
+ * - 凍結: 透過画像の氷で全身を覆う。中央は絵が透け、外縁の霜と足元の結晶が凍結を表す。
  *
  * ユニットの絵と同じく深度テストをしない。描画順は絵（UnitPlacement.renderOrder）のすぐ上にする
  * （選択中のユニットは絵が手前に上がるので、それに付いていく）。
@@ -20,9 +19,11 @@ import type { UnitStatus } from './unitStatus';
 const DIZZY_WIDTH = 0.62;
 /** 混乱の板の中心の高さ（足元から、絵の高さ比） */
 const DIZZY_LIFT = 0.88;
-/** 凍結の仮の四角の色と不透明度 */
-const ICE_COLOR = 0x70c8f0;
-const ICE_OPACITY = 0.45;
+/** 画像自体の透過を活かし、ユニットが見える濃さで氷を重ねる。 */
+const ICE_OPACITY = 0.85;
+/** 氷の外縁を絵より少し広げる。画像の足元の余白（下から4%）を接地点に合わせる。 */
+const ICE_SCALE = 1.08;
+const ICE_FOOT = 0.04;
 /** 絵の描画順に足す量。氷は絵のすぐ上、混乱の輪はさらにその上 */
 const ICE_ORDER = 0.5;
 const DIZZY_ORDER = 0.6;
@@ -36,6 +37,8 @@ export class ConditionEffects {
   readonly group = new THREE.Group();
   private readonly time: THREE.IUniform<number> = { value: 0 };
   private readonly geometry = new THREE.PlaneGeometry(2, 2);
+  // 戦闘画面を開いた時点で読み込む。全ユニットで共有し、画面を閉じたときに解放する。
+  private readonly iceTexture = createIceTexture();
   private readonly marks = new Map<UnitData, Marks>();
 
   constructor() {
@@ -46,6 +49,7 @@ export class ConditionEffects {
     for (const unit of [...this.marks.keys()]) this.remove(unit);
     this.group.removeFromParent();
     this.geometry.dispose();
+    this.iceTexture.dispose();
   }
 
   /** 毎フレーム、描画の前に呼ぶ。状態の付いたユニットに印を置き、外れたユニットの印を外す */
@@ -76,14 +80,14 @@ export class ConditionEffects {
     }
     if (!m.ice) {
       m.ice = new THREE.Sprite(
-        new THREE.SpriteMaterial({ color: ICE_COLOR, transparent: true, depthTest: false, depthWrite: false, toneMapped: false, fog: false }),
+        new THREE.SpriteMaterial({ map: this.iceTexture, transparent: true, depthTest: false, depthWrite: false, toneMapped: false, fog: false }),
       );
-      m.ice.center.set(0.5, 0);
+      m.ice.center.set(0.5, ICE_FOOT);
       m.ice.frustumCulled = false;
       this.group.add(m.ice);
     }
     m.ice.position.copy(p.foot);
-    m.ice.scale.set(p.width, p.height, 1);
+    m.ice.scale.set(p.width * ICE_SCALE, p.height * ICE_SCALE, 1);
     m.ice.renderOrder = p.renderOrder + ICE_ORDER;
     m.ice.material.opacity = ICE_OPACITY * p.opacity;
   }
@@ -115,6 +119,14 @@ export class ConditionEffects {
     if (m.dizzy) disposeObject(m.dizzy);
     this.marks.delete(unit);
   }
+}
+
+function createIceTexture(): THREE.Texture {
+  const texture = new THREE.TextureLoader().load(
+    new URL('../../assets/fx/frozen-overlay.webp', import.meta.url).href,
+  );
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
 /** 印を外してマテリアルを捨てる（板の形は使い回しなので捨てない） */
