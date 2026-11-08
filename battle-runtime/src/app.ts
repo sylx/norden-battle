@@ -27,7 +27,8 @@
  *   軍の番が始まるときに効く（startTeamTurn）: 凍結はその番に行動できない、感電は行動力が半分（迎撃もできない）、
  *   混乱は操作できず、番の初めにランダムな HEX へ勝手に移動して行動を終える（順に自動で実行する。その間は操作を受け付けない）。
  * - 入城の決まり: 攻撃側のユニットは、番の初めに城の HEX の中かそのとなりにいたときだけ城の HEX へ入れる（UnitStatus.atCastle。
- *   movement.ts の castleLocked。突撃の飛び出しも）。
+ *   movement.ts の castleLocked。突撃の飛び出しも）。防衛拠点も同じで、番の初めに拠点の HEX の中かそのとなりにいたときだけ拠点の HEX へ入れる
+ *   （UnitStatus.atStronghold。movement.ts の strongholdLocked）。城に入ったら一度拠点の前で番を終えないと入城できない。
  * - 拠点の施設（facilities.ts。陣営ごとに facilities で渡す）: 番を終えると、その陣営の撃つ施設（要塞砲・ガンシップ）が間隔のターンごとに
  *   1 発ずつ撃ち（salvo。カメラを寄せて演出し、その間は操作を受け付けない）、撃ち終えてから次の軍の番になる。撃つ施設で軍団長部隊が殲滅されれば
  *   そこで決着する。バリスタ・魔導台は城の HEX にいるその陣営の弓兵・魔術師の射程を伸ばし（rangeBonusAt）、魔導台は番の初めにクールタイムをさらに減らす。
@@ -133,7 +134,7 @@ import { applyMorale, moraleChange } from './morale';
 import { ActionMenuModel } from './menuModel';
 import { adjacentEnemies, retreatFailChance, type RetreatDestination, type RetreatDestinations, type RetreatReport } from './retreat';
 import { wipeoutCaptureChance, type WipeoutReport } from './wipeout';
-import { inEnemyZoc, movePath, moveRange, nearCastle, type MoveOptions, type MoveStep } from './movement';
+import { inEnemyZoc, movePath, moveRange, nearCastle, nearStronghold, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
 import { BULLET_STYLE, GUNSHIP_STYLE, ProjectileEffects, SHELL_STYLE } from './attackFx/projectileFx';
 import { DEFAULT_INTERVALS, FACILITY_NAMES, firesOn, FORTRESS_CANNON_RANGE, rangeBonus, type BattleFacilities, type FiringFacility, type SideFacilities } from './facilities';
@@ -1014,6 +1015,7 @@ export class BattleApp {
       if (unit.team !== team) continue;
       // 入城の決まり: 番の初めに城の HEX の中かそのとなりにいれば、この番は城の HEX へ入れる
       status.atCastle = !!this.map && nearCastle(this.map, unit);
+      status.atStronghold = !!this.map && nearStronghold(this.map, this.stronghold, unit);
       // 魔導台: 城の HEX にいる魔術師はクールタイムがさらに 1 減る
       if (this.facilitiesOf(team)?.magicTower && COMBAT_DEFS[unit.type].magic && this.map?.get(unit.col, unit.row)?.feature === 'castle') tickCooldowns(status);
       if (hasCondition(status, 'freeze')) status.ap = 0;
@@ -1035,7 +1037,7 @@ export class BattleApp {
     this.setSelected({ col: unit.col, row: unit.row });
     const p = this.view.units.placements().find((x) => x.unit === unit);
     if (p) this.popups.show(p, '混乱', 'retreat');
-    const steps = [...moveRange(map, unit, unit, status.ap, { escapeZoc: true, castleLocked: BattleApp.castleLocked(unit, status) }).values()];
+    const steps = [...moveRange(map, unit, unit, status.ap, { escapeZoc: true, castleLocked: BattleApp.castleLocked(unit, status), strongholdLocked: this.strongholdLocked(unit, status) }).values()];
     const plan = this.plan;
     if (steps.length === 0 || !plan) {
       status.ap = 0;
@@ -1186,17 +1188,27 @@ export class BattleApp {
   /**
    * 続きの移動を探すときの条件。ターンの初めは敵の ZOC から動き出せる。
    * 騎兵（moveAfterAttack）は攻撃の直後（予約した攻撃の後、または実行した攻撃の後にまだ移動していない）も動き出せる（一撃離脱）。
-   * 攻撃側のユニットは、番の初めに城の HEX の中かそのとなりにいなければ、城の外から城の HEX へ入れない（入城の決まり）。
+   * 攻撃側のユニットは、番の初めに城の HEX の中かそのとなりにいなければ、城の外から城の HEX へ入れない（入城の決まり）。拠点の HEX も同じ。
    */
-  static moveOptions(plan: Plan): MoveOptions {
+  private moveOptions(plan: Plan): MoveOptions {
     const afterAttack =
       !!COMBAT_DEFS[plan.unit.type].moveAfterAttack && (BattleApp.attackIsLast(plan) || (plan.status.justAttacked && !BattleApp.planned(plan)));
-    return { spent: BattleApp.planCost(plan), escapeZoc: BattleApp.turnStart(plan) || afterAttack, castleLocked: BattleApp.castleLocked(plan.unit, plan.status) };
+    return {
+      spent: BattleApp.planCost(plan),
+      escapeZoc: BattleApp.turnStart(plan) || afterAttack,
+      castleLocked: BattleApp.castleLocked(plan.unit, plan.status),
+      strongholdLocked: this.strongholdLocked(plan.unit, plan.status),
+    };
   }
 
   /** 入城の決まりで、unit が城の外から城の HEX へ入れないか（防衛側でない軍で、番の初めに城の HEX の中にもとなりにもいなかった） */
   static castleLocked(unit: UnitData, status: UnitStatus): boolean {
     return unit.team !== SIDE_TEAM.defender && !status.atCastle;
+  }
+
+  /** 入城の決まりで、unit が入れない拠点の HEX（防衛側でない軍で、番の初めに拠点の HEX の中にもとなりにもいなかった。入れるなら null） */
+  private strongholdLocked(unit: UnitData, status: UnitStatus): Offset | null {
+    return unit.team !== SIDE_TEAM.defender && !status.atStronghold ? this.stronghold : null;
   }
 
   /** 攻撃する HEX（攻撃の前の移動の先） */
@@ -1268,8 +1280,10 @@ export class BattleApp {
     const cols = map.layout.cols;
     const ap = status.maxAp;
     // 次の番は、いまの位置が番の初めの位置になる（入城の決まり）
-    const castleLocked = unit.team !== SIDE_TEAM.defender && !nearCastle(map, unit);
-    const moves = moveRange(map, unit, unit, ap, { escapeZoc: true, castleLocked });
+    const attacker = unit.team !== SIDE_TEAM.defender;
+    const castleLocked = attacker && !nearCastle(map, unit);
+    const strongholdLocked = attacker && !nearStronghold(map, this.stronghold, unit) ? this.stronghold : null;
+    const moves = moveRange(map, unit, unit, ap, { escapeZoc: true, castleLocked, strongholdLocked });
     const out = new Map<number, RangeCell>();
     for (const [k, step] of moves) out.set(k, { col: step.col, row: step.row, mark: step.zoc });
     const attacks = attacksOf(unit.type, status).map((id) => resolveAttack(unit.type, id));
@@ -1307,7 +1321,7 @@ export class BattleApp {
     const map = this.map;
     const plan = this.plan;
     if (!map || !plan) return;
-    const cells = moveRange(map, plan.unit, BattleApp.planPos(plan), plan.status.ap, BattleApp.moveOptions(plan));
+    const cells = moveRange(map, plan.unit, BattleApp.planPos(plan), plan.status.ap, this.moveOptions(plan));
     this.targeting = { kind: 'move', cells };
     const range = [...cells.values()].map((s) => ({ col: s.col, row: s.row, mark: s.zoc }));
     this.view.setRange(range, MOVE_RANGE_COLOR, MOVE_ZOC_COLOR);
@@ -1389,7 +1403,7 @@ export class BattleApp {
     const plan = this.plan!;
     const pos = BattleApp.planPos(plan);
     const target = mainTargetAt(this.map!, plan.unit, at, attack.id);
-    const landing = attack.special === 'charge' && target ? chargeLanding(this.map!, pos, target, BattleApp.castleLocked(plan.unit, plan.status)) : null;
+    const landing = attack.special === 'charge' && target ? chargeLanding(this.map!, pos, target, BattleApp.castleLocked(plan.unit, plan.status), this.strongholdLocked(plan.unit, plan.status)) : null;
     plan.attack = { action, id: attack.id as MenuAttackId, target, at: { col: at.col, row: at.row }, afterLeg: plan.legs.length, landing };
     this.endTargeting();
     this.planChanged();
@@ -2330,7 +2344,7 @@ export class BattleApp {
   private menuContext(plan: Plan): MenuContext {
     const map = this.map!;
     const pos = BattleApp.planPos(plan);
-    const options = BattleApp.moveOptions(plan);
+    const options = this.moveOptions(plan);
     const attacks = attacksOf(plan.unit.type, plan.status);
     // 狙える相手のいる攻撃（自分が中心の攻撃は、範囲に敵がいるとき）
     const targetable = attacks.filter((id) =>

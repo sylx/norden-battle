@@ -52,6 +52,8 @@ export interface UnitStatus {
   noRetreat?: boolean;
   /** 番の初めに城の HEX の中かそのとなりにいたか（攻撃側はこのときだけ城の HEX に入れる。入城の決まり。BattleApp が番の初めに決める） */
   atCastle?: boolean;
+  /** 番の初めに拠点の HEX の中かそのとなりにいたか（攻撃側はこのときだけ拠点の HEX に入れる。入城の決まり。BattleApp が番の初めに決める） */
+  atStronghold?: boolean;
 }
 
 /** 兵種で決まる性質（士気が減らない・退却できない） */

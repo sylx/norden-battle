@@ -323,9 +323,16 @@ export const WALLED_FEATURES: ReadonlySet<string> = new Set(['castle', 'fort']);
 
 /**
  * pos から隣の target へ突撃したときに飛び出る HEX（飛び出せなければ null。target が城・砦なら必ず null）。
- * castleLocked（攻撃側で、番の初めに城の HEX の中にもとなりにもいなかった）なら、城の外から城の HEX へは飛び出せない（入城の決まり）
+ * castleLocked（攻撃側で、番の初めに城の HEX の中にもとなりにもいなかった）なら、城の外から城の HEX へは飛び出せない（入城の決まり）。
+ * strongholdLocked（攻撃側で、番の初めに拠点の HEX の中にもとなりにもいなかったときの拠点の HEX）へも飛び出せない
  */
-export function chargeLanding(map: HexMap, pos: Offset, target: Offset, castleLocked = false): Offset | null {
+export function chargeLanding(
+  map: HexMap,
+  pos: Offset,
+  target: Offset,
+  castleLocked = false,
+  strongholdLocked: Offset | null = null,
+): Offset | null {
   const dir = dirBetween(map, pos, target);
   if (dir < 0) return null;
   const n = map.layout.neighborInDir(target.col, target.row, dir);
@@ -335,6 +342,7 @@ export function chargeLanding(map: HexMap, pos: Offset, target: Offset, castleLo
   if (map.unitAt(n.col, n.row) || enterCost(from, dir, to) === null) return null;
   const start = map.get(pos.col, pos.row);
   if (castleLocked && start && entersCastle(start, to)) return null;
+  if (strongholdLocked && n.col === strongholdLocked.col && n.row === strongholdLocked.row) return null;
   return n;
 }
 

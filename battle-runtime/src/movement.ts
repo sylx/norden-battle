@@ -15,6 +15,8 @@
  * 入城の決まり: 城を持たない側（攻撃側）のユニットは、番の初めに城の HEX の中かそのとなりにいた（nearCastle）ときだけ城の HEX に入れる。
  * そうでなければ、城の外から城の HEX へは入れない（castleLocked。城の中どうしは動ける。app.ts の moveOptions が決める）。
  * 城へ入るには、一度城の前で番を終える必要がある。
+ * 防衛拠点（マップの stronghold）も同じで、攻撃側のユニットは番の初めに拠点の HEX の中かそのとなりにいた（nearStronghold）ときだけ
+ * 拠点の HEX に入れる（strongholdLocked。城に入った番のうちに拠点まで駆け込めないよう、一度拠点の前で番を終える必要がある）。
  *
  * 包囲: 隣の HEX がどれも入れない（マップの外・通れない地形）か、敵がいるか、敵の ZOC の中で、
  * 隣に敵が 1 体以上いれば包囲されている（ZOC から ZOC へは移れないので逃げ場が無い）。
@@ -62,12 +64,21 @@ export interface MoveOptions {
   escapeZoc?: boolean;
   /** 城の外から城の HEX へは入れない（攻撃側で、番の初めに城の HEX の中にもとなりにもいなかったユニット） */
   castleLocked?: boolean;
+  /** 入れない拠点の HEX（攻撃側で、番の初めに拠点の HEX の中にもとなりにもいなかったユニット。null なら制限なし） */
+  strongholdLocked?: Offset | null;
 }
 
 /** pos が城の HEX か、城の HEX のとなりか（攻撃側がこの番に城の HEX へ入れるか） */
 export function nearCastle(map: HexMap, pos: Offset): boolean {
   const isCastle = (o: Offset) => map.get(o.col, o.row)?.feature === 'castle';
   return isCastle(pos) || map.layout.neighbors(pos.col, pos.row).some(isCastle);
+}
+
+/** pos が拠点の HEX か、拠点の HEX のとなりか（攻撃側がこの番に拠点の HEX へ入れるか。拠点が無ければ true） */
+export function nearStronghold(map: HexMap, stronghold: Offset | null, pos: Offset): boolean {
+  if (!stronghold) return true;
+  const same = (o: Offset) => o.col === stronghold.col && o.row === stronghold.row;
+  return same(pos) || map.layout.neighbors(pos.col, pos.row).some(same);
 }
 
 /** 城の外の from から城の to へ入るか */
@@ -84,7 +95,7 @@ export function moveRange(
   unit: UnitData,
   from: Offset,
   ap: number,
-  { spent = 0, escapeZoc = false, castleLocked = false }: MoveOptions = {},
+  { spent = 0, escapeZoc = false, castleLocked = false, strongholdLocked = null }: MoveOptions = {},
 ): Map<number, MoveStep> {
   const { cols } = map.layout;
   const key = (o: Offset) => o.row * cols + o.col;
@@ -113,6 +124,7 @@ export function moveRange(
       const other = map.unitAt(n.col, n.row);
       if (other && other !== unit && other.team !== unit.team) continue;
       if (castleLocked && entersCastle(from, to)) continue;
+      if (strongholdLocked && n.col === strongholdLocked.col && n.row === strongholdLocked.row) continue;
       const c = enterCost(from, dir, to);
       if (c === null) continue;
       const cost = cur.cost + c;

@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { canAim, chargeLanding, facilityResult } from './combat';
 import { firesOn, rangeBonus } from './facilities';
-import { moveRange, nearCastle } from './movement';
+import { moveRange, nearCastle, nearStronghold } from './movement';
 import { combatant, place, testMap } from './test/fixtures';
 
 /** (5..7, 3) が城の HEX のマップ */
@@ -31,6 +31,24 @@ describe('入城の決まり', () => {
     const target = place(map, 'infantry', 'red', 4, 3);
     expect(chargeLanding(map, { col: 3, row: 3 }, target)).toEqual({ col: 5, row: 3 });
     expect(chargeLanding(map, { col: 3, row: 3 }, target, true)).toBeNull();
+  });
+
+  it('strongholdLocked なら拠点の HEX へは入れない（城の中でも）', () => {
+    const map = castleMap();
+    const hold = { col: 7, row: 3 };
+    const inside = place(map, 'cavalry', 'blue', 5, 3);
+    const key = (col: number, row: number) => row * map.layout.cols + col;
+    expect(moveRange(map, inside, inside, 6).has(key(7, 3))).toBe(true);
+    const locked = moveRange(map, inside, inside, 6, { strongholdLocked: hold });
+    expect(locked.has(key(7, 3))).toBe(false);
+    expect(locked.has(key(6, 3))).toBe(true);
+  });
+
+  it('攻撃側の突撃は拠点の HEX へ飛び出さない', () => {
+    const map = castleMap();
+    const target = place(map, 'infantry', 'red', 3, 3);
+    expect(chargeLanding(map, { col: 2, row: 3 }, target)).toEqual({ col: 4, row: 3 });
+    expect(chargeLanding(map, { col: 2, row: 3 }, target, false, { col: 4, row: 3 })).toBeNull();
   });
 });
 
@@ -68,5 +86,14 @@ describe('入城の決まり（番の初めに城に接していたか）', () =
     expect(nearCastle(map, { col: 4, row: 3 })).toBe(true);
     expect(nearCastle(map, { col: 6, row: 3 })).toBe(true);
     expect(nearCastle(map, { col: 2, row: 3 })).toBe(false);
+  });
+
+  it('拠点の HEX の中か、そのとなりなら拠点に入れる（拠点が無ければ制限なし）', () => {
+    const map = castleMap();
+    const hold = { col: 7, row: 3 };
+    expect(nearStronghold(map, hold, hold)).toBe(true);
+    expect(nearStronghold(map, hold, { col: 6, row: 3 })).toBe(true);
+    expect(nearStronghold(map, hold, { col: 5, row: 3 })).toBe(false);
+    expect(nearStronghold(map, null, { col: 5, row: 3 })).toBe(true);
   });
 });
