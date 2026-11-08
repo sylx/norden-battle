@@ -60,6 +60,10 @@ export interface UnitPlacement {
   height: number;
   /** 絵の向き */
   facing: Facing;
+  /** 絵の描画順（選択中は手前に上がる）。絵に重ねるものはこれより少し大きくする */
+  renderOrder: number;
+  /** 絵の不透明度（戦場から去るときなどに下がる） */
+  opacity: number;
 }
 
 export class UnitLayer {
@@ -214,7 +218,15 @@ export class UnitLayer {
 
   /** 置いたユニットの画像の位置と大きさ（足元のワールド座標・ワールド単位の幅と高さ）。画面上に情報を重ねる用 */
   placements(): readonly UnitPlacement[] {
-    return this.sprites.map(({ sprite, unit, image }) => ({ unit, foot: sprite.position, width: sprite.scale.x, height: sprite.scale.y, facing: image.facing }));
+    return this.sprites.map(({ sprite, unit, image }) => ({
+      unit,
+      foot: sprite.position,
+      width: sprite.scale.x,
+      height: sprite.scale.y,
+      facing: image.facing,
+      renderOrder: sprite.renderOrder,
+      opacity: sprite.material.opacity,
+    }));
   }
 
   /** レイの先で描かれているユニット（手前優先）。画像の透明部分は素通りする */

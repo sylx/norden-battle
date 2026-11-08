@@ -26,7 +26,7 @@
  * - クールタイムのある攻撃は、使った次の自分の番から使えない（UnitStatus.cooldowns。軍の番が始まるときに減らす）。
  * - 状態（conditions.ts）は、付いたユニットの軍の番が終わるときに残りのターンを減らす。攻撃の inflicts で付く。
  *   軍の番が始まるときに効く（startTeamTurn）: 凍結はその番に行動できない、
- *   混乱は操作できず、番の初めにランダムな HEX へ勝手に移動して行動を終える（順に自動で実行する。その間は操作を受け付けない）。
+ *   混乱は操作できず、番を終えるときにランダムな HEX へ勝手に移動して行動を終える（順に自動で実行する。その間は操作を受け付けない）。
  * - 入城の決まり: 攻撃側のユニットは、番の初めに城の HEX の中かそのとなりにいたときだけ城の HEX へ入れる（UnitStatus.atCastle。
  *   movement.ts の castleLocked。突撃の飛び出しも）。防衛拠点も同じで、番の初めに拠点の HEX の中かそのとなりにいたときだけ拠点の HEX へ入れる
  *   （UnitStatus.atStronghold。movement.ts の strongholdLocked）。城に入ったら一度拠点の前で番を終えないと入城できない。
@@ -131,6 +131,7 @@ import { hasCondition, setCondition, tickConditions, tickCooldowns, type Conditi
 import { randomRoll } from './damage';
 import { demoTroops, Deployment, SIDE_TEAM, type DeployState, type TroopFactory } from './deployment';
 import { InterceptEffects } from './interceptFx';
+import { ConditionEffects } from './conditionFx';
 import { LANCE_HIT_SEC, LanceEffects } from './attackFx/lanceFx';
 import { applyMorale, moraleChange } from './morale';
 import { ActionMenuModel } from './menuModel';
@@ -207,7 +208,7 @@ const CANNON_STRIKE_SEC = 2 * SHELL_STYLE.hitSec;
 const GUNSHIP_STRIKE_SEC = 2 * GUNSHIP_STYLE.hitSec;
 /** ガンシップの掃射を撃つところ（目標の上空。HEX の大きさ比の横・高さ） */
 const GUNSHIP_OFFSET = { x: -2.5, y: 7 };
-/** 混乱したユニットが勝手に動き出すまでの間（ミリ秒。番のカットインや前の動きの後） */
+/** 混乱したユニットが勝手に動き出すまでの間（ミリ秒。番を終えてから・前の動きの後） */
 const AUTO_DELAY_MS = 900;
 /** 鼓舞で回復する士気（この範囲の整数） */
 const INSPIRE_MIN = 10;
@@ -516,6 +517,8 @@ export class BattleApp {
   readonly popups: Popups;
   /** 迎撃の構えのユニットの足元の光の輪 */
   readonly interceptFx = new InterceptEffects();
+  /** 状態の付いたユニットに重ねる印（混乱の頭上の輪と星・凍結の氷） */
+  readonly conditionFx = new ConditionEffects();
   /** 光の剣の斬撃（歩兵の通常攻撃） */
   readonly slashFx = new SlashEffects();
   /** 3 本の爪の跡（ドラゴンのクロウ） */
@@ -601,10 +604,14 @@ export class BattleApp {
   };
   private targeting: Targeting | null = null;
   private exec: Execution | null = null;
-  /** 番の初めに勝手に動かす混乱したユニット（順に）と、次を動かす時刻（performance.now()）。動かしている間は autoRunning */
+  /** 番の終わりに勝手に動かす混乱したユニット（順に）と、次を動かす時刻（performance.now()）。動かしている間は autoRunning */
   private autoQueue: UnitData[] = [];
   private autoAt = 0;
   private autoRunning = false;
+  /** 混乱したユニットを動かし終えたら番を終える（endTurn の続き） */
+  private autoEnding = false;
+  /** この番の混乱したユニットをもう動かしたか（強制退却などで番の終わりが中断して、もう一度終えるときに動かし直さない） */
+  private autoDone = false;
   /** 番の終わりに施設が撃っている（queue はこれから撃つ施設、cur は撃っている 1 発）。撃ち終えたら次の軍の番にする */
   private salvo: { side: DeploySide; queue: FiringFacility[]; cur: SalvoShot | null } | null = null;
   /** 行動メニューで隠したくない、予約した移動のルートと攻撃の矢印（ワールドの折れ線。予約が無ければ空） */
@@ -624,10 +631,12 @@ export class BattleApp {
     this.popups = new Popups(container);
     this.bubbles = new SpeechBubbles(container);
     this.cameraFocus = new CameraFocus(this.ctx);
-    this.ctx.overlay.add(this.interceptFx.group, this.slashFx.group, this.lanceFx.group, this.arrowFx.group, this.thunderFx.group, this.bulletFx.group, this.shellFx.group, this.clawFx.group, this.breathFx.group, this.impactFx.group, this.beamFx.group, this.pillarFx.group, this.gunshipFx.group);
+    this.ctx.overlay.add(this.interceptFx.group, this.conditionFx.group, this.slashFx.group, this.lanceFx.group, this.arrowFx.group, this.thunderFx.group, this.bulletFx.group, this.shellFx.group, this.clawFx.group, this.breathFx.group, this.impactFx.group, this.beamFx.group, this.pillarFx.group, this.gunshipFx.group);
     this.menu.onAction = (unit, action) => {
       // 混乱したユニットを勝手に動かしている間・施設が撃っている間は操作を受け付けない
-      if (this.autoMoving || this.salvo) return;
+      if (this.autoMoving || this.autoEnding || this.salvo) return;
+      // 混乱・凍結しているユニットは操作できない
+      if (BattleApp.locked(this.statuses.get(unit))) return;
       if (action.id === 'confirm') return this.execute('confirm');
       if (action.id === 'intercept') return this.execute('intercept');
       if (action.id === 'wait') return this.execute('wait');
@@ -681,6 +690,7 @@ export class BattleApp {
     this.bubbles.dispose();
     this.tags.dispose();
     this.interceptFx.dispose();
+    this.conditionFx.dispose();
     this.view.dispose();
     this.ctx.dispose();
   }
@@ -711,6 +721,7 @@ export class BattleApp {
     this.pillarFx.clear();
     this.gunshipFx.clear();
     this.autoQueue = [];
+    this.autoEnding = false;
     this.salvo = null;
     this.lanceFx.clear();
     this.arrowFx.clear();
@@ -766,7 +777,7 @@ export class BattleApp {
    * 選んだユニットへカメラを動かす。選んだら true（実行中・未行動のユニットがいなければ false）
    */
   selectPending(dir: 1 | -1): boolean {
-    if (this.exec) return false;
+    if (this.exec || this.autoMoving || this.autoEnding) return false;
     const all = this.teamUnits();
     const pending = all.filter((u) => !this.done.has(u));
     if (pending.length === 0) return false;
@@ -861,14 +872,33 @@ export class BattleApp {
 
   /**
    * いまの軍の番を終えて次の軍の番にする。選択と予約を捨て、次の軍の全ユニットの行動力を最大まで戻して
-   * 移動済み・攻撃済みを消す。全軍が 1 回ずつ行動したらターンの数を進める（実行中・配備フェーズは何もしない）
+   * 移動済み・攻撃済みを消す。全軍が 1 回ずつ行動したらターンの数を進める（実行中・配備フェーズは何もしない）。
+   * 混乱したユニットがいれば、先に順に勝手に動かしてから番を終える（autoEnding）
    */
   endTurn(): boolean {
-    if (this.exec || !this.map || this.deployment || this.outcome || this.rout || this.autoMoving || this.salvo) return false;
+    if (this.exec || !this.map || this.deployment || this.outcome || this.rout || this.autoMoving || this.autoEnding || this.salvo) return false;
     this.setSelected(null);
+    // 混乱したユニットは、番を終える前に少し間をおいてから順に勝手に動かす（動かし終えたら finishTurn）
+    if (!this.autoDone) {
+      this.autoDone = true;
+      const confused = this.map.allUnits().filter((u) => u.team === this.activeTeam && hasCondition(this.statuses.get(u) ?? { conditions: [] }, 'confusion'));
+      if (confused.length > 0) {
+        this.autoQueue = confused;
+        this.autoAt = performance.now() + AUTO_DELAY_MS;
+        this.autoEnding = true;
+        return true;
+      }
+    }
+    this.finishTurn();
+    return true;
+  }
+
+  /** 番を終える（行動を終えさせて入城を判定し、施設が撃ってから次の軍の番にする） */
+  private finishTurn(): void {
+    if (!this.map) return;
     // 番を終えると、その軍のユニットは行動を終える（防衛拠点にいれば入城）
     this.judge(this.map.allUnits().filter((u) => u.team === this.activeTeam));
-    if (this.outcome || this.rout) return false;
+    if (this.outcome || this.rout) return;
     // この番に撃つ施設があれば、撃ち終えてから次の軍の番にする
     const side = DEPLOY_SIDES.find((s) => SIDE_TEAM[s] === this.activeTeam);
     const f = side && this.facilities[side];
@@ -878,10 +908,9 @@ export class BattleApp {
     });
     if (side && firing.length > 0) {
       this.salvo = { side, queue: firing, cur: null };
-      return true;
+      return;
     }
     this.passTurn();
-    return true;
   }
 
   /** 番を終えた軍の状態のターンを減らして、次の軍の番にする */
@@ -1014,11 +1043,11 @@ export class BattleApp {
 
   /**
    * team の番を始める。行動力などを戻し（refreshTeam）、状態を効かせる: 凍結は行動力 0。
-   * 混乱したユニットは、少し間をおいてから順に勝手に動かす（autoQueue）
+   * 混乱・凍結したユニットは操作できない（locked）。混乱したユニットは番の終わりに勝手に動く（endTurn）
    */
   private startTeamTurn(team: TeamId): void {
     this.refreshTeam(team);
-    const confused: UnitData[] = [];
+    this.autoDone = false;
     for (const [unit, status] of this.statuses) {
       if (unit.team !== team) continue;
       // 入城の決まり: 番の初めに城の HEX の中かそのとなりにいれば、この番は城の HEX へ入れる
@@ -1027,10 +1056,12 @@ export class BattleApp {
       // 魔導台: 城の HEX にいる魔術師はクールタイムがさらに 1 減る
       if (this.facilitiesOf(team)?.magicTower && COMBAT_DEFS[unit.type].magic && this.map?.get(unit.col, unit.row)?.feature === 'castle') tickCooldowns(status);
       if (hasCondition(status, 'freeze')) status.ap = 0;
-      else if (hasCondition(status, 'confusion')) confused.push(unit);
     }
-    this.autoQueue = confused;
-    this.autoAt = performance.now() + AUTO_DELAY_MS;
+  }
+
+  /** 混乱・凍結していて操作できないユニットか（混乱したユニットは番の終わりに勝手に動く） */
+  static locked(status: UnitStatus | undefined): boolean {
+    return !!status && (hasCondition(status, 'confusion') || hasCondition(status, 'freeze'));
   }
 
   /** 混乱したユニットを 1 部隊、ランダムな HEX へ動かして行動を終えさせる（動ける HEX が無ければその場で行動を終える） */
@@ -1062,6 +1093,14 @@ export class BattleApp {
     return this.autoQueue.length > 0 || this.autoRunning;
   }
 
+  /** 番の終わりに混乱したユニットを動かし終えたら、番を終える（決着や強制退却になっていたらやめる） */
+  private stepAutoEnding(): void {
+    if (this.exec || this.autoMoving || performance.now() < this.autoAt) return;
+    this.autoEnding = false;
+    if (this.outcome || this.rout) return;
+    this.finishTurn();
+  }
+
   /** TURN_ORDER で after の次の、部隊のいる軍（after = null なら最初の軍。どの軍にも部隊がいなければ after のまま） */
   private nextTeam(after: TeamId | null): TeamId {
     const teams = new Set(this.map?.allUnits().map((u) => u.team));
@@ -1085,7 +1124,7 @@ export class BattleApp {
     if (map && !this.deployment && !this.rout) {
       for (const [unit, status] of this.statuses) {
         if (unit.team !== team) continue;
-        if (!canAct(this.menuContext({ unit, status, legs: [], attack: null }))) this.done.add(unit);
+        if (BattleApp.locked(status) || !canAct(this.menuContext({ unit, status, legs: [], attack: null }))) this.done.add(unit);
       }
     }
     this.view.units.setDimmed((u) => u.team !== team || this.done.has(u));
@@ -1128,7 +1167,9 @@ export class BattleApp {
 
   /** 実行のほかでユニットの状態を書き換えたら、行動メニューと行動済みの印を作り直して知らせる */
   private statusChanged(unit: UnitData): void {
-    if (this.plan?.unit === unit && !this.targeting && !this.exec) this.openMenu();
+    // 混乱・凍結して操作できなくなったら選択を外す
+    if (this.plan?.unit === unit && !this.exec && !this.autoMoving && BattleApp.locked(this.statuses.get(unit))) this.setSelected(null);
+    else if (this.plan?.unit === unit && !this.targeting && !this.exec) this.openMenu();
     this.refreshMarks();
     this.emit('statusChange', unit);
   }
@@ -1234,7 +1275,7 @@ export class BattleApp {
   }
 
   private click(o: Offset | null): void {
-    if (this.outcome || this.rout || this.autoMoving || this.salvo) return;
+    if (this.outcome || this.rout || this.autoMoving || this.autoEnding || this.salvo) return;
     if (this.deployment) {
       this.deployment.click(o);
       return this.deployChanged();
@@ -1242,7 +1283,8 @@ export class BattleApp {
     const map = this.map;
     // 選べるのは、いま行動している軍のユニットだけ
     const unit = (o && map?.unitAt(o.col, o.row)) || null;
-    const own = unit?.team === this.activeTeam ? unit : null;
+    // 混乱・凍結している味方は選べない（調べるだけ）
+    const own = unit?.team === this.activeTeam && !BattleApp.locked(this.statuses.get(unit)) ? unit : null;
     const isSelf = !!unit && unit === this.plan?.unit;
     const t = this.targeting;
     if (t && map) {
@@ -1263,18 +1305,26 @@ export class BattleApp {
     // 選択中のユニットをもう一度クリックしたときはそのまま（予約を捨てない）
     if (isSelf) return;
     // 味方のいる HEX ならそのユニットを選択し、相手方なら動ける範囲・攻撃できる範囲を出す。ユニットのいない HEX なら選択を外す
-    if (unit && !own) return this.inspect(unit);
+    if (unit && !own) return this.inspect(unit, unit.team !== this.activeTeam);
     this.setSelected(own ? o : null);
   }
 
-  /** 相手方のユニットを調べる（選択を外し、そのユニットを強調して、動ける範囲・攻撃できる範囲を出す）。もう一度で外す */
-  private inspect(unit: UnitData): void {
+  /**
+   * 相手方のユニット（と操作できない味方）を調べる（選択を外し、そのユニットを強調する）。もう一度で外す。
+   * range なら動ける範囲・攻撃できる範囲も出す（操作できない味方は出さない）
+   */
+  private inspect(unit: UnitData, range = true): void {
     const again = this.inspected === unit;
     this.setSelected(null);
     if (again) return;
     this.inspected = unit;
     this.view.setFocus(unit);
-    this.view.setRange(this.threatRange(unit), MOVE_RANGE_COLOR, MOVE_ZOC_COLOR, ATTACK_RANGE_COLOR);
+    if (range) this.view.setRange(this.threatRange(unit), MOVE_RANGE_COLOR, MOVE_ZOC_COLOR, ATTACK_RANGE_COLOR);
+    if (!range) {
+      const p = this.view.units.placements().find((x) => x.unit === unit);
+      const status = this.statuses.get(unit);
+      if (p && status) this.popups.show(p, hasCondition(status, 'freeze') ? '凍結中' : '混乱中', 'retreat');
+    }
     this.emit('select', unit);
   }
 
@@ -2467,8 +2517,9 @@ export class BattleApp {
     this.pillarFx.update(this.ctx.camera);
     this.gunshipFx.update(this.ctx.camera);
     if (this.salvo) this.stepSalvo(performance.now());
-    // 混乱したユニットを順に勝手に動かす
+    // 混乱したユニットを順に勝手に動かし、動かし終えたら番を終える
     if (!this.exec && this.autoQueue.length > 0 && performance.now() >= this.autoAt) this.nextAuto();
+    else if (this.autoEnding) this.stepAutoEnding();
     this.lanceFx.update(this.ctx.camera);
     this.arrowFx.update(this.ctx.camera);
     this.thunderFx.update(this.ctx.camera);
@@ -2476,6 +2527,7 @@ export class BattleApp {
     this.shellFx.update(this.ctx.camera);
     // 輪は描画の前に足元へ合わせる（移動のアニメーションで動かした絵に同じフレームで付いていく）
     this.interceptFx.update(this.view.units.placements(), this.statuses, this.map?.layout.size ?? 1, this.view.display.units);
+    this.conditionFx.update(this.view.units.placements(), this.statuses, this.view.display.units);
     this.view.render();
     const placements = this.view.units.placements();
     this.tags.update(placements, this.ctx.camera, this.view.display.units, this.hovered, this.selected);
