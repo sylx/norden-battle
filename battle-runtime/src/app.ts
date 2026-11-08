@@ -124,6 +124,7 @@ import {
 } from './combat';
 import { ARROW_HIT_SEC, ARROW_RELEASE_SEC, ArrowEffects } from './attackFx/arrowFx';
 import { BEAM_HIT_SEC, BeamEffects, BLAST_STYLE, FROST_STYLE, HAMMER_STYLE, IMPACT_HIT_SEC, ImpactEffects, PILLAR_HIT_SEC, PillarEffects, SMASH_STYLE, SPIKE_STYLE } from './attackFx/areaFx';
+import { EARTH_SPIKE_HIT_SEC } from './attackFx/earthSpikeFx';
 import { BREATH_STYLE, BreathEffects, breathHitSec, FLAME_LANCE_STYLE } from './attackFx/breathFx';
 import { CameraFocus, type FocusTiming } from './cameraFocus';
 import { hasCondition, setCondition, tickConditions, tickCooldowns, type ConditionId } from './conditions';
@@ -199,7 +200,7 @@ const SMASH_STRIKE_SEC = 0.6;
 const BEAM_STRIKE_SEC = 2 * BEAM_HIT_SEC;
 const HAMMER_STRIKE_SEC = 2 * HAMMER_HIT_SEC;
 const FROST_STRIKE_SEC = 0.8;
-const SPIKE_STRIKE_SEC = 0.8;
+const SPIKE_STRIKE_SEC = 2 * EARTH_SPIKE_HIT_SEC;
 const METEOR_STRIKE_SEC = 2 * PILLAR_HIT_SEC;
 /** 要塞砲の弾・ガンシップの掃射のアニメーションの時間（秒。半分の時点で当たる） */
 const CANNON_STRIKE_SEC = 2 * SHELL_STYLE.hitSec;
@@ -250,7 +251,7 @@ const STRIKE_FX: Record<StrikeFxKind, { hitSec: number; cameraShake: number }> =
   beam: { hitSec: BEAM_HIT_SEC, cameraShake: 0.14 },
   hammer: { hitSec: HAMMER_HIT_SEC, cameraShake: 0.2 },
   frost: { hitSec: IMPACT_HIT_SEC, cameraShake: 0.03 },
-  spike: { hitSec: IMPACT_HIT_SEC, cameraShake: 0.07 },
+  spike: { hitSec: EARTH_SPIKE_HIT_SEC, cameraShake: 0.13 },
   meteor: { hitSec: PILLAR_HIT_SEC, cameraShake: 0.18 },
 };
 

@@ -2,21 +2,24 @@
  * 範囲の攻撃・大型の兵種のエフェクト。
  *
  * - ImpactEffects: 地面に広がる衝撃の輪と、はじける光・飛び散る破片（ゴーレム・ベヒーモスの殴り、フロストノヴァの氷、
- *   アーススパイクの岩、メテオの爆発、トールハンマーの雷の衝撃）。見た目は ImpactStyle で変える。
+ *   メテオの爆発、トールハンマーの雷の衝撃）。アーススパイクは岩の噴出・浮遊・落下の連続画像。見た目は ImpactStyle で変える。
  * - BeamEffects: 口元に光を溜めてから光線を放ち、範囲をさっと横切るように薙ぎ払って焼き尽くす（ベヒーモスの光線）。
  *   光線の先が通った HEX から火球と煙の連続画像（ExplosionEffects）が立ち上がり、焼け跡が燃え上がる。
  * - PillarEffects: 地点を中心に魔法陣が描かれて回り、中心へ縮むと同時に空から細い光線が降りてきて太くなり、
  *   範囲が光で飽和して爆発する（メテオフォール）。飛び散る破片は ImpactEffects。
  *
- * ユニットの絵より手前に、深度テストをせず描く。光は加算（fxShared.ts）、光線の爆発画像は煙の色が残る透過合成。
+ * ユニットの絵より手前に、深度テストをせず描く。光は加算（fxShared.ts）、岩や爆発画像は色が残る透過合成。
  */
 import * as THREE from 'three';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { ExplosionEffects } from './explosionFx';
+import { EARTH_SPIKE_SEC, EarthSpikeEffects } from './earthSpikeFx';
 import { createFlashMaterial, createFxMaterial, createSparks, createSparkTexture, FX_RENDER_ORDER, moveSparks } from './fxShared';
 
 /** 衝撃の見た目 */
 export interface ImpactStyle {
+  /** 指定したものは光の輪・破片の代わりに連続画像を再生する。 */
+  sprite?: 'earthSpike';
   /** 光と破片の色 */
   color: number;
   /** 地面の輪の色 */
@@ -32,12 +35,12 @@ export interface ImpactStyle {
 
 export const SMASH_STYLE: ImpactStyle = { color: 0xffc070, ringColor: 0xc89050, size: 0.9, shards: 26, speed: 2.2, gravity: 5, sec: 0.6 };
 export const FROST_STYLE: ImpactStyle = { color: 0xbfeaff, ringColor: 0x70c8ff, size: 0.8, shards: 34, speed: 1.6, gravity: 1.5, sec: 0.9 };
-export const SPIKE_STYLE: ImpactStyle = { color: 0xd8a868, ringColor: 0x8a6438, size: 0.7, shards: 22, speed: 2.8, gravity: 7, sec: 0.7 };
+export const SPIKE_STYLE: ImpactStyle = { sprite: 'earthSpike', color: 0xd8a868, ringColor: 0x8a6438, size: 1, shards: 22, speed: 2.8, gravity: 7, sec: EARTH_SPIKE_SEC };
 export const BLAST_STYLE: ImpactStyle = { color: 0xffb050, ringColor: 0xff7020, size: 1.5, shards: 40, speed: 3.2, gravity: 4, sec: 0.9 };
 /** トールハンマーの雷が落ちたところに広がる衝撃（雷の色） */
 export const HAMMER_STYLE: ImpactStyle = { color: 0xdfe4ff, ringColor: 0x8fa0ff, size: 2.2, shards: 60, speed: 4.2, gravity: 3, sec: 1.0 };
 
-/** 衝撃は出した時点で当たる（はじける光が最初に最も明るい） */
+/** 光の衝撃は出した時点で当たる。アーススパイクは EARTH_SPIKE_HIT_SEC で落下したとき。 */
 export const IMPACT_HIT_SEC = 0.02;
 
 interface Impact {
@@ -58,14 +61,17 @@ export class ImpactEffects {
   readonly group = new THREE.Group();
   private readonly plane = new THREE.PlaneGeometry(2, 2);
   private readonly sparkTexture = createSparkTexture();
+  private readonly earthSpikes = new EarthSpikeEffects();
   private items: Impact[] = [];
 
   constructor() {
     this.group.name = 'impact-fx';
+    this.group.add(this.earthSpikes.group);
   }
 
   /** at（地面の点）に衝撃を出す。hexSize は HEX の大きさ（ワールド） */
   spawn(at: THREE.Vector3, hexSize: number, style: ImpactStyle): void {
+    if (style.sprite === 'earthSpike') return this.earthSpikes.spawn(at, hexSize * style.size);
     const scale = hexSize * style.size;
     const board = new THREE.Group();
     board.scale.setScalar(scale);
@@ -96,6 +102,7 @@ export class ImpactEffects {
 
   /** 毎フレーム、描画の前に呼ぶ */
   update(camera: THREE.Camera): void {
+    this.earthSpikes.update(camera);
     if (this.items.length === 0) return;
     const now = performance.now();
     this.items = this.items.filter((s) => {
@@ -122,6 +129,7 @@ export class ImpactEffects {
   }
 
   clear(): void {
+    this.earthSpikes.clear();
     for (const s of this.items) this.dispose(s);
     this.items = [];
   }

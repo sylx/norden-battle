@@ -1,0 +1,18 @@
+Generator: built-in image_gen (transparent_background: true)
+Asset: earth-spike.webp
+Layout: 4 columns x 4 rows, 16 frames, left-to-right then top-to-bottom
+Export: each equal source cell cropped and Lanczos resized to 240x240,
+        centered in a 256x256 cell with 8px transparent gutters; 1024x1024 RGBA WebP, quality=88, method=6
+Runtime: 1.8 seconds, adjacent frames blended; landing/hit at frame 11 (1.2s);
+         fixed ground anchor at 94% from top after adding gutters; fade rubble in the last 20%.
+
+Use case: stylized-concept
+Asset type: transparent RGBA animation sprite sheet for an earth magic attack in a fantasy strategy game.
+Primary request: a spectacular eruption of THREE huge pointed jagged stone spires that break out of the ground, tear free and levitate in midair, then fall and shatter in an explosive cloud of dust and gravel. Emphasize heavy solid rock and violently torn earth. Hand-painted anime game effects with chiseled facets, dark fissures, earthy slate and warm sandstone, bright ochre dust, sparse amber magic light in cracks. NOT fire, not crystals.
+Layout: EXACTLY 16 consecutive frames in a strict 4 columns by 4 rows square grid, all equal cells. Chronological left to right then top to bottom. No grid lines, numbers, labels or text. Every frame is the SAME rock formation evolving over time at the SAME scale, fixed camera and same ground origin at x=50%, y=86% of each cell. Slightly elevated frontal view for a camera-facing game billboard. Maximum effect width 78% of a cell, height 78%; transparent margins on all sides, no overlap between cells, no cropped tips or debris. No terrain tile or background disc; only the torn rock cluster, a little soil at its feet and dust.
+Timeline:
+Row 1 frames 1-4: first tiny jagged rock tips erupt with a sharp burst of gravel; three stone spikes thrust rapidly higher; full tall pointed spires split the ground with dusty shards; spires begin to tear loose and rise, their broken lower ends visible.
+Row 2 frames 5-8: entire pointed rocks rise above the ground with a CLEAR TRANSPARENT GAP beneath them, loose fragments floating around them; rocks climb higher; reach levitation apex; hang momentarily and tilt slightly. Separate small dust near the fixed ground origin. Keep rocks recognizable and coherently posed, no new rock formation.
+Row 3 frames 9-12: the same rocks descend visibly; falling faster with trailing dust; strike the fixed ground with a forceful outward burst of rubble and dust; pointed rocks break into large angular fragments.
+Row 4 frames 13-16: spreading low dust and scattered rubble; dust thins and fragments settle; only faint dust and tiny grit remain; last very faint translucent dust wisps, nearly empty.
+Constraints: authentic transparency, opaque richly shaded rocks, translucent dust. No checkerboard pixels, no black or colored background, no people, no grass, no beam, no flames, no circular vector shockwave, no watermark. Preserve clear airborne phase and descending phase, not merely rocks growing and shrinking.
