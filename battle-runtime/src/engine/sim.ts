@@ -3,7 +3,7 @@
  *
  * 打ち手（Player）は、いまの番の軍の 1 部隊について「次に何をするか」（予約と終わり方）を返す（decide）。返した行動を実行したら、
  * 盤面が変わるので、同じ部隊でも次の行動はそのつど決め直す（移動してから攻撃する、など）。何もしないなら null。
- * 番の初めに軍の作戦を立てる（beginTurn）・動かす順を決める（order）・強制退却の退却先を選ぶ（routTo）こともできる。
+ * 配備する（deploy）・番の初めに軍の作戦を立てる（beginTurn）・動かす順を決める（order）・強制退却の退却先を選ぶ（routTo）こともできる。
  * CPU（cpu/）も同じ形で、BattleApp の CPU の番もこれを使う。
  *
  * 乱数は、ルールの乱数（rng）と打ち手の乱数（playerRng）を分けて渡す。打ち手を変えてもルールの乱数の並びがずれないように。
@@ -11,6 +11,7 @@
 import type { TeamId, UnitData } from '@norden/map-runtime/core/units';
 import { buildActionMenu, type MenuAction } from '../actions';
 import { hexDistance, isAttack, resolveAttack } from '../combat';
+import type { Deployment } from '../deployment';
 import type { RetreatDestination } from '../retreat';
 import type { BattleOutcome } from '../victory';
 import { runAction, type ActionEnd, type ExecuteReport } from './action';
@@ -36,6 +37,8 @@ export interface Player {
   order?(state: BattleState, units: readonly UnitData[], rng: Rng): UnitData[];
   /** 強制退却で、unit の退却先を選ぶ（省略すると最初の拠点） */
   routTo?(state: BattleState, unit: UnitData): RetreatDestination;
+  /** 配備フェーズで、配備している陣営の部隊を置く（省略すると自動配置。配備を終えるのは呼ぶ側） */
+  deploy?(state: BattleState, deployment: Deployment): void;
 }
 
 /** 強制退却で、unit の退却先を選ぶ */

@@ -1,0 +1,30 @@
+{
+  "attacker": {
+    "factionId": "valhardt",
+    "commander": 0,
+    "entries": [
+      { "knightId": "018", "type": "cavalry", "soldiers": 600, "morale": 70, "spells": [] },
+      { "knightId": "002", "type": "wizard", "soldiers": 400, "morale": 70, "spells": ["meteorFall", "flameLance"] },
+      { "knightId": "110", "type": "landsknecht", "soldiers": 800, "morale": 70, "spells": [] },
+      { "knightId": "109", "type": "artillery", "soldiers": 300, "morale": 70, "spells": [] },
+      { "knightId": "101", "type": "rifleman", "soldiers": 600, "morale": 70, "spells": [] },
+      { "knightId": "032", "type": "mage", "soldiers": 400, "morale": 70, "spells": ["earthSpike", "frostNova"] },
+      { "knightId": "008", "type": "infantry", "soldiers": 1000, "morale": 70, "spells": [] },
+      { "knightId": "048", "type": "archer", "soldiers": 800, "morale": 70, "spells": [] }
+    ]
+  },
+  "defender": {
+    "factionId": "nordis",
+    "commander": 0,
+    "entries": [
+      { "knightId": "065", "type": "infantry", "soldiers": 1000, "morale": 70, "spells": [] },
+      { "knightId": "003", "type": "mage", "soldiers": 400, "morale": 70, "spells": ["thorHammer", "frostNova"] },
+      { "knightId": "035", "type": "wizard", "soldiers": 400, "morale": 70, "spells": ["meteorFall", "earthSpike"] },
+      { "knightId": "107", "type": "rifleman", "soldiers": 600, "morale": 70, "spells": [] },
+      { "knightId": "011", "type": "archer", "soldiers": 800, "morale": 70, "spells": [] },
+      { "knightId": "019", "type": "cavalry", "soldiers": 600, "morale": 70, "spells": [] },
+      { "knightId": "059", "type": "infantry", "soldiers": 1000, "morale": 70, "spells": [] },
+      { "knightId": "049", "type": "archer", "soldiers": 800, "morale": 70, "spells": [] }
+    ]
+  }
+}

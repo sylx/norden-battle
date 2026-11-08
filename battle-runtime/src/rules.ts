@@ -12,6 +12,7 @@ export { demoFactions, teamName, unitName } from './factions';
 export type { BattleFaction, BattleFactions } from './factions';
 export { demoStatus, demoStatuses, MAX_MORALE, troopStatus, typeTraits } from './unitStatus';
 export type { Portrait, TroopInit, UnitStatus } from './unitStatus';
+export { FACILITY_NAMES } from './facilities';
 export type { SideFacilities } from './facilities';
 export type { RetreatDestinations } from './retreat';
 export { BATTLE_END_REASON_NAMES } from './victory';

@@ -1052,7 +1052,7 @@ export class BattleApp {
 
   /**
    * CPU を 1 歩進める（毎フレーム）。演出・カットインの間は待つ。
-   * 配備: 自動配置して配備を終える。番: 部隊を 1 つ選んで行動を決め（打ち手の order・decide）、予約を少し見せてから実行する。
+   * 配備: 打ち手が置いて（打ち手の deploy。無ければ自動配置）配備を終える。番: 部隊を 1 つ選んで行動を決め（打ち手の order・decide）、予約を少し見せてから実行する。
    * 行動できる部隊がいなくなったら番を終える。強制退却: 退却先を選んで退却する
    */
   private stepCpu(): void {
@@ -1064,7 +1064,10 @@ export class BattleApp {
     const state = this.battle;
     if (!state || !active || this.exec || this.salvo || this.autoMoving || this.autoEnding || this.cpuHolds > 0) return;
     if (this.deployment) {
-      this.deployment.auto();
+      // CPU の打ち手が配備する（兵種に合わせて前後を考える。打ち手が配備しなければ自動配置）
+      const cpu = this.cpus[this.deployState!.team];
+      if (cpu?.deploy) cpu.deploy(state, this.deployment);
+      else this.deployment.auto();
       this.deployChanged();
       if (!this.finishDeploy()) this.setCpu(this.deployState!.team, null);
       return;

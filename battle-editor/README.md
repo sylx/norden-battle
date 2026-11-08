@@ -42,7 +42,7 @@ battle-editor からマップは書き換えない。
 
 ツールバーの「CPU・速度」で、陣営ごとに人が操作するか CPU（易しい・普通・難しい）に任せるかと、演出の速度（×0.5〜×3）を選ぶ。
 すぐ反映し（戦闘の途中でも）、ブラウザに覚えておく。両方の陣営を CPU にすると最後まで勝手に戦う。
-CPU の陣営は配備も自動配置で済ませる。CPU の番のターン表示には「早送り」（演出をさらに 3 倍に）と「スキップ」（番の残りを演出なしで進める）を出す。
+CPU の陣営は配備も CPU がする（兵種に合わせて前後を考えて置く）。CPU の番のターン表示には「早送り」（演出をさらに 3 倍に）と「スキップ」（番の残りを演出なしで進める）を出す。
 決着のカットインは、人が操作する陣営をプレイヤーとして勝利・敗北を出す（両方とも人・両方とも CPU なら攻撃側）。
 難易度はまだ手に効かない（M008 の段階 3 で入れる）。
 
@@ -56,13 +56,16 @@ CPU の陣営は配備も自動配置で済ませる。CPU の番のターン表
 npm run sim -- --runs 20                                  # 既定のマップ（戦闘の範囲のある最初のファイル）の最初の範囲で 20 戦
 npm run sim -- --map road-P000-P013.json --area P013 --verbose   # 範囲を選び、1 戦ごとの結果と行き来も出す
 npm run sim -- --map all --runs 4                         # すべてのマップのすべての範囲を 4 戦ずつ
-npm run sim -- --attacker hard --defender random          # 打ち手（easy・normal・hard・random。既定は normal）
+npm run sim -- --attacker hard --defender random          # 打ち手（easy・normal・hard・basic・random。既定は normal。basic は段階 1 の CPU）
+npm run sim -- --defender-off danger,strategy             # CPU の考える要素を切る（allAttacks・danger・stances・strategy・deploy）
+npm run sim -- --map road-P003-P008.json --area P008 --runs 1 --trace   # 行動を 1 つずつ出す（どこから動いて誰を攻撃したか）
 npm run sim -- --rosters rosters.json                     # 編成（部隊の道具で書き出したもの）
+npm run sim -- --rosters battle-editor/sim/rosters/mixed.json   # 兵種を混ぜた編成（魔法・乱撃・砲兵・ライフル兵も出る）
 npm run sim -- --attacker-faction leonis --defender-faction carta  # 勢力の既定の編成
 npm run sim -- --seed 100 --max-turns 40 --no-retreat     # シード・ターンの上限・退却先を渡さない
 ```
 
-両軍は自動配置で置く。退却先は既定で両軍にダミーの拠点を 1 つずつ渡す（退却・強制退却が起きる）。拠点の施設はまだ渡せない。
+両軍は打ち手が置く（CPU は兵種に合わせて前後を考える。basic・random は自動配置）。決着の理由は勝った陣営ごとに出す。退却先は既定で両軍にダミーの拠点を 1 つずつ渡す（退却・強制退却が起きる）。拠点の施設はまだ渡せない。
 
 ## ダメージ計算
 

@@ -4,26 +4,29 @@
  *
  *   npm run sim -- [--map <ファイル|all>] [--area <都市 ID>] [--runs 20] [--seed 1] [--max-turns 30]
  *                  [--attacker normal] [--defender normal] [--rosters rosters.json] [--attacker-faction <勢力 ID>] [--defender-faction <勢力 ID>]
- *                  [--no-retreat] [--verbose]
+ *                  [--no-retreat] [--verbose] [--trace]
  *
  * - マップ: assets/maps/ のファイル（既定は戦闘の範囲のある最初のファイル）。all ならすべてのマップのすべての範囲を回す。
- *   範囲は既定で最初のもの。マップの範囲を切り出し、両軍を自動配置して始める（battle-editor の「自動配置」と同じ）
- * - 打ち手: 陣営ごとに easy・normal・hard（CPU の難易度）か random（ランダムな仮の打ち手）
+ *   範囲は既定で最初のもの。マップの範囲を切り出し、両軍を配備して始める（CPU は兵種に合わせて置く。basic・random は battle-editor の「自動配置」と同じ）
+ * - 打ち手: 陣営ごとに easy・normal・hard（CPU の難易度）、basic（段階 1 の CPU。BASIC_FEATURES）、random（ランダムな仮の打ち手）。
+ *   --attacker-off・--defender-off で CPU の考える要素（CpuFeatures の allAttacks・danger・stances・strategy・deploy）を切れる（どの要素が効いているかを比べる）
  * - 編成: battle-editor の部隊の道具の「編成を書き出す」で書き出した JSON（--rosters）。無ければ勢力 ID ごとの既定の編成
  *   （--attacker-faction・--defender-faction。省略すると battle-editor の既定と同じ）
  * - 退却先: 既定は両軍にダミーの拠点を 1 つずつ渡す（退却・強制退却が起きる）。--no-retreat で渡さない
+ * - --verbose で 1 戦ごとの結果と同じ所の行き来、--trace でさらに行動を 1 つずつ出す（範囲とシードを絞って使う）
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cropBattleArea } from '@norden/map-runtime/core/battleArea';
 import { HexMap, parseMapData, type MapData } from '@norden/map-runtime/core/mapData';
 import { UNIT_DEFS, type TeamId, type UnitData, type UnitType } from '@norden/map-runtime/core/units';
-import { cpuPlayer, DIFFICULTIES, type Difficulty } from '@norden/battle-runtime/cpu';
-import { createBattleState, randomPlayer, runBattle, seededRng, type ExecuteReport, type FacilityReport, type Player, type SplashHit } from '@norden/battle-runtime/engine';
-import { BATTLE_END_REASON_NAMES, Deployment, SIDE_NAMES, SIDE_TEAM, type BattleEndReason, type RetreatDestinations } from '@norden/battle-runtime/rules';
+import { BASIC_FEATURES, cpuPlayer, DIFFICULTIES, FULL_FEATURES, type CpuFeatures, type Difficulty } from '@norden/battle-runtime/cpu';
+import { createBattleState, randomPlayer, type BattleState, runBattle, seededRng, type ExecuteReport, type FacilityReport, type Player, type SplashHit } from '@norden/battle-runtime/engine';
+import { ATTACK_DEFS, BATTLE_END_REASON_NAMES, Deployment, FACILITY_NAMES, SIDE_NAMES, SIDE_TEAM, type BattleEndReason, type RetreatDestinations } from '@norden/battle-runtime/rules';
 import { DEFAULT_ROSTERS, defaultRoster, factionName, parseRosters, rosterStatuses, rosterTroops, type Rosters } from '../src/gameKnights';
 
-type Who = Difficulty | 'random';
+/** 打ち手: CPU の難易度・段階 1 の CPU（basic）・ランダムな仮の打ち手（random） */
+type Who = Difficulty | 'basic' | 'random';
 
 interface Args {
   map: string | null;
@@ -33,23 +36,34 @@ interface Args {
   maxTurns: number;
   attacker: Who;
   defender: Who;
+  /** CPU の考える要素のうち切るもの（陣営ごと） */
+  attackerOff: (keyof CpuFeatures)[];
+  defenderOff: (keyof CpuFeatures)[];
   rosters: string | null;
   attackerFaction: string | null;
   defenderFaction: string | null;
   retreat: boolean;
   verbose: boolean;
+  /** 行動を 1 つずつ出す */
+  trace: boolean;
 }
 
 const USAGE = `npm run sim -- [--map <ファイル|all>] [--area <都市 ID>] [--runs 20] [--seed 1] [--max-turns 30]
-                 [--attacker easy|normal|hard|random] [--defender easy|normal|hard|random]
-                 [--rosters rosters.json] [--attacker-faction <勢力 ID>] [--defender-faction <勢力 ID>] [--no-retreat] [--verbose]`;
+                 [--attacker easy|normal|hard|basic|random] [--defender easy|normal|hard|basic|random]
+                 [--attacker-off <要素,…>] [--defender-off <要素,…>]
+                 [--rosters rosters.json] [--attacker-faction <勢力 ID>] [--defender-faction <勢力 ID>] [--no-retreat] [--verbose] [--trace]`;
 
 function parseArgs(argv: readonly string[]): Args {
-  const a: Args = { map: null, area: null, runs: 20, seed: 1, maxTurns: 30, attacker: 'normal', defender: 'normal', rosters: null, attackerFaction: null, defenderFaction: null, retreat: true, verbose: false };
+  const a: Args = { map: null, area: null, runs: 20, seed: 1, maxTurns: 30, attacker: 'normal', defender: 'normal', attackerOff: [], defenderOff: [], rosters: null, attackerFaction: null, defenderFaction: null, retreat: true, verbose: false, trace: false };
   const who = (v: string): Who => {
-    if (v === 'random' || (DIFFICULTIES as readonly string[]).includes(v)) return v as Who;
-    throw new Error(`打ち手は easy・normal・hard・random のどれか: ${v}`);
+    if (v === 'random' || v === 'basic' || (DIFFICULTIES as readonly string[]).includes(v)) return v as Who;
+    throw new Error(`打ち手は easy・normal・hard・basic・random のどれか: ${v}`);
   };
+  const off = (v: string): (keyof CpuFeatures)[] =>
+    v.split(',').map((f) => {
+      if (!(f in FULL_FEATURES)) throw new Error(`切れる要素は ${Object.keys(FULL_FEATURES).join('・')}: ${f}`);
+      return f as keyof CpuFeatures;
+    });
   const num = (v: string, name: string): number => {
     const n = Number(v);
     if (!Number.isFinite(n)) throw new Error(`${name} は数: ${v}`);
@@ -69,18 +83,26 @@ function parseArgs(argv: readonly string[]): Args {
     else if (key === '--max-turns') a.maxTurns = num(next(), key);
     else if (key === '--attacker') a.attacker = who(next());
     else if (key === '--defender') a.defender = who(next());
+    else if (key === '--attacker-off') a.attackerOff = off(next());
+    else if (key === '--defender-off') a.defenderOff = off(next());
     else if (key === '--rosters') a.rosters = next();
     else if (key === '--attacker-faction') a.attackerFaction = next();
     else if (key === '--defender-faction') a.defenderFaction = next();
     else if (key === '--no-retreat') a.retreat = false;
     else if (key === '--verbose') a.verbose = true;
+    else if (key === '--trace') a.trace = a.verbose = true;
     else if (key === '--help' || key === '-h') throw new Error(USAGE);
     else throw new Error(`知らない引数: ${key}\n${USAGE}`);
   }
   return a;
 }
 
-const playerOf = (who: Who): Player => (who === 'random' ? randomPlayer : cpuPlayer({ difficulty: who }));
+const playerOf = (who: Who, off: readonly (keyof CpuFeatures)[]): Player => {
+  if (who === 'random') return randomPlayer;
+  const features: Partial<CpuFeatures> = who === 'basic' ? { ...BASIC_FEATURES } : {};
+  for (const f of off) features[f] = false;
+  return cpuPlayer({ difficulty: who === 'basic' ? 'normal' : who, features });
+};
 
 /** 兵種ごとの集計 */
 interface TypeStats {
@@ -95,7 +117,8 @@ interface Tally {
   label: string;
   runs: number;
   wins: Record<'attacker' | 'defender', number>;
-  reasons: Map<BattleEndReason, number>;
+  /** 決着の理由（勝った陣営ごと。キーは「陣営:理由」） */
+  reasons: Map<`${'attacker' | 'defender'}:${BattleEndReason}`, number>;
   stalled: number;
   turns: number[];
   actions: number;
@@ -145,29 +168,33 @@ function countFacility(t: Tally, r: FacilityReport): void {
   if (r.destroyed) typeStats(t, r.target.type).wipedOut++;
 }
 
-/** マップの戦闘の範囲を切り出し、両軍を自動配置した戦闘の状態を作る */
-function setup(source: MapData, area: string, rosters: Rosters, retreat: boolean) {
+/** マップの戦闘の範囲を切り出し、両軍を配備した戦闘の状態を作る（打ち手の deploy。無ければ battle-editor の「自動配置」と同じ） */
+function setup(source: MapData, area: string, rosters: Rosters, retreat: boolean, players: Partial<Record<TeamId, Player>>): BattleState {
   const data = cropBattleArea(source, area);
   if (!data.deploy) throw new Error(`${area} の範囲に初期配置地点がない`);
   const map = new HexMap(data);
   const statuses = rosterStatuses(rosters)(map.allUnits());
-  const deployment = new Deployment(map, data.deploy, rosterTroops(rosters)(data.deploy), statuses);
-  while (deployment.side) {
-    deployment.auto();
-    if (!deployment.finish()) throw new Error(`${area}: ${SIDE_NAMES[deployment.side]}の配備を終えられない（部隊が無い・軍団長を置けない）`);
-  }
   const retreats: RetreatDestinations = retreat
     ? { [SIDE_TEAM.defender]: [{ id: 'sim-defender', name: '防衛側の後方' }], [SIDE_TEAM.attacker]: [{ id: 'sim-attacker', name: '攻撃側の後方' }] }
     : {};
-  return createBattleState(map, statuses, { stronghold: data.stronghold ?? null, retreats, troopIds: deployment.troopIds() });
+  const state = createBattleState(map, statuses, { stronghold: data.stronghold ?? null, retreats });
+  const deployment = new Deployment(map, data.deploy, rosterTroops(rosters)(data.deploy), statuses);
+  while (deployment.side) {
+    const player = players[SIDE_TEAM[deployment.side]];
+    if (player?.deploy) player.deploy(state, deployment);
+    else deployment.auto();
+    if (!deployment.finish()) throw new Error(`${area}: ${SIDE_NAMES[deployment.side]}の配備を終えられない（部隊が無い・軍団長を置けない）`);
+  }
+  state.troopIds = deployment.troopIds();
+  return state;
 }
 
 /** source の area で runs 回戦わせて集計する */
 function simulate(t: Tally, source: MapData, area: string, args: Args, rosters: Rosters): void {
-  const players = { [SIDE_TEAM.attacker]: playerOf(args.attacker), [SIDE_TEAM.defender]: playerOf(args.defender) };
+  const players = { [SIDE_TEAM.attacker]: playerOf(args.attacker, args.attackerOff), [SIDE_TEAM.defender]: playerOf(args.defender, args.defenderOff) };
   for (let i = 0; i < args.runs; i++) {
     const seed = args.seed + i;
-    const state = setup(source, area, rosters, args.retreat);
+    const state = setup(source, area, rosters, args.retreat, players);
     /** 部隊ごとの、番の終わりの位置と攻撃したか（ターン順） */
     const track = new Map<UnitData, Map<number, { at: string; attacked: boolean }>>();
     const result = runBattle(state, {
@@ -177,12 +204,16 @@ function simulate(t: Tally, source: MapData, area: string, args: Args, rosters: 
       maxTurns: args.maxTurns,
       onAction: (r) => {
         countAction(t, r);
+        if (args.trace) console.log(`    ${traceLine(state, r)}`);
         let turns = track.get(r.unit);
         if (!turns) track.set(r.unit, (turns = new Map()));
         const prev = turns.get(state.turn);
         turns.set(state.turn, { at: `${r.unit.col},${r.unit.row}`, attacked: !!prev?.attacked || !!r.attack });
       },
-      onFacility: (r) => countFacility(t, r),
+      onFacility: (r) => {
+        countFacility(t, r);
+        if (args.trace) console.log(`    t${r.turn} ${FACILITY_NAMES[r.kind]} → ${unitLabel(state, r.target)} −${r.result.damage}${r.destroyed ? ' 殲滅' : ''}`);
+      },
     });
     const bf: string[] = [];
     for (const [unit, turns] of track) {
@@ -199,13 +230,41 @@ function simulate(t: Tally, source: MapData, area: string, args: Args, rosters: 
     const o = result.outcome;
     if (o) {
       t.wins[o.winner]++;
-      t.reasons.set(o.reason, (t.reasons.get(o.reason) ?? 0) + 1);
+      const key = `${o.winner}:${o.reason}` as const;
+      t.reasons.set(key, (t.reasons.get(key) ?? 0) + 1);
     } else t.stalled++;
     if (args.verbose) {
       console.log(`  ${t.label} seed ${seed}: ${o ? `${SIDE_NAMES[o.winner]}の勝ち（${BATTLE_END_REASON_NAMES[o.reason]}）` : '決着せず'} ターン ${result.turn} 行動 ${result.actions}`);
       for (const line of bf) console.log(`    行き来 ${line}`);
     }
   }
+}
+
+/** 行動の跡に出す部隊の名前（陣営・兵種・軍団長の印・HEX） */
+function unitLabel(state: BattleState, u: UnitData, at: { col: number; row: number } = u): string {
+  const s = state.statuses.get(u) ?? state.wipedOut.find((w) => w.unit === u)?.status ?? state.retreated.find((r) => r.unit === u)?.status;
+  return `${u.team === SIDE_TEAM.attacker ? '攻' : '防'}${UNIT_DEFS[u.type].name}${s?.commander ? '★' : ''}(${at.col},${at.row})`;
+}
+
+/** 行動 1 つの跡（--trace） */
+function traceLine(state: BattleState, r: ExecuteReport): string {
+  const moved = r.from.col !== r.unit.col || r.from.row !== r.unit.row;
+  const parts = [`t${state.turn} ${unitLabel(state, r.unit, r.from)}${moved ? `→(${r.unit.col},${r.unit.row})` : ''}`];
+  for (const i of r.intercepts) parts.push(`迎撃を受けた ${unitLabel(state, i.unit)} −${i.result.damage}${i.halted ? ' 足止め' : ''}`);
+  const a = r.attack;
+  if (a) {
+    const name = ATTACK_DEFS[a.id].name;
+    if (a.target && a.result) parts.push(`${name} → ${unitLabel(state, a.target)} −${a.result.damage}（反撃 −${a.result.counter}）${a.targetDestroyed ? ' 殲滅' : ''}${a.unitDestroyed ? ' 壊滅' : ''}`);
+    else parts.push(`${name} (${a.at.col},${a.at.row})`);
+    for (const h of a.splash) parts.push(`巻き添え ${unitLabel(state, h.unit)} −${h.result.damage}${h.destroyed ? ' 殲滅' : ''}`);
+    if (a.plowed) parts.push('耕した');
+  }
+  if (r.intercept) parts.push('迎撃の構え');
+  if (r.wait && !a && !moved) parts.push('待機');
+  if (r.inspire !== undefined) parts.push(`鼓舞 +${r.inspire}`);
+  if (r.retreat) parts.push(`${r.retreat.forced ? '強制' : ''}退却${r.retreat.captured ? '（捕縛）' : ''}`);
+  if (r.lost) parts.push('迎撃で壊滅');
+  return parts.join(' / ');
 }
 
 const pct = (n: number, d: number) => (d > 0 ? `${((n / d) * 100).toFixed(1)}%` : '-');
@@ -219,7 +278,11 @@ function report(t: Tally): void {
     防衛側の勝ち: { 回数: t.wins.defender, 割合: pct(t.wins.defender, t.runs) },
     '決着せず（ターンの上限）': { 回数: t.stalled, 割合: pct(t.stalled, t.runs) },
   });
-  console.table(Object.fromEntries([...t.reasons].map(([r, n]) => [BATTLE_END_REASON_NAMES[r], { 回数: n, 割合: pct(n, t.runs) }])));
+  const reasonName = (key: string) => {
+    const [side, reason] = key.split(':') as ['attacker' | 'defender', BattleEndReason];
+    return `${SIDE_NAMES[side]}の勝ち（${BATTLE_END_REASON_NAMES[reason]}）`;
+  };
+  console.table(Object.fromEntries([...t.reasons].sort((a, b) => a[0].localeCompare(b[0])).map(([r, n]) => [reasonName(r), { 回数: n, 割合: pct(n, t.runs) }])));
   console.log(`ターン数: 平均 ${avg.toFixed(1)}・最短 ${turns[0] ?? '-'}・中央 ${turns[Math.floor(turns.length / 2)] ?? '-'}・最長 ${turns.at(-1) ?? '-'}。1 戦の行動 平均 ${(t.actions / Math.max(1, t.runs)).toFixed(1)}・同じ所の行き来 平均 ${(t.backAndForth / Math.max(1, t.runs)).toFixed(2)} 回`);
   console.table(
     Object.fromEntries(
@@ -254,7 +317,8 @@ export function main(argv: readonly string[], mapsDir: string): void {
   }
   const t0 = performance.now();
   console.log(
-    `攻撃側: ${factionName(rosters.attacker.factionId)}（${args.attacker}）・防衛側: ${factionName(rosters.defender.factionId)}（${args.defender}）・` +
+    `攻撃側: ${factionName(rosters.attacker.factionId)}（${args.attacker}${args.attackerOff.map((f) => ` -${f}`).join('')}）・` +
+      `防衛側: ${factionName(rosters.defender.factionId)}（${args.defender}${args.defenderOff.map((f) => ` -${f}`).join('')}）・` +
       `${targets.length} 範囲 × ${args.runs} 戦・シード ${args.seed}〜・ターンの上限 ${args.maxTurns}${args.retreat ? '' : '・退却先なし'}`,
   );
   const total = newTally('合計');

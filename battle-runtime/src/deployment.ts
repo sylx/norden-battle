@@ -210,6 +210,26 @@ export class Deployment {
     this.changed();
   }
 
+  /**
+   * 配備している陣営の部隊 id を o（空いている配置地点）へ置く（置き直しも。CPU の配備が使う）。置けたら true。
+   * 上限まで置いていれば、未配備の部隊は置けない
+   */
+  place(id: string, o: Offset): boolean {
+    const troop = this.troopOf(id);
+    const slot = troop && this.slots().find((s) => s.col === o.col && s.row === o.row);
+    if (!troop || !slot || this.map.unitAt(slot.col, slot.row)) return false;
+    if (!this.units.has(troop) && this.placedCount() >= this.limit()) return false;
+    this.put(troop, slot);
+    this.picked = null;
+    this.changed();
+    return true;
+  }
+
+  /** side の陣営の配置地点（置けない HEX と、ほかのユニットが最初からいる HEX を除く。相手の陣営の配置地点を見るのに使う） */
+  sideSlots(side: DeploySide): Offset[] {
+    return this.slotsOf(side);
+  }
+
   /** 配備を終えて次の陣営へ進む（1 部隊も置いていないか、軍団長の部隊を置いていなければ何もしない）。進めたら true */
   finish(): boolean {
     const side = this.side;
