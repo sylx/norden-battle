@@ -5,7 +5,8 @@
 import type { ReactNode } from 'react';
 import { UNIT_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
 import type { MenuAction } from '../actions';
-import { BattleApp, type ExecuteReport, type SplashHit, type Plan } from '../app';
+import type { ExecuteReport, SplashHit, Plan } from '../app';
+import { planCost } from '../engine/plan';
 import { isAttack } from '../combat';
 import { SIDE_NAMES, SIDE_TEAM, type DeployState } from '../deployment';
 import { teamName, type BattleFactions } from '../factions';
@@ -51,7 +52,7 @@ export function planStatus(name: UnitNamer, plan: Plan): string {
     moves(plan.legs.slice(split)),
   ].filter(Boolean);
   return parts.length > 0
-    ? `${unitLabel(name, plan.unit)}: ${parts.join(' → ')} を予約（行動力 ${BattleApp.planCost(plan)}）/ 決定: 実行 / 取消: すべて取り消す / Esc: 1 つ戻す`
+    ? `${unitLabel(name, plan.unit)}: ${parts.join(' → ')} を予約（行動力 ${planCost(plan)}）/ 決定: 実行 / 取消: すべて取り消す / Esc: 1 つ戻す`
     : `${unitLabel(name, plan.unit)}: 予約を取り消しました / ${IDLE_STATUS}`;
 }
 

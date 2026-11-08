@@ -5,6 +5,9 @@ export type { AttackLogEntry } from './ui/BattleLogWindow';
 
 // 戦闘画面の本体（three.js のマップ・ユニット・入力）
 export { BattleApp, TURN_ORDER } from './app';
+// 戦闘のルールで状態を書き換える処理（engine）のうち、BattleApp に渡すもの。engine の全体は '@norden/battle-runtime/engine'（three.js を読み込まない）
+export { mathRng, seededRng } from './engine';
+export type { BattleState, Rng } from './engine';
 export type { AttackPreview, BattleEvents, BattlePhase, ExecuteReport, FacilityReport, InterceptReport, Plan, PlannedAttack, SplashHit, StatusFactory } from './app';
 export type { ActionMenuModel, MenuFrame, MenuState, RetreatMenu } from './menuModel';
 

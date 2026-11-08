@@ -22,5 +22,5 @@ npm run dev:object   # object-editor http://localhost:5174/
 npm run dev:battle   # battle-editor http://localhost:5175/
 npm run typecheck
 npm run build
-npm test             # battle-runtime のルールの単体テスト（vitest）
+npm test             # battle-runtime のルールの単体テスト（vitest。engine の行動・番・決着と、描画なしの 1 戦も）
 ```

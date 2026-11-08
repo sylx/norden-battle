@@ -5,7 +5,8 @@
   "type": "module",
   "description": "戦闘のルール・BattleApp（three.js の戦闘画面）と、その上に重ねる React の UI（BattleScreen）。battle-editor とゲーム本体（nordencult）で共有",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./engine": "./src/engine/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

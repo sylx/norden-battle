@@ -38,6 +38,7 @@
  */
 import type { UnitType } from '@norden/map-runtime/core/units';
 import { ATTACK_DEFS } from './attacks';
+import { mathRng, roll, type Rng } from './engine/rng';
 import type { UnitStatus } from './unitStatus';
 
 /** 兵種ごとの攻撃力・防御力（倍率） */
@@ -155,9 +156,9 @@ export function terrainDefense(att: Fighter, def: Fighter): number {
   return def.walled && SIEGE_TYPES.includes(att.type) ? def.defense * SIEGE_RATE : def.defense;
 }
 
-/** −1〜1 の乱数（ランダム係数の roll） */
-export function randomRoll(): number {
-  return Math.random() * 2 - 1;
+/** −1〜1 の乱数（ランダム係数の roll。rng は戦闘のルールの乱数で、既定は Math.random） */
+export function randomRoll(rng: Rng = mathRng): number {
+  return roll(rng);
 }
 
 /** 攻撃力が残りの兵数に依存しない兵種と、兵の攻めの計算に使う兵数（固定値） */

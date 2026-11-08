@@ -7,6 +7,14 @@ import type { UnitPlacement } from '@norden/map-runtime/render/units';
 /** 表示している時間（秒）と、その間に浮かぶ高さ（CSS ピクセル）。show の timing で変えられる */
 const DURATION = 3;
 const RISE = 48;
+/**
+ * 同じところにほぼ同時に出した数字は重ならないように上へ積む。足元がこの距離（絵の高さ比）より近く、
+ * 出してからこの割合の時間しか経っていない数字の上に積む（味方のいる HEX で迎撃されて、味方の巻き添えと迎撃の数字が同時に出るときなど）
+ */
+const STACK_NEAR = 0.35;
+const STACK_WITHIN = 0.5;
+/** 積むときの数字どうしの隙間（CSS ピクセル） */
+const STACK_GAP = 4;
 
 export interface PopupTiming {
   duration: number;
@@ -26,6 +34,8 @@ interface Popup {
   start: number;
   duration: number;
   rise: number;
+  /** 同じところに出ている数字の上に積むために、上へずらす量（CSS ピクセル） */
+  lift: number;
 }
 
 export class Popups {
@@ -48,7 +58,13 @@ export class Popups {
     el.className = `popup ${className}`;
     el.textContent = text;
     this.root.appendChild(el);
-    this.items.push({ el, anchor: p.foot, foot: follow ? p.foot : p.foot.clone(), height: p.height, start: performance.now(), ...timing });
+    const now = performance.now();
+    const near = Math.max(p.height, 1e-6) * STACK_NEAR;
+    // 同じところに出したばかりの数字があれば、その上に積む
+    const lift = this.items
+      .filter((x) => (now - x.start) / 1000 < x.duration * STACK_WITHIN && Math.hypot(x.foot.x - p.foot.x, x.foot.z - p.foot.z) < near)
+      .reduce((top, x) => Math.max(top, x.lift + x.el.offsetHeight + STACK_GAP), 0);
+    this.items.push({ el, anchor: p.foot, foot: follow ? p.foot : p.foot.clone(), height: p.height, start: now, ...timing, lift });
   }
 
   /**
@@ -80,7 +96,7 @@ export class Popups {
       }
       v.copy(up).multiplyScalar(p.height).add(p.foot).project(camera);
       const x = ((v.x + 1) / 2) * w;
-      const y = ((1 - v.y) / 2) * h - p.rise * (1 - (1 - t) * (1 - t));
+      const y = ((1 - v.y) / 2) * h - p.rise * (1 - (1 - t) * (1 - t)) - p.lift;
       p.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
       // 最後の 3 割で消える
       p.el.style.opacity = String(Math.min(1, (1 - t) / 0.3));

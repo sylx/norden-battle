@@ -100,6 +100,29 @@ import { BattleScreen } from '@norden/battle-runtime';
    叫ぶ: 太い字で弾んで出る、弱々しい: くすんだ吹き出しでゆっくり出る）。喋ると `app.on('bark', …)` で知らせる。
 
 `BattleApp` は React なしでも使える（`new BattleApp(container)` → `loadMap(data)`、画面を離れるときは `dispose()`）。
+
+## engine（描画なしの戦闘のルール）
+
+戦闘のルールで状態を書き換える処理（行動の実行・番の始まりと終わり・施設・決着）は `src/engine/` にあり、three.js・React・DOM を読み込まない。
+`@norden/battle-runtime/engine` で読み込めるので、Node（対戦シミュレータ・テスト）からも使える。`BattleApp` は演出の拍子（歩き着いた・当たった瞬間など）で
+engine の関数を呼び、返った結果で頭上の数字・セリフ・イベントを出す。戦闘の状態は `app.state`（`BattleState`）。
+
+- 乱数: ルールの乱数（ダメージのブレ・退却の失敗・殲滅の捕縛・状態異常・鼓舞・混乱の移動先・施設の目標）はすべて `Rng` から引く。
+  `app.rng` の既定は `mathRng`（`Math.random`）で、`seededRng(seed)` を入れるとシードで再現できる。引く順番は演出ありでも描画なしでも同じなので、
+  同じシードなら同じ結果になる。セリフ・演出の乱数は `Math.random` のまま。
+- 行動の実行（`action.ts`）: `beginAction` → (`nextPhase` → 段階の処理)* → `finishAction` → `judge`（`turn.ts`）。段階の処理は、歩き着いたら `commitMove`、
+  攻撃が当たったら `resolveStrike`（演出の後に `afterStrike`）、迎撃が当たったら `resolveIntercept`（演出の後に `afterIntercept`）。描画なしでは `runAction` で順に呼ぶ。
+- 番と決着（`turn.ts`）: `startBattle`・`startTeamTurn`・`confusedPlan`・`endTeamTurn`・`firingFacilities`・`facilityTarget`・`fireFacility`・`passTurn`・`judge`・`nextRoutUnit`・`endBattle`。
+- 予約（`plan.ts`）: `Plan` を作る・読む関数（`newPlan`・`addLeg`・`setAttack`・`planPos`・`menuContext`・`isDone` など）。
+- 描画なしで回す（`sim.ts`）: `runBattle(state, { players, rng, playerRng })` が、軍ごとの打ち手（`Player`: 部隊の次の行動を返す関数）で
+  決着かターンの上限まで回す。`randomPlayer` はランダムに行動する仮の打ち手。強制退却の退却先は打ち手が選ぶ（既定は最初の拠点）。
+
+```ts
+import { createBattleState, randomPlayer, runBattle, seededRng } from '@norden/battle-runtime/engine';
+
+const state = createBattleState(map, statuses, { stronghold, retreats, facilities });
+const result = runBattle(state, { players: { red: randomPlayer, blue: randomPlayer }, rng: seededRng(1), playerRng: seededRng(2) });
+```
 起きたことは `app.on('execute', (report) => …)` のように受け取る（`BattleEvents`）。行動メニューは DOM を持たない
 `app.menu`（`ActionMenuModel`）で、描画は `ui/ActionMenu.tsx`。
 
@@ -108,7 +131,15 @@ import { BattleScreen } from '@norden/battle-runtime';
 ```
 src/
   index.ts         公開するもの
-  app.ts           戦闘画面の本体（MapView・ポインタ操作・配備と交互のターン・予約と実行のアニメーション）。BattleEvents で知らせる
+  app.ts           戦闘画面の本体（MapView・ポインタ操作・配備と交互のターン・予約と実行のアニメーション）。状態は engine の関数で書き換え、BattleEvents で知らせる
+  engine/
+    rng.ts         ルールの乱数の口（Rng・seededRng・mathRng）
+    state.ts       戦闘の状態（BattleState）と、状態を読む小さな関数（TURN_ORDER・入城の決まり・施設の射程など）
+    plan.ts        行動の予約（Plan）を作る・読む関数（行動メニューの状況・行動済みの判定）
+    action.ts      予約した行動の実行（移動の確定・迎撃・攻撃・巻き添え・耕す・状態異常・殲滅と捕縛・退却・鼓舞・行動の終わり）
+    turn.ts        番の始まりと終わり（クールタイム・状態・入城の決まりの印・混乱の移動・施設の射撃・次の軍）と決着・強制退却
+    sim.ts         描画なしで戦闘を回す（runBattle・打ち手 Player・ランダムな打ち手）
+    index.ts       engine の公開するもの（'@norden/battle-runtime/engine'）
   deployment.ts    配備フェーズ（配備する部隊・配置地点への置き方・陣営の順）
   menuModel.ts     行動メニューの状態（中身・2 階層目・毎フレームの位置の基準）
   actions.ts       行動の定義と行動メニューの項目の組み立て（攻撃の項目は兵種の攻撃の一覧から）
@@ -145,5 +176,7 @@ src/
     factionsContext.ts   BattleScreen に渡された勢力を中の UI に配る（useTeamName）
     battle.css           戦闘画面のスタイル（すべて .battle-screen の中）
   test/fixtures.ts       ルールの単体テストの道具（three.js を使わない平地のマップ・ユニット・状態）
-  *.test.ts              ルールの単体テスト（vitest。combat.test.ts のダメージの表はスナップショットで、ルールを作り替えても値が変わらないことを確かめる）
+  test/engine.ts         engine のテストの道具（決まった値を順に返す乱数・戦闘の状態・予約の作り方）
+  *.test.ts              ルールの単体テスト（vitest。combat.test.ts のダメージの表はスナップショットで、ルールを作り替えても値が変わらないことを確かめる。
+                         engine/engine.test.ts は行動・番・決着の決まりを決まった乱数で、engine/sim.test.ts は描画なしの 1 戦の結果をシードごとのスナップショットで固定する）
 ```
