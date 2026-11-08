@@ -225,7 +225,7 @@ export const ATTACK_DEFS: Record<AttackId, AttackDef> = {
     cost: 4,
     power: 0.6,
     aim: 'cell',
-    range: { min: 1, max: 2 },
+    range: { min: 1, max: 3 },
     friendlyFire: true,
     indirect: true,
     cooldown: 1,
