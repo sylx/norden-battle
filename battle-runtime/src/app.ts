@@ -208,6 +208,8 @@ const CANNON_STRIKE_SEC = 2 * SHELL_STYLE.hitSec;
 const GUNSHIP_STRIKE_SEC = 2 * GUNSHIP_STYLE.hitSec;
 /** ガンシップの掃射を撃つところ（目標の上空。HEX の大きさ比の横・高さ） */
 const GUNSHIP_OFFSET = { x: -2.5, y: 7 };
+/** 操作できない味方（混乱・凍結）を選んだときの頭上の文字は、少しだけ浮かんですぐ消す */
+const LOCKED_POPUP = { duration: 0.8, rise: 10 };
 /** 混乱したユニットが勝手に動き出すまでの間（ミリ秒。番を終えてから・前の動きの後） */
 const AUTO_DELAY_MS = 900;
 /** 鼓舞で回復する士気（この範囲の整数） */
@@ -1323,7 +1325,7 @@ export class BattleApp {
     if (!range) {
       const p = this.view.units.placements().find((x) => x.unit === unit);
       const status = this.statuses.get(unit);
-      if (p && status) this.popups.show(p, hasCondition(status, 'freeze') ? '凍結中' : '混乱中', 'retreat');
+      if (p && status) this.popups.show(p, hasCondition(status, 'freeze') ? '凍結中' : '混乱中', 'retreat', false, LOCKED_POPUP);
     }
     this.emit('select', unit);
   }

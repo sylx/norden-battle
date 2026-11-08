@@ -4,9 +4,14 @@
 import * as THREE from 'three';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 
-/** 表示している時間（秒）と、その間に浮かぶ高さ（CSS ピクセル） */
+/** 表示している時間（秒）と、その間に浮かぶ高さ（CSS ピクセル）。show の timing で変えられる */
 const DURATION = 3;
 const RISE = 48;
+
+export interface PopupTiming {
+  duration: number;
+  rise: number;
+}
 
 interface Popup {
   el: HTMLDivElement;
@@ -14,6 +19,8 @@ interface Popup {
   foot: THREE.Vector3;
   height: number;
   start: number;
+  duration: number;
+  rise: number;
 }
 
 export class Popups {
@@ -28,14 +35,15 @@ export class Popups {
 
   /**
    * p のユニットの頭上に text を出す（className で色などを変える）。
-   * follow なら、出した後もユニットの絵の動きに付いていく（突撃で相手を駆け抜けるときなど）。そうでなければ出したところに留まる
+   * follow なら、出した後もユニットの絵の動きに付いていく（突撃で相手を駆け抜けるときなど）。そうでなければ出したところに留まる。
+   * timing で表示している時間と浮かぶ高さを変える（省くと DURATION・RISE）
    */
-  show(p: UnitPlacement, text: string, className: string, follow = false): void {
+  show(p: UnitPlacement, text: string, className: string, follow = false, timing: PopupTiming = { duration: DURATION, rise: RISE }): void {
     const el = document.createElement('div');
     el.className = `popup ${className}`;
     el.textContent = text;
     this.root.appendChild(el);
-    this.items.push({ el, foot: follow ? p.foot : p.foot.clone(), height: p.height, start: performance.now() });
+    this.items.push({ el, foot: follow ? p.foot : p.foot.clone(), height: p.height, start: performance.now(), ...timing });
   }
 
   /** 毎フレーム、描画の後に呼ぶ */
@@ -47,14 +55,14 @@ export class Popups {
     const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
     const v = new THREE.Vector3();
     this.items = this.items.filter((p) => {
-      const t = (now - p.start) / 1000 / DURATION;
+      const t = (now - p.start) / 1000 / p.duration;
       if (t >= 1) {
         p.el.remove();
         return false;
       }
       v.copy(up).multiplyScalar(p.height).add(p.foot).project(camera);
       const x = ((v.x + 1) / 2) * w;
-      const y = ((1 - v.y) / 2) * h - RISE * (1 - (1 - t) * (1 - t));
+      const y = ((1 - v.y) / 2) * h - p.rise * (1 - (1 - t) * (1 - t));
       p.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
       // 最後の 3 割で消える
       p.el.style.opacity = String(Math.min(1, (1 - t) / 0.3));
