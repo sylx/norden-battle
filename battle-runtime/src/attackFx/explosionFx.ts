@@ -1,4 +1,7 @@
-/** 光線が通った HEX から立ち上がる火球と煙。4×4 の連続画像を一度だけ再生する。 */
+/**
+ * 地面から立ち上がる火球と煙。4×4 の連続画像を一度だけ再生する。
+ * ベヒーモスの光線が通った HEX と、砲兵・要塞砲の弾が届いたところで使う。
+ */
 import * as THREE from 'three';
 import { FX_RENDER_ORDER, FX_VERTEX } from './fxShared';
 
@@ -26,7 +29,7 @@ interface Explosion {
   start: number;
 }
 
-export class BeamExplosionEffects {
+export class ExplosionEffects {
   readonly group = new THREE.Group();
   private readonly plane = new THREE.PlaneGeometry(1, 1).translate(0, GROUND_ANCHOR - 0.5, 0);
   // 初回の光線より前に読み込み、複数の HEX・戦闘画面でも共有する。
@@ -34,17 +37,20 @@ export class BeamExplosionEffects {
   private items: Explosion[] = [];
 
   constructor() {
-    this.group.name = 'beam-explosions';
+    this.group.name = 'explosions';
   }
 
-  /** start は光線が通過した時刻から求める。低 FPS でも爆発の時間差を保つ。 */
-  spawn(at: THREE.Vector3, hexSize: number, start: number): void {
+  /**
+   * at（地面の点）に爆発を出す。size は大きさの基準（ワールド。画像の幅はその 2.3 倍、高さは 3.1 倍）。
+   * start は爆発が始まる時刻（performance.now()）。先の時刻なら、その時まで隠しておく（低 FPS でも時間差を保つ）
+   */
+  spawn(at: THREE.Vector3, size: number, start = performance.now()): void {
     const material = createExplosionMaterial(this.texture);
     material.uniforms.uFlip.value = Math.random() < 0.5 ? 0 : 1;
     const mesh = new THREE.Mesh(this.plane, material);
-    mesh.position.copy(at).add(new THREE.Vector3(0, hexSize * 0.03, 0));
-    const size = hexSize * (0.9 + Math.random() * 0.2);
-    mesh.scale.set(2.3 * size, 3.1 * size, 1);
+    mesh.position.copy(at).add(new THREE.Vector3(0, size * 0.03, 0));
+    const s = size * (0.9 + Math.random() * 0.2);
+    mesh.scale.set(2.3 * s, 3.1 * s, 1);
     mesh.renderOrder = FX_RENDER_ORDER + 1;
     mesh.frustumCulled = false;
     mesh.visible = false;

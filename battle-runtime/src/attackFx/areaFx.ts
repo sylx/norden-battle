@@ -4,7 +4,7 @@
  * - ImpactEffects: 地面に広がる衝撃の輪と、はじける光・飛び散る破片（ゴーレム・ベヒーモスの殴り、フロストノヴァの氷、
  *   アーススパイクの岩、メテオの爆発）。見た目は ImpactStyle で変える。
  * - BeamEffects: 口元に光を溜めてから光線を放ち、範囲をさっと横切るように薙ぎ払って焼き尽くす（ベヒーモスの光線）。
- *   光線の先が通った HEX から火球と煙の連続画像（BeamExplosionEffects）が立ち上がり、焼け跡が燃え上がる。
+ *   光線の先が通った HEX から火球と煙の連続画像（ExplosionEffects）が立ち上がり、焼け跡が燃え上がる。
  * - PillarEffects: 地点を中心に魔法陣が描かれて回り、中心へ縮むと同時に空から細い光線が降りてきて太くなり、
  *   範囲が光で飽和して爆発する（メテオフォール）。飛び散る破片は ImpactEffects。
  *
@@ -12,7 +12,7 @@
  */
 import * as THREE from 'three';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
-import { BeamExplosionEffects } from './beamExplosionFx';
+import { ExplosionEffects } from './explosionFx';
 import { createFlashMaterial, createFxMaterial, createSparks, createSparkTexture, FX_RENDER_ORDER, moveSparks } from './fxShared';
 
 /** 衝撃の見た目 */
@@ -230,7 +230,7 @@ interface Beam {
 export class BeamEffects {
   readonly group = new THREE.Group();
   private readonly plane = new THREE.PlaneGeometry(2, 2);
-  private readonly explosions = new BeamExplosionEffects();
+  private readonly explosions = new ExplosionEffects();
   private items: Beam[] = [];
 
   constructor() {

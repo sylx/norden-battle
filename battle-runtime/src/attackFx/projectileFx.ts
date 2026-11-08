@@ -3,13 +3,14 @@
  *
  * - BULLET_STYLE（ライフル兵の通常攻撃・迎撃）: 小さな光の弾を何発か続けて撃ち、まっすぐ相手のまわりへ飛ばす。
  * - SHELL_STYLE（砲兵の通常攻撃・迎撃）: 大きな光の弾を 1 発、放物線（ワールドの上向きに膨らむ）で飛ばし、
- *   届いたところで大きく光がはじけて火花が散る。
+ *   届いたところで大きく光がはじけて火花が散り、火球と煙の連続画像（ExplosionEffects）が立ち上がる。要塞砲も同じ。
  *
  * 弾の尾は、今の位置から少し前の位置までの道のりに沿った帯で、画面に向けて幅を付けて描く（毎フレーム頂点を置き直す）。
  * どれもユニットの絵より手前に、深度テストをせず加算で描く。大きさは相手の絵の高さに合わせる。
  */
 import * as THREE from 'three';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
+import { ExplosionEffects } from './explosionFx';
 import { createFlashMaterial, createFxMaterial, createSparks, createSparkTexture, FX_RENDER_ORDER, moveSparks } from './fxShared';
 
 /** 弾の飛ばし方と見た目（大きさは絵の高さ比、時間は秒） */
@@ -45,6 +46,8 @@ export interface ProjectileStyle {
   impactSec: number;
   /** 届いたところで散る火花の数・速さ（絵の高さ比 / 秒）・重力・時間・大きさ（無ければ散らさない） */
   sparks?: { count: number; speed: number; gravity: number; sec: number; size: number };
+  /** 届いたところ（相手の足元）に立ち上がる火球と煙の大きさ（無ければ出さない） */
+  explosion?: number;
 }
 
 /** ガンシップ: 上空から光の弾を広く連射して、目標の周りに降らせる（撃つところは目標の上空に置く） */
@@ -116,6 +119,7 @@ export const SHELL_STYLE: ProjectileStyle = {
   impactSize: 1.4,
   impactSec: 0.45,
   sparks: { count: 36, speed: 3, gravity: 6, sec: 0.6, size: 0.09 },
+  explosion: 0.75,
 };
 
 /** 尾の帯の区切りの数 */
@@ -148,12 +152,14 @@ export class ProjectileEffects {
   readonly group = new THREE.Group();
   private readonly plane = new THREE.PlaneGeometry(2, 2);
   private readonly sparkTexture = createSparkTexture();
+  private readonly explosions = new ExplosionEffects();
   private items: Salvo[] = [];
   private readonly style: ProjectileStyle;
 
   constructor(style: ProjectileStyle) {
     this.style = style;
     this.group.name = 'projectile-fx';
+    this.group.add(this.explosions.group);
   }
 
   /** shooter が target へ弾を撃つ */
@@ -217,11 +223,17 @@ export class ProjectileEffects {
       shots.push({ from, to, apex, launch, trail, head, muzzle: muzzleFlash, impact, sparkGroup, sparks, velocities });
       end = Math.max(end, launch + st.flight * (1 + st.trail), launch + st.flight + Math.max(st.impactSec, st.sparks?.sec ?? 0));
     }
-    this.items.push({ shots, height: h, start: performance.now(), end });
+    const start = performance.now();
+    // 火球と煙は、弾が届いた時点から相手の足元に立ち上がる（ばらつく弾でも足元は 1 か所）
+    if (st.explosion) {
+      for (const shot of shots) this.explosions.spawn(target.foot, st.explosion * h, start + (shot.launch + st.flight) * 1000);
+    }
+    this.items.push({ shots, height: h, start, end });
   }
 
   /** 毎フレーム、描画の前に呼ぶ */
   update(camera: THREE.Camera): void {
+    this.explosions.update(camera);
     if (this.items.length === 0) return;
     const st = this.style;
     const now = performance.now();
@@ -271,6 +283,7 @@ export class ProjectileEffects {
   clear(): void {
     for (const s of this.items) this.dispose(s);
     this.items = [];
+    this.explosions.clear();
   }
 
   private dispose(s: Salvo): void {
