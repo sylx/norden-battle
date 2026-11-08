@@ -4,7 +4,8 @@
  * - ImpactEffects: 地面に広がる衝撃の輪と、はじける光・飛び散る破片（ゴーレム・ベヒーモスの殴り、フロストノヴァの氷、
  *   アーススパイクの岩、光線・メテオの爆発）。見た目は ImpactStyle で変える。
  * - BeamEffects: 口元に光を溜めてから、目標へ太い光線を放つ（ベヒーモスの光線）。着弾の爆発は ImpactEffects。
- * - PillarEffects: 地点に照準の輪が出てから、空から光の柱が落ちる（メテオフォール。衛星兵器のような演出）。爆発は ImpactEffects。
+ * - PillarEffects: 地点を中心に魔法陣が描かれて回り、中心へ縮むと同時に空から細い光線が降りてきて太くなり、
+ *   範囲が光で飽和して爆発する（メテオフォール）。飛び散る破片は ImpactEffects。
  *
  * どれもユニットの絵より手前に、深度テストをせず加算で描く（fxShared.ts）。
  */
@@ -259,20 +260,43 @@ export class BeamEffects {
   }
 }
 
-/** 照準の輪が出てから柱が地面に届くまで（秒）と、柱が残る時間（秒） */
-const PILLAR_AIM_SEC = 0.55;
-const PILLAR_FALL_SEC = 0.12;
-const PILLAR_HOLD_SEC = 0.6;
-/** 出してから当たるまでの時間（秒）: 柱が地面に届いたとき */
-export const PILLAR_HIT_SEC = PILLAR_AIM_SEC + PILLAR_FALL_SEC;
+/**
+ * 光の柱の段取り（秒）。
+ * 魔法陣が描かれ（DRAW）、ゆっくり回り（SPIN）、中心へ縮みながら細い光線が降りてきて太くなり（CHARGE）、
+ * 範囲が光で飽和して爆発する（BLAST）
+ */
+const PILLAR_DRAW_SEC = 0.6;
+const PILLAR_SPIN_SEC = 0.7;
+const PILLAR_CHARGE_SEC = 0.85;
+/** 光線が空から地面に届くまで（CHARGE の初めの間） */
+const PILLAR_FALL_SEC = 0.18;
+const PILLAR_BLAST_SEC = 1.1;
+/** 爆発のあと光線が消えるまで */
+const PILLAR_FADE_SEC = 0.35;
+/** 出してから当たるまでの時間（秒）: 光線が範囲いっぱいに太くなって爆発したとき */
+export const PILLAR_HIT_SEC = PILLAR_DRAW_SEC + PILLAR_SPIN_SEC + PILLAR_CHARGE_SEC;
+/** 魔法陣の色と、光線・爆発の色 */
+const CIRCLE_COLOR = 0x6cc0ff;
 const PILLAR_COLOR = 0xc8e8ff;
-/** 柱の高さ（HEX の大きさ比） */
+/** 光線が降りてくる高さ（HEX の大きさ比） */
 const PILLAR_HEIGHT = 14;
+/** 魔法陣がゆっくり回る速さ（ラジアン / 秒） */
+const CIRCLE_SPIN = 0.5;
 
 interface Pillar {
-  aim: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
-  pillar: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  /** 地面に寝かせた魔法陣 */
+  circle: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  /** 空から降りる光線 */
+  beam: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  /** 光線の出どころ（空の点）と、光線が地面に当たるところの光（カメラ正対） */
+  sky: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  foot: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  /** 爆発: 地面の範囲を埋める光と、範囲を包む光（カメラ正対） */
+  blast: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  dome: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   at: THREE.Vector3;
+  /** 範囲の半径（ワールド） */
+  radius: number;
   hexSize: number;
   start: number;
 }
@@ -286,19 +310,32 @@ export class PillarEffects {
     this.group.name = 'pillar-fx';
   }
 
-  /** at（地面の点）に照準の輪を出し、空から光の柱を落とす */
-  spawn(at: THREE.Vector3, hexSize: number): void {
-    const aim = new THREE.Mesh(this.plane, createRingMaterial(PILLAR_COLOR));
-    aim.rotation.x = -Math.PI / 2;
-    aim.position.copy(at).add(new THREE.Vector3(0, hexSize * 0.04, 0));
-    const pillar = new THREE.Mesh(this.plane, createStreakMaterial(PILLAR_COLOR));
-    for (const o of [aim, pillar]) {
+  /**
+   * at（地面の点）を中心に魔法陣を描き、空から光の柱を降らせて爆発させる。
+   * radius は範囲の半径（ワールド。魔法陣と爆発の大きさ）
+   */
+  spawn(at: THREE.Vector3, hexSize: number, radius: number): void {
+    const circle = new THREE.Mesh(this.plane, createMagicCircleMaterial(CIRCLE_COLOR));
+    circle.rotation.x = -Math.PI / 2;
+    circle.position.copy(at).add(new THREE.Vector3(0, hexSize * 0.04, 0));
+    const blast = new THREE.Mesh(this.plane, createBlastMaterial(PILLAR_COLOR));
+    blast.rotation.x = -Math.PI / 2;
+    blast.position.copy(at).add(new THREE.Vector3(0, hexSize * 0.05, 0));
+    blast.scale.setScalar(radius * 1.15);
+    const beam = new THREE.Mesh(this.plane, createStreakMaterial(PILLAR_COLOR));
+    const sky = new THREE.Mesh(this.plane, createGlowMaterial(PILLAR_COLOR));
+    sky.position.copy(at).add(new THREE.Vector3(0, hexSize * PILLAR_HEIGHT, 0));
+    const foot = new THREE.Mesh(this.plane, createGlowMaterial(PILLAR_COLOR));
+    foot.position.copy(at).add(new THREE.Vector3(0, hexSize * 0.1, 0));
+    const dome = new THREE.Mesh(this.plane, createGlowMaterial(PILLAR_COLOR));
+    dome.position.copy(at).add(new THREE.Vector3(0, radius * 0.3, 0));
+    for (const o of [circle, beam, sky, foot, blast, dome]) {
       o.renderOrder = FX_RENDER_ORDER;
       o.frustumCulled = false;
+      o.visible = false;
     }
-    pillar.visible = false;
-    this.group.add(aim, pillar);
-    this.items.push({ aim, pillar, at: at.clone(), hexSize, start: performance.now() });
+    this.group.add(circle, beam, sky, foot, blast, dome);
+    this.items.push({ circle, beam, sky, foot, blast, dome, at: at.clone(), radius, hexSize, start: performance.now() });
   }
 
   update(camera: THREE.Camera): void {
@@ -306,37 +343,206 @@ export class PillarEffects {
     const now = performance.now();
     this.items = this.items.filter((p) => {
       const t = (now - p.start) / 1000;
-      if (t > PILLAR_HIT_SEC + PILLAR_HOLD_SEC) {
-        this.group.remove(p.aim, p.pillar);
-        p.aim.material.dispose();
-        p.pillar.material.dispose();
+      if (t > PILLAR_HIT_SEC + PILLAR_BLAST_SEC) {
+        this.dispose(p);
         return false;
       }
-      // 照準: 大きな輪が絞り込まれていく（明滅しながら）
-      const a = Math.min(1, t / PILLAR_AIM_SEC);
-      p.aim.visible = t < PILLAR_HIT_SEC;
-      p.aim.scale.setScalar(p.hexSize * (2.4 - 1.4 * a));
-      p.aim.material.uniforms.uT.value = 0.5 - 0.4 * Math.abs(Math.sin(t * 18));
-      // 柱: 空から一気に地面へ届き、太いまま光ってから細くなって消える
-      const fall = (t - PILLAR_AIM_SEC) / PILLAR_FALL_SEC;
-      p.pillar.visible = fall >= 0;
-      if (p.pillar.visible) {
-        const top = p.at.clone().add(new THREE.Vector3(0, p.hexSize * PILLAR_HEIGHT, 0));
+      const chargeAt = PILLAR_DRAW_SEC + PILLAR_SPIN_SEC;
+      const draw = Math.min(1, t / PILLAR_DRAW_SEC);
+      const charge = THREE.MathUtils.clamp((t - chargeAt) / PILLAR_CHARGE_SEC, 0, 1);
+      const after = t - PILLAR_HIT_SEC;
+
+      // 魔法陣: 外から順に描かれ、ゆっくり回る。縮むときは回りを速めながら明るくなり、中心の点へ消える
+      p.circle.visible = charge < 1;
+      if (p.circle.visible) {
+        const pop = 0.92 + 0.08 * (1 - (1 - draw) ** 3);
+        p.circle.scale.setScalar(p.radius * pop * (1 - charge * charge));
+        const u = p.circle.material.uniforms;
+        u.uDraw.value = draw;
+        u.uAngle.value = CIRCLE_SPIN * t + 5 * charge ** 3;
+        u.uGlow.value = (0.5 + 0.5 * draw) * (1 + 2.5 * charge * charge) * (1 + 0.08 * Math.sin(t * 9));
+      }
+
+      // 光線: 空の点が灯り、細い光線が降りてきて、爆発に向けてどんどん太くなる。爆発のあとは広がりながら消える
+      const fall = (t - chargeAt) / PILLAR_FALL_SEC;
+      const fade = Math.max(0, after / PILLAR_FADE_SEC);
+      p.beam.visible = fall > 0 && fade < 1;
+      if (p.beam.visible) {
+        const top = p.sky.position;
         const bottom = top.clone().lerp(p.at, Math.min(1, fall));
-        const hold = Math.max(0, (t - PILLAR_HIT_SEC) / PILLAR_HOLD_SEC);
-        orientStreak(p.pillar, top, bottom, p.hexSize * 1.1 * (1 - 0.8 * hold), camera);
-        p.pillar.material.uniforms.uOpacity.value = 1 - hold * hold;
+        const thin = p.hexSize * 0.05;
+        const width = after < 0 ? thin + p.radius * 2.4 * charge ** 3.5 : p.radius * 2.4 * (1 + 0.3 * fade);
+        orientStreak(p.beam, top, bottom, width, camera);
+        const flicker = 1 + 0.15 * Math.sin(t * 70);
+        p.beam.material.uniforms.uOpacity.value = after < 0 ? (0.8 + 1.7 * charge * charge) * flicker : 2.5 * (1 - fade) ** 2;
+      }
+      const skyOn = THREE.MathUtils.clamp((t - chargeAt + 0.2) / 0.2, 0, 1);
+      p.sky.visible = skyOn > 0 && fade < 1;
+      if (p.sky.visible) {
+        p.sky.quaternion.copy(camera.quaternion);
+        p.sky.scale.setScalar(p.hexSize * (0.6 + 1.6 * charge) * skyOn);
+        p.sky.material.uniforms.uPower.value = (1 + charge) * (1 - fade);
+      }
+      p.foot.visible = fall >= 1 && after < 0;
+      if (p.foot.visible) {
+        p.foot.quaternion.copy(camera.quaternion);
+        p.foot.scale.setScalar(p.hexSize * 0.4 + p.radius * 1.2 * charge * charge);
+        p.foot.material.uniforms.uPower.value = 0.8 + 1.5 * charge * (1 + 0.2 * Math.sin(t * 50));
+      }
+
+      // 爆発: 範囲が白く飽和し、衝撃の輪が外へ走って、色が戻りながら消える
+      const k = after / PILLAR_BLAST_SEC;
+      p.blast.visible = p.dome.visible = k >= 0;
+      if (k >= 0) {
+        p.blast.material.uniforms.uT.value = k;
+        p.dome.quaternion.copy(camera.quaternion);
+        p.dome.scale.setScalar(p.radius * (1.5 + 0.6 * (1 - (1 - k) ** 2)));
+        p.dome.material.uniforms.uPower.value = 3 * (1 - k) ** 2.5;
       }
       return true;
     });
   }
 
   clear(): void {
-    for (const p of this.items) {
-      this.group.remove(p.aim, p.pillar);
-      p.aim.material.dispose();
-      p.pillar.material.dispose();
-    }
+    for (const p of this.items) this.dispose(p);
     this.items = [];
   }
+
+  private dispose(p: Pillar): void {
+    const meshes = [p.circle, p.beam, p.sky, p.foot, p.blast, p.dome];
+    this.group.remove(...meshes);
+    for (const m of meshes) m.material.dispose();
+  }
+}
+
+/**
+ * 地面に寝かせる魔法陣（板の縁が外の輪）。外の輪・文字の帯・六芒星・内の輪と、逆に回る内側の紋様。
+ * uDraw は描かれた割合（0〜1。外の輪から角度の順に、内側は少し遅れて描かれる）、uAngle は回転、uGlow は明るさ
+ */
+function createMagicCircleMaterial(color: number): THREE.ShaderMaterial {
+  return createFxMaterial(
+    { uDraw: { value: 0 }, uAngle: { value: 0 }, uGlow: { value: 1 }, uColor: { value: new THREE.Color(color) } },
+    /* glsl */ `
+#define PI 3.14159265
+uniform float uDraw;
+uniform float uAngle;
+uniform float uGlow;
+uniform vec3 uColor;
+varying vec2 vUv;
+
+vec2 rot(vec2 p, float a) {
+  float c = cos(a), s = sin(a);
+  return vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+}
+/** 線からの距離 d、太さ w の線の濃さ */
+float stroke(float d, float w) {
+  return exp(-d * d / (w * w));
+}
+/** 角度 ang（0〜1）が描かれた割合 d まで来ているか（先端は少しぼかす） */
+float reveal(float ang, float d) {
+  return 1.0 - smoothstep(d - 0.015, d, ang);
+}
+float hash(float n) {
+  return fract(sin(n * 127.1) * 43758.5453);
+}
+
+void main() {
+  vec2 p0 = vUv * 2.0 - 1.0;
+  float r = length(p0);
+  if (r > 1.0) discard;
+  // 外側の層は uAngle で回り、内側の層は逆向きに速く回る
+  vec2 p = rot(p0, uAngle);
+  vec2 q = rot(p0, -uAngle * 1.7);
+  float angP = atan(p.y, p.x) / (2.0 * PI) + 0.5;
+  float angQ = atan(q.y, q.x) / (2.0 * PI) + 0.5;
+  float dOuter = uDraw * 1.03;
+  float dInner = clamp((uDraw - 0.3) / 0.7, 0.0, 1.0) * 1.03;
+
+  // 外の二重の輪
+  float outer = stroke(r - 0.965, 0.012) + stroke(r - 0.905, 0.006) * 0.8;
+  // 文字の帯（0.79〜0.88）: 区画ごとに形の違う短い線で、文字のように見せる
+  float band = stroke(r - 0.785, 0.005) * 0.8;
+  const float CELLS = 40.0;
+  float cell = floor(angP * CELLS);
+  float cu = (fract(angP * CELLS) - 0.5) * (2.0 * PI * 0.835 / CELLS);
+  float cv = r - 0.835;
+  float h1 = hash(cell), h2 = hash(cell + 17.0), h3 = hash(cell + 41.0);
+  float inGlyph = step(abs(cu), 0.05) * step(abs(cv), 0.032);
+  float glyph = stroke(cu - (h1 - 0.5) * 0.04, 0.004) * step(abs(cv), 0.03 * (0.5 + 0.5 * h2));
+  glyph += stroke(cv - (h2 - 0.5) * 0.04, 0.004) * step(abs(cu), 0.012 + 0.02 * h3);
+  glyph += stroke(cu - cv * (h3 * 2.0 - 1.0), 0.004) * step(0.5, h1) * step(abs(cv), 0.028);
+  glyph *= inGlyph;
+  float ringsOuter = (outer + band + glyph * 0.9) * reveal(angP, dOuter);
+
+  // 六芒星（頂点が文字の帯の内側の輪に触れる）と、その内側の輪
+  const float R = 0.785;
+  float star = 0.0;
+  for (int k = 0; k < 6; k++) {
+    float a = PI / 6.0 + float(k) * PI / 3.0;
+    vec2 n = vec2(cos(a), sin(a));
+    vec2 t = vec2(-n.y, n.x);
+    star += stroke(dot(p, n) - R * 0.5, 0.006) * step(abs(dot(p, t)), R * 0.866);
+  }
+  float innerRing = stroke(r - R * 0.5, 0.006);
+  float starLayer = (star + innerRing) * reveal(angP, dInner);
+
+  // 逆に回る内側の紋様: 目盛りの輪と、中心の小さな輪・十字
+  float ticks = step(abs(fract(angQ * 24.0) - 0.5), 0.12) * step(abs(r - 0.33), 0.025) * 0.7;
+  float core = stroke(r - 0.28, 0.005) + stroke(r - 0.12, 0.006);
+  core += (stroke(q.x, 0.005) * step(abs(q.y), 0.12) + stroke(q.y, 0.005) * step(abs(q.x), 0.12)) * 0.8;
+  float innerLayer = (ticks + core) * reveal(angQ, dInner);
+
+  // 描いている先端の光と、陣の中のうっすらした光
+  float tipD = (angP - uDraw) * 30.0;
+  float tip = exp(-tipD * tipD) * step(uDraw, 0.999) * smoothstep(0.6, 0.95, r) * 1.5;
+  float fill = 0.12 * (1.0 - r * r) * uDraw;
+
+  float lines = ringsOuter + starLayer + innerLayer;
+  float a = (lines + tip + fill) * uGlow;
+  vec3 col = mix(uColor, vec3(1.0), clamp(lines * 0.5 + tip, 0.0, 1.0));
+  gl_FragColor = vec4(col * a, 1.0);
+}`,
+  );
+}
+
+/** 地面の範囲を埋める爆発の光（板の 0.8 くらいまでが範囲）。uT は 0〜1 の経過で、初めは白く飽和し、衝撃の輪が外へ走る */
+function createBlastMaterial(color: number): THREE.ShaderMaterial {
+  return createFxMaterial(
+    { uT: { value: 0 }, uColor: { value: new THREE.Color(color) } },
+    /* glsl */ `
+uniform float uT;
+uniform vec3 uColor;
+varying vec2 vUv;
+void main() {
+  float r = length(vUv * 2.0 - 1.0);
+  float k = uT;
+  float fill = 1.0 - smoothstep(0.7, 0.92, r);
+  float sat = fill * pow(1.0 - k, 2.0) * 3.0;
+  float shockR = 0.55 + 0.4 * (1.0 - pow(1.0 - k, 2.0));
+  float shockD = (r - shockR) / 0.05;
+  float shock = exp(-shockD * shockD) * (1.0 - k) * 1.6;
+  float a = (sat + shock) * step(r, 1.0);
+  vec3 col = mix(uColor, vec3(1.0), clamp(sat * 0.6, 0.0, 1.0));
+  gl_FragColor = vec4(col * a, 1.0);
+}`,
+  );
+}
+
+/** 丸い光（カメラ正対の板）。uPower が 1 を超えると芯から白く飽和する */
+function createGlowMaterial(color: number): THREE.ShaderMaterial {
+  return createFxMaterial(
+    { uPower: { value: 1 }, uColor: { value: new THREE.Color(color) } },
+    /* glsl */ `
+uniform float uPower;
+uniform vec3 uColor;
+varying vec2 vUv;
+void main() {
+  float r = length(vUv * 2.0 - 1.0);
+  float glow = exp(-r * r * 5.0) * (1.0 - smoothstep(0.75, 1.0, r));
+  float core = exp(-r * r * 30.0);
+  float a = (glow * 0.8 + core) * uPower;
+  vec3 col = mix(uColor, vec3(1.0), clamp(core + glow * uPower * 0.4, 0.0, 1.0));
+  gl_FragColor = vec4(col * a, 1.0);
+}`,
+  );
 }

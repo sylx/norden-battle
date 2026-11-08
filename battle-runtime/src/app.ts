@@ -190,7 +190,7 @@ const SHELL_STRIKE_SEC = 1.9;
 const CLAW_STRIKE_SEC = 0.7;
 const BREATH_STRIKE_SEC = 2 * breathHitSec(BREATH_STYLE);
 const FLAME_STRIKE_SEC = 2 * breathHitSec(FLAME_LANCE_STYLE);
-/** 周りをなぎ払う（乱撃）、地面を揺らす（殴り）、溜めて光線を放つ（光線）、雷が跳ねる（チェイン）、凍らせる（フロスト）、岩が突き出る（スパイク）、空から柱が落ちる（メテオ） */
+/** 周りをなぎ払う（乱撃）、地面を揺らす（殴り）、溜めて光線を放つ（光線）、雷が跳ねる（チェイン）、凍らせる（フロスト）、岩が突き出る（スパイク）、魔法陣から光の柱が降って爆発する（メテオ） */
 const WHIRL_STRIKE_SEC = 0.8;
 const SMASH_STRIKE_SEC = 0.6;
 const BEAM_STRIKE_SEC = 2 * BEAM_HIT_SEC;
@@ -515,7 +515,7 @@ export class BattleApp {
   readonly impactFx = new ImpactEffects();
   /** 溜めて放つ光線（ベヒーモス） */
   readonly beamFx = new BeamEffects();
-  /** 空から落ちる光の柱（メテオフォール） */
+  /** 魔法陣と、降ってくる光の柱・爆発（メテオフォール） */
   readonly pillarFx = new PillarEffects();
   /** 光るランスの突き（騎兵の通常攻撃・突撃） */
   readonly lanceFx = new LanceEffects();
@@ -1872,7 +1872,10 @@ export class BattleApp {
     const map = this.map;
     const blastAt = (sec: number) => setTimeout(() => this.map === map && this.impactFx.spawn(this.groundPoint(at), size, BLAST_STYLE), sec * 1000);
     if (kind === 'meteor') {
-      this.pillarFx.spawn(this.groundPoint(at), size);
+      // 魔法陣と爆発は範囲の HEX をすべて覆う大きさ（一番遠い HEX の中心まで + HEX の内接円の半径）
+      const center = this.groundPoint(at);
+      const far = Math.max(0, ...area.map((o) => { const g = this.groundPoint(o); return Math.hypot(g.x - center.x, g.z - center.z); }));
+      this.pillarFx.spawn(center, size, far + size * Math.sqrt(3) / 2);
       return void blastAt(PILLAR_HIT_SEC);
     }
     if (kind === 'beam' && up) {
