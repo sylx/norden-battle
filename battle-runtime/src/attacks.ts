@@ -78,7 +78,7 @@ export type Shape =
   | { kind: 'path' }
   /** 自分から目標の向きへ length HEX（目標の先も）。直線上だけ狙える（ブレス・フレイムランス） */
   | { kind: 'line'; length: number }
-  /** 狙った HEX とその周り radius HEX（光線・アーススパイク・メテオ） */
+  /** 狙った HEX とその周り radius HEX（光線・メテオ） */
   | { kind: 'burst'; radius: number }
   /** 自分の周り radius HEX（自分は除く。aim: 'self'。乱撃） */
   | { kind: 'around'; radius: number };
@@ -117,6 +117,8 @@ export interface AttackDef {
   cooldown?: number;
   /** 相手のいる HEX の地形効果（森・城・砦など）を無視する */
   ignoresTerrain?: boolean;
+  /** 狙った HEX を荒地に耕す（街道も壊し、城・砦は壁が崩れる。terrain.ts の plowCell）。アーススパイク */
+  plows?: boolean;
   inflicts?: readonly Inflict[];
   /** 演出（省略: 兵種の通常攻撃の演出） */
   fx?: StrikeFxKind;
@@ -216,18 +218,18 @@ export const ATTACK_DEFS: Record<AttackId, AttackDef> = {
     inflicts: [{ condition: 'freeze', chance: 0.7, turns: 1 }],
     fx: 'frost',
   },
-  // 地点の周り 1 HEX から岩を突き出す（味方にも当たる）
+  // 狙った HEX（空いた HEX も）だけに当たり、そこを荒地に耕す（街道は壊れ、城・砦は壁が崩れる。水域は耕せない）
   earthSpike: {
     id: 'earthSpike',
     name: 'アーススパイク',
     cost: 4,
-    power: 0.9,
+    power: 0.6,
     aim: 'cell',
-    range: { min: 2, max: 3 },
-    shape: { kind: 'burst', radius: 1 },
+    range: { min: 1, max: 2 },
     friendlyFire: true,
     indirect: true,
     cooldown: 1,
+    plows: true,
     fx: 'spike',
   },
   // 遠くの地点の周り 1 HEX に大ダメージ（味方にも当たる）

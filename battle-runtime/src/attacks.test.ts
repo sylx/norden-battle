@@ -209,10 +209,24 @@ describe('段階 3 の兵種・魔法・状態', () => {
     const ally = place(m, 'infantry', 'blue', 3, 2);
     expect(mainTargetAt(m, mage, enemy, 'earthSpike')).toBe(enemy);
     expect(mainTargetAt(m, mage, ally, 'earthSpike')).toBeNull();
-    expect(mainTargetAt(m, mage, { col: 3, row: 3 }, 'earthSpike')).toBeNull();
+    expect(mainTargetAt(m, mage, { col: 3, row: 3 }, 'meteorFall')).toBeNull();
     // 空いた HEX を狙っても周りの敵・味方に当たる
-    expect(new Set(splashUnits(m, mage, mage, null, { col: 3, row: 3 }, 'earthSpike'))).toEqual(new Set([enemy, ally]));
+    expect(new Set(splashUnits(m, mage, mage, null, { col: 3, row: 3 }, 'meteorFall'))).toEqual(new Set([enemy, ally]));
     expect(canAim(m, 'mage', 'meteorFall', mage, { col: 6, row: 3 })).toBe(true);
+  });
+
+  it('アーススパイクは 1〜2 HEX 先の地点を狙い、狙った HEX だけに当たる（味方にも）', () => {
+    const m = testMap();
+    const mage = place(m, 'mage', 'blue', 1, 3);
+    const ally = place(m, 'infantry', 'blue', 3, 2);
+    place(m, 'infantry', 'red', 4, 3);
+    expect(canAim(m, 'mage', 'earthSpike', mage, { col: 2, row: 3 })).toBe(true);
+    expect(canAim(m, 'mage', 'earthSpike', mage, { col: 3, row: 3 })).toBe(true);
+    expect(canAim(m, 'mage', 'earthSpike', mage, { col: 4, row: 3 })).toBe(false);
+    // 隣に敵がいても、空いた HEX に撃てば誰にも当たらない
+    expect(splashUnits(m, mage, mage, null, { col: 3, row: 3 }, 'earthSpike')).toEqual([]);
+    expect(splashUnits(m, mage, mage, null, ally, 'earthSpike')).toEqual([ally]);
+    expect(resolveAttack('mage', 'earthSpike').plows).toBe(true);
   });
 
   it('光線は目標に大きく、周りには小さく当たる（味方にも）', () => {

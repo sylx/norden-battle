@@ -14,6 +14,7 @@ import type { Offset } from '@norden/map-runtime/core/hex';
 import { TEAM_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
 import type { BattleApp, ExecuteReport, FacilityReport, SplashHit } from '../app';
 import { FACILITY_NAMES } from '../facilities';
+import { plowText } from '../terrain';
 import type { MoraleChange } from '../morale';
 import { useTeamName, useUnitName } from './factionsContext';
 
@@ -59,6 +60,22 @@ export interface AttackLogEntry {
   targetCaptured?: boolean;
 }
 
+/** 攻撃で地形が変わった記録（アーススパイクで耕した。攻撃の記録の後に並べる） */
+interface TerrainLogEntry {
+  kind: 'terrain';
+  turn: number;
+  team: TeamId;
+  attacker: UnitData;
+  attackerLeader?: string;
+  actionName: string;
+  /** 変わった HEX */
+  at: Offset;
+  /** 変化の説明（terrain.ts の plowText） */
+  text: string;
+}
+
+type LogEntry = AttackLogEntry | TerrainLogEntry;
+
 /** 下端からこれ以内にいれば「最新を見ている」とみなして自動でスクロールする（CSS ピクセル） */
 const STICK_BOTTOM = 24;
 /** 動かすときに空ける画面の端との間（上は題名の札が枠からはみ出す分も空ける） */
@@ -66,7 +83,7 @@ const MARGIN = 6;
 const MARGIN_TOP = 16;
 
 export default function BattleLogWindow({ app }: { app: BattleApp }) {
-  const [entries, setEntries] = useState<AttackLogEntry[]>([]);
+  const [entries, setEntries] = useState<LogEntry[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const teamName = useTeamName();
   const rootRef = useRef<HTMLElement>(null);
@@ -81,7 +98,7 @@ export default function BattleLogWindow({ app }: { app: BattleApp }) {
 
   useEffect(() => {
     const offLoad = app.on('load', () => setEntries([]));
-    const add = (added: AttackLogEntry[]) => {
+    const add = (added: LogEntry[]) => {
       if (added.length === 0) return;
       const list = listRef.current;
       stick.current = !list || list.scrollHeight - list.scrollTop - list.clientHeight <= STICK_BOTTOM;
@@ -177,7 +194,7 @@ export default function BattleLogWindow({ app }: { app: BattleApp }) {
                 </span>
               </li>
             )}
-            <Entry entry={e} />
+            {e.kind === 'terrain' ? <TerrainEntry entry={e} /> : <Entry entry={e} />}
           </Fragment>
         ))}
       </ol>
@@ -212,6 +229,21 @@ function Entry({ entry: e }: { entry: AttackLogEntry }) {
       </div>
       {e.landing && e.attackerLeft > 0 && <div className="log-note">({e.landing.col}, {e.landing.row}) へ突破</div>}
       {e.halted && e.targetLeft > 0 && <div className="log-note halted">迎撃で足止めされ、行動を中断</div>}
+    </li>
+  );
+}
+
+function TerrainEntry({ entry: e }: { entry: TerrainLogEntry }) {
+  return (
+    <li className="log-entry fresh terrain" onAnimationEnd={(ev) => ev.currentTarget.classList.remove('fresh')}>
+      <div className="log-who">
+        <Unit unit={e.attacker} leader={e.attackerLeader} />
+        <span className="log-verb">の</span>
+        <span className="log-action">{e.actionName}</span>
+      </div>
+      <div className="log-note">
+        ({e.at.col}, {e.at.row}) の{e.text}
+      </div>
     </li>
   );
 }
@@ -280,8 +312,8 @@ function facilityEntry(app: BattleApp, r: FacilityReport): AttackLogEntry {
 }
 
 /** 実行の結果から記録を作る（攻撃の前の移動で受けた迎撃 → 攻撃 → 攻撃の後の移動で受けた迎撃の順） */
-function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: ExecuteReport): AttackLogEntry[] {
-  const out: AttackLogEntry[] = [];
+function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: ExecuteReport): LogEntry[] {
+  const out: LogEntry[] = [];
   const captured = (u: UnitData) => wipeouts.some((w) => w.unit === u && w.captured);
   // 目標の手前で弾が当たったユニットは、撃った攻撃の記録の後に並べる（味方に当たったものは巻き添えと出す）
   const addSplash = (shooter: UnitData, actionName: string, hits: readonly SplashHit[]) => {
@@ -367,6 +399,18 @@ function logEntries(app: BattleApp, { unit, attack, intercepts, wipeouts }: Exec
     });
   }
   if (attack) addSplash(unit, attack.action.name, attack.splash);
+  if (attack?.plowed) {
+    out.push({
+      kind: 'terrain',
+      turn: app.turn,
+      team: app.activeTeam,
+      attacker: unit,
+      attackerLeader: app.leaderOf(unit),
+      actionName: attack.action.name,
+      at: attack.plowed.at,
+      text: plowText(attack.plowed),
+    });
+  }
   addIntercepts(true);
   return out;
 }

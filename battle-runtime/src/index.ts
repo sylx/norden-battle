@@ -5,7 +5,7 @@ export type { AttackLogEntry } from './ui/BattleLogWindow';
 
 // 戦闘画面の本体（three.js のマップ・ユニット・入力）
 export { BattleApp, TURN_ORDER } from './app';
-export type { BattleEvents, BattlePhase, ExecuteReport, FacilityReport, InterceptReport, Plan, PlannedAttack, SplashHit, StatusFactory } from './app';
+export type { AttackPreview, BattleEvents, BattlePhase, ExecuteReport, FacilityReport, InterceptReport, Plan, PlannedAttack, SplashHit, StatusFactory } from './app';
 export type { ActionMenuModel, MenuFrame, MenuState, RetreatMenu } from './menuModel';
 
 // 配備フェーズ
@@ -57,3 +57,7 @@ export type { BattleEndReason, BattleOutcome, CapturedUnit, CommanderLoss, Remai
 // セリフ（何を喋るか。ゲームではセリフのデータから引く BarkSource を lineBarks で作って渡す）
 export { BARK_CHANCE, BARK_SITUATION_NAMES, BARK_SITUATIONS, BARK_TONE, demoBarks, EXCHANGE_CHANCE, lineBarks, lineSituationId } from './barks';
 export type { BarkSituation, BarkSource, BarkSpeaker, BarkTone, ExchangeLine, LineSituation } from './barks';
+
+// 戦闘中の地形変化（アーススパイクで耕す）
+export { canPlow, PLOWED_TERRAIN, plowCell, plowPreview, plowText } from './terrain';
+export type { PlowChange } from './terrain';

@@ -2,7 +2,7 @@
  * カーソルの HEX の地形を出すウィンドウ（画面の左下、ステータス行の上）。
  *
  * - 地形の名前と色、人工物（防衛拠点ならその札も）、座標、標高、入るのに使う行動力、地形効果（受けるダメージの減り方）、街道を出す。
- * - 移動先・攻撃の相手を選んでいる間は、その HEX への移動・攻撃の予測を下に足す。
+ * - 移動先・攻撃の相手を選んでいる間は、その HEX への移動・攻撃の予測を下に足す（アーススパイクは耕して変わる地形も）。
  *   ライフル兵の弾が目標の手前のユニットにも当たるときは、そのダメージも出す（味方に当たるなら巻き添えとして赤字）。
  * - カーソルがマップの外にあるときは隠す。
  * - 枠は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）。表示するだけなので、マウスは下のマップへ通す。
@@ -16,6 +16,7 @@ import type { BattleApp } from '../app';
 import { cellDefense } from '../combat';
 import { highGroundRate, volleyRate } from '../damage';
 import { cellMoveCost } from '../movement';
+import { plowText } from '../terrain';
 import { Err } from './statusText';
 
 /** 予測などの行。[見出し, 中身] */
@@ -36,7 +37,12 @@ export default function TerrainWindow({ app }: { app: BattleApp }) {
       <div className="terrain-head">
         <i className="terrain-swatch" style={{ background: `rgb(${r}, ${g}, ${b})` }} />
         <span className="terrain-name">{terrain.name}</span>
-        {cell.feature && <span className="terrain-feature">{FEATURE_DEFS[cell.feature].name}</span>}
+        {cell.feature && (
+          <span className="terrain-feature">
+            {FEATURE_DEFS[cell.feature].name}
+            {cell.breached && (cell.feature === 'castle' ? '（城壁が崩れた）' : '（木柵が倒れた）')}
+          </span>
+        )}
         {app.stronghold?.col === cell.col && app.stronghold.row === cell.row && (
           <span className="terrain-feature stronghold" title="攻撃側のユニットが入ると防衛側の負け（入城）">
             防衛拠点
@@ -115,7 +121,8 @@ function forecastRows(app: BattleApp, cell: HexCell): InfoRow[] {
     ]);
   }
   if (f && !('rejected' in f)) {
-    if (!f.expected) rows.push(['攻撃', f.splash.length > 0 ? '目標なし（範囲の全員に当たる）' : '範囲に誰もいない']);
+    if (!f.expected && (f.splash.length > 0 || !f.plow)) rows.push(['攻撃', f.splash.length > 0 ? '目標なし（範囲の全員に当たる）' : '範囲に誰もいない']);
+    if (f.plow) rows.push(['地形', plowText(f.plow)]);
     const team = app.plan?.unit.team;
     for (const p of f.splash) {
       const text = `(${p.unit.col}, ${p.unit.row}) ${range(p.damage)}`;

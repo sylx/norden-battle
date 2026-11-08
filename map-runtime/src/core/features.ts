@@ -33,6 +33,17 @@ export const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
   castle: { id: 'castle', name: '城', onWater: false, defense: 0.3 },
 };
 
+/** 壁で囲む人工物（城・砦）。崩せる（HexCell.breached） */
+export const WALLED_FEATURE_IDS: readonly FeatureId[] = ['castle', 'fort'];
+
+/** 城壁・木柵が崩れた城・砦の HEX の地形効果（瓦礫の陰に隠れる分だけ。人工物の defense の代わり） */
+export const BREACHED_DEFENSE = 0.1;
+
+/** cell が城壁・木柵に囲まれているか（城・砦で、崩れていない） */
+export function isWalled(cell: HexCell | undefined): boolean {
+  return !!cell?.feature && WALLED_FEATURE_IDS.includes(cell.feature) && !cell.breached;
+}
+
 /** 城の郭の段の最大（3 = 三重の城壁） */
 export const MAX_WARD = 3;
 

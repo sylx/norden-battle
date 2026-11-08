@@ -46,6 +46,11 @@ export interface HexCell {
   /** 城の郭の段（2..3。1 は省略）。castle のときだけ */
   ward?: number;
   roads?: number[];
+  /**
+   * 城壁・木柵が崩れている（castle・fort のときだけ。戦闘中にアーススパイクで崩す。マップ JSON には保存しない）。
+   * 崩れた HEX は城・砦の守りを失い（features.ts の BREACHED_DEFENSE）、壁は瓦礫で描く
+   */
+  breached?: boolean;
 }
 
 export interface MapData {
@@ -328,6 +333,7 @@ export class HexMap {
     delete cell.feature;
     delete cell.featureDir;
     delete cell.ward;
+    delete cell.breached;
     if (feature) cell.feature = feature;
     if (feature && dir !== undefined) cell.featureDir = dir;
     if (feature === 'castle' && ward !== undefined && ward > 1) cell.ward = Math.min(Math.round(ward), MAX_WARD);

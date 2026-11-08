@@ -4,12 +4,15 @@
  * 外周の頂点に塔、1 か所に門を置き、内側に建物を建てる。
  * 城は HEX ごとの郭の段（ward）が違う HEX の境にも城壁を立て（二重・三重の城壁）、郭ごとに門を 1 か所開ける。
  * 城の地面の石畳は地形のシェーダで描く（HexOverlay.setPaved）。
+ * 壁の崩れた HEX（HexCell.breached。戦闘中にアーススパイクで崩す）の辺は、城壁を瓦礫と低い残骸に、木柵を倒れた丸太にする。
+ * 塔・物見櫓は、つながる壁がすべて崩れていれば瓦礫の山にする。崩れていない部分の見た目（乱数の並び）は変えない。
  */
 import * as THREE from 'three';
 import { castleWard, featureRegions } from '../../core/features.ts';
 import type { Offset, Vec2 } from '../../core/hex.ts';
 import type { HexCell } from '../../core/mapData.ts';
 import { TERRAIN_DEFS } from '../../core/terrainTypes.ts';
+import { GeoBuilder } from '../geoBuilder.ts';
 import { PAT } from './material.ts';
 import { box, structureRng, cone, cylinder, footprint, Frame, groundRange, pyramidRoof, terrainWall, vary, type BuildCtx, type Rng } from './shapes.ts';
 import { house, ROOF_SLATE, ROOF_THATCH, ROOF_TILE } from './village.ts';
@@ -120,6 +123,40 @@ function lerp2(a: Vec2, b: Vec2, t: number): Vec2 {
 
 const mid = (e: Edge) => lerp2(e.a, e.b, 0.5);
 
+/**
+ * 描かずに捨てる組み立て先の ctx。崩れた壁・塔も乱数だけは同じように引いて、
+ * 崩れていない壁・建物の見た目が崩す前と変わらないようにする
+ */
+function discard(ctx: BuildCtx): BuildCtx {
+  return { ...ctx, b: new GeoBuilder(true) };
+}
+
+/** 崩れた壁の瓦礫: a〜b の辺に沿って石（丸太）を散らす。kind は石か丸太か */
+function rubble(ctx: BuildCtx, a: Vec2, b: Vec2, kind: 'stone' | 'log', rng: Rng): void {
+  const len = Math.hypot(b.x - a.x, b.z - a.z);
+  if (len < 0.02) return;
+  const dir = { x: (b.x - a.x) / len, z: (b.z - a.z) / len };
+  const perp = { x: -dir.z, z: dir.x };
+  const n = Math.max(2, Math.round(len / (kind === 'stone' ? 0.035 : 0.05)));
+  for (let i = 0; i < n; i++) {
+    const t = (i + rng()) / n;
+    const off = (rng() * 2 - 1) * WALL_T * 1.6;
+    const x = a.x + (b.x - a.x) * t + perp.x * off;
+    const z = a.z + (b.z - a.z) * t + perp.z * off;
+    const g = ctx.hm.heightAt(x, z);
+    if (kind === 'stone') {
+      const w = 0.012 + rng() * 0.016;
+      const d = 0.01 + rng() * 0.014;
+      const h = 0.012 + rng() * 0.03;
+      box(ctx.b, new Frame(x, z, rng() * Math.PI), -w, w, -d, d, g - 0.02, g + h, vary(0xa39a88, rng, 0.1), PAT.Masonry);
+    } else {
+      // 倒れた丸太（地面に横たえる）
+      const half = 0.04 + rng() * 0.035;
+      box(ctx.b, new Frame(x, z, Math.atan2(dir.z, dir.x) + (rng() * 2 - 1) * 0.9), -half, half, -LOG_R, LOG_R, g - 0.004, g + LOG_R * 2, vary(0x6b4f35, rng, 0.12), PAT.Wood);
+    }
+  }
+}
+
 // ---- 城 -------------------------------------------------------------------
 
 const WALL_H = 0.2;
@@ -182,28 +219,47 @@ function buildCastle(ctx: BuildCtx, cells: HexCell[], seed: number): void {
     }
   };
 
-  // 城壁: 隣の郭の段が低い（城の外は 0）辺。外向きは段の低い側。内側の郭ほど高い
-  const towers = new Map<string, { p: Vec2; ward: number }>();
+  // 城壁: 隣の郭の段が低い（城の外は 0）辺。外向きは段の低い側。内側の郭ほど高い。
+  // 壁の崩れた HEX の辺は、両端に低い残骸を残して瓦礫にする（門も崩す）
+  const towers = new Map<string, { p: Vec2; ward: number; intact: boolean }>();
   for (const e of boundaryEdges(ctx, cells, () => false)) {
     const ward = castleWard(e.cell);
     if (wardAt(e.nb) >= ward) continue;
     const height = WALL_H * wardScale(ward);
+    const broken = !!e.cell.breached;
+    if (broken) {
+      const rr = structureRng(ctx, seed, e.cell.col, e.cell.row, 40 + e.dir);
+      castleWall(e.a, lerp2(e.a, e.b, 0.12 + rr() * 0.1), e.out, height * (0.35 + rr() * 0.25));
+      castleWall(lerp2(e.a, e.b, 0.78 + rr() * 0.1), e.b, e.out, height * (0.35 + rr() * 0.25));
+      rubble(ctx, e.a, e.b, 'stone', rr);
+    }
     if (gates.has(edgeKey(e))) {
       const len = Math.hypot(e.b.x - e.a.x, e.b.z - e.a.z);
       const t = GATE_HALF / len;
-      castleWall(e.a, lerp2(e.a, e.b, 0.5 - t), e.out, height);
-      castleWall(lerp2(e.a, e.b, 0.5 + t), e.b, e.out, height);
-      gatehouse(ctx, mid(e), { x: (e.b.x - e.a.x) / len, z: (e.b.z - e.a.z) / len }, e.out, height, stone, rng);
-    } else {
+      if (!broken) {
+        castleWall(e.a, lerp2(e.a, e.b, 0.5 - t), e.out, height);
+        castleWall(lerp2(e.a, e.b, 0.5 + t), e.b, e.out, height);
+      }
+      gatehouse(broken ? discard(ctx) : ctx, mid(e), { x: (e.b.x - e.a.x) / len, z: (e.b.z - e.a.z) / len }, e.out, height, stone, rng);
+    } else if (!broken) {
       castleWall(e.a, e.b, e.out, height);
     }
     for (const p of [e.a, e.b]) {
       const k = vertexKey(p);
       const t = towers.get(k);
-      if (!t || t.ward < ward) towers.set(k, { p, ward });
+      towers.set(k, { p, ward: Math.max(t?.ward ?? 0, ward), intact: !!t?.intact || !broken });
     }
   }
-  for (const t of towers.values()) roundTower(ctx, t.p, TOWER_R, TOWER_H * wardScale(t.ward), stone, towerRoof, rng);
+  for (const t of towers.values()) {
+    roundTower(t.intact ? ctx : discard(ctx), t.p, TOWER_R, TOWER_H * wardScale(t.ward), stone, towerRoof, rng);
+    if (!t.intact) {
+      const rr = structureRng(ctx, seed, Math.round(t.p.x * 100), Math.round(t.p.z * 100), 47);
+      for (let i = 0; i < 3; i++) {
+        const a = rr() * Math.PI * 2;
+        rubble(ctx, t.p, { x: t.p.x + Math.cos(a) * TOWER_R * 1.4, z: t.p.z + Math.sin(a) * TOWER_R * 1.4 }, 'stone', rr);
+      }
+    }
+  }
 
   // 主塔（いちばん内側の郭の、いちばん内側の HEX）
   const castleNeighbors = (c: HexCell) => layout.neighbors(c.col, c.row).filter((n) => wardAt(n) > 0).length;
@@ -346,19 +402,26 @@ function buildFort(ctx: BuildCtx, cells: HexCell[], seed: number): void {
     }
   };
 
+  // 木柵の倒れた HEX の辺は、柵を描かずに（乱数は同じように引く）倒れた丸太を散らす
+  const sink = discard(ctx);
+  const intactVertices = new Set<string>();
   for (const e of edges) {
+    const broken = !!e.cell.breached;
+    const fence = broken ? (p: Vec2, q: Vec2) => withBuilder(ctx, sink, () => palisade(p, q)) : palisade;
     if (e === gate) {
       const len = Math.hypot(e.b.x - e.a.x, e.b.z - e.a.z);
       const t = GATE_HALF / len;
-      palisade(e.a, lerp2(e.a, e.b, 0.5 - t));
-      palisade(lerp2(e.a, e.b, 0.5 + t), e.b);
-      fortGate(ctx, lerp2(e.a, e.b, 0.5), { x: (e.b.x - e.a.x) / len, z: (e.b.z - e.a.z) / len }, e.out, rng);
+      fence(e.a, lerp2(e.a, e.b, 0.5 - t));
+      fence(lerp2(e.a, e.b, 0.5 + t), e.b);
+      fortGate(broken ? sink : ctx, lerp2(e.a, e.b, 0.5), { x: (e.b.x - e.a.x) / len, z: (e.b.z - e.a.z) / len }, e.out, rng);
     } else {
-      palisade(e.a, e.b);
+      fence(e.a, e.b);
     }
+    if (broken) rubble(ctx, e.a, e.b, 'log', structureRng(ctx, seed, e.cell.col, e.cell.row, 40 + e.dir));
+    else for (const p of [e.a, e.b]) intactVertices.add(vertexKey(p));
   }
 
-  for (const v of vertices.values()) watchtower(ctx, v, rng);
+  for (const [k, v] of vertices) watchtower(intactVertices.has(k) ? ctx : sink, v, rng);
 
   // 内側に小屋と天幕
   const layout = ctx.map.layout;
@@ -426,4 +489,15 @@ function fortGate(ctx: BuildCtx, mid: Vec2, dir: Vec2, out: Vec2, rng: Rng): voi
   const door = vary(0x6b4f35, rng);
   box(ctx.b, f, -GATE_HALF + 0.012, -0.01, -0.006, 0.006, g.min - 0.02, g.max + PALISADE_H - 0.01, door, PAT.Wood);
   box(ctx.b, f, 0.01, GATE_HALF - 0.012, -0.006, 0.006, g.min - 0.02, g.max + PALISADE_H - 0.01, door, PAT.Wood);
+}
+
+/** palisade のように ctx.b へ描く関数を、組み立て先を b の ctx に差し替えて呼ぶ（ctx は同じオブジェクトを書き換えて戻す） */
+function withBuilder(ctx: BuildCtx, other: BuildCtx, draw: () => void): void {
+  const b = ctx.b;
+  ctx.b = other.b;
+  try {
+    draw();
+  } finally {
+    ctx.b = b;
+  }
 }

@@ -30,6 +30,7 @@
  * - 地形効果（cellDefense。森・砦・城など）のある HEX にいる相手へのダメージは減り、
  *   弓兵・砲兵が相手より高い HEX から攻撃するとダメージが増える（damage.ts）。
  *   砲兵が城・砦（WALLED_FEATURES）にいる相手を攻撃するときは、地形効果が半分になる（damage.ts の terrainDefense）。
+ *   城壁・木柵の崩れた城・砦（HexCell.breached）は、地形効果が瓦礫の値になり、突撃で突き抜けられ、砲兵の攻城も効かない（terrain.ts）。
  *   地形効果を無視する攻撃（トールハンマー）では、相手は地形効果の無い HEX にいるものとして計算する（AttackResult.defense も 0）。
  * - 反撃の無い攻撃か距離 2 以上からの攻撃は間接攻撃（Hit.indirect）で、ライフル兵・砲兵は受けるダメージが減る（damage.ts の INDIRECT_TAKEN）。
  *   施設（要塞砲・ガンシップ）の砲撃も間接攻撃。
@@ -39,7 +40,7 @@
  * - 攻撃の後、与えたダメージと反撃で受けたダメージの比で両軍の士気が増減する（一斉攻撃は加わった味方の数だけ相手の士気が大きく減る）。
  */
 import { axialDistance, type Offset } from '@norden/map-runtime/core/hex';
-import { FEATURE_DEFS } from '@norden/map-runtime/core/features';
+import { BREACHED_DEFENSE, FEATURE_DEFS, isWalled, WALLED_FEATURE_IDS } from '@norden/map-runtime/core/features';
 import type { HexCell, HexMap } from '@norden/map-runtime/core/mapData';
 import { dirBetween } from '@norden/map-runtime/core/roads';
 import { TERRAIN_DEFS } from '@norden/map-runtime/core/terrainTypes';
@@ -128,6 +129,8 @@ export interface ResolvedAttack extends Pick<AttackDef, 'id' | 'name' | 'cost' |
   cooldown: number;
   /** 相手のいる HEX の地形効果を無視する */
   ignoresTerrain: boolean;
+  /** 狙った HEX を荒地に耕す */
+  plows: boolean;
   inflicts: readonly Inflict[];
   fx: StrikeFxKind;
 }
@@ -155,6 +158,7 @@ export function resolveAttack(type: UnitType, id: AttackId): ResolvedAttack {
     magic: def.magic ?? !!c.magic,
     cooldown: def.cooldown ?? 0,
     ignoresTerrain: !!def.ignoresTerrain,
+    plows: !!def.plows,
     inflicts: def.inflicts ?? [],
     fx: def.fx ?? c.fx,
   };
@@ -295,8 +299,11 @@ export function attackRange(map: HexMap, unit: UnitData, pos: Offset, id?: Attac
   return out;
 }
 
-/** 城・砦の人工物（突撃で突き抜けられない。そこにいる相手を攻撃しても飛び出さない。砲兵に攻撃されると地形効果が半分になる） */
-export const WALLED_FEATURES: ReadonlySet<string> = new Set(['castle', 'fort']);
+/**
+ * 城・砦の人工物（突撃で突き抜けられない。そこにいる相手を攻撃しても飛び出さない。砲兵に攻撃されると地形効果が半分になる）。
+ * 城壁・木柵の崩れた HEX（HexCell.breached）は除く（map-runtime の isWalled）
+ */
+export const WALLED_FEATURES: ReadonlySet<string> = new Set(WALLED_FEATURE_IDS);
 
 /**
  * pos から隣の target へ突撃したときに飛び出る HEX（飛び出せなければ null。target が城・砦なら必ず null）。
@@ -315,7 +322,7 @@ export function chargeLanding(
   const n = map.layout.neighborInDir(target.col, target.row, dir);
   const from = map.get(target.col, target.row);
   const to = map.get(n.col, n.row);
-  if (!from || !to || (from.feature && WALLED_FEATURES.has(from.feature))) return null;
+  if (!from || !to || isWalled(from)) return null;
   if (map.unitAt(n.col, n.row) || enterCost(from, dir, to) === null) return null;
   const start = map.get(pos.col, pos.row);
   if (castleLocked && start && entersCastle(start, to)) return null;
@@ -456,13 +463,17 @@ function fighter(map: HexMap, { unit, status, pos }: Combatant, encircled: boole
     guarding,
     supporters: 0,
     defense: cell ? cellDefense(cell) : 0,
-    walled: !!cell?.feature && WALLED_FEATURES.has(cell.feature),
+    walled: isWalled(cell),
     elevation: cell?.elevation ?? 0,
   };
 }
 
-/** cell にいるユニットが受けるダメージを減らす割合（地形効果）。人工物があればその値、なければ地形の値 */
+/**
+ * cell にいるユニットが受けるダメージを減らす割合（地形効果）。人工物があればその値、なければ地形の値。
+ * 城壁・木柵の崩れた城・砦は瓦礫の値（BREACHED_DEFENSE）
+ */
 export function cellDefense(cell: HexCell): number {
+  if (cell.breached && cell.feature && WALLED_FEATURE_IDS.includes(cell.feature)) return BREACHED_DEFENSE;
   const feature = cell.feature ? FEATURE_DEFS[cell.feature].defense : undefined;
   return feature ?? TERRAIN_DEFS[cell.terrain].defense;
 }

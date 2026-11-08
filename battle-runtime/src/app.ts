@@ -135,6 +135,7 @@ import { applyMorale, moraleChange } from './morale';
 import { ActionMenuModel } from './menuModel';
 import { adjacentEnemies, retreatFailChance, type RetreatDestination, type RetreatDestinations, type RetreatReport } from './retreat';
 import { wipeoutCaptureChance, type WipeoutReport } from './wipeout';
+import { plowCell, plowPreview, type PlowChange } from './terrain';
 import { inEnemyZoc, movePath, moveRange, nearCastle, nearStronghold, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
 import { BULLET_STYLE, GUNSHIP_STYLE, ProjectileEffects, SHELL_STYLE } from './attackFx/projectileFx';
@@ -302,6 +303,8 @@ export interface ExecuteReport {
     targetLeft: number;
     /** 範囲の巻き添えで当たったユニット（ライフル兵の弾が目標の手前で当たったものなど。当たらなければ空） */
     splash: SplashHit[];
+    /** 狙った HEX を耕して変わったもの（耕す攻撃でなければ・何も変わらなければ null。terrain.ts） */
+    plowed: PlowChange | null;
   };
   /** 移動の途中で受けた、迎撃の構えの間接ユニットからの自動攻撃（受けた順） */
   intercepts: InterceptReport[];
@@ -320,6 +323,9 @@ export interface ExecuteReport {
   /** 殲滅されたユニット（自分・相手。指揮官が捕縛されたか） */
   wipeouts: WipeoutReport[];
 }
+
+/** 攻撃の相手を選ぶ状態のときの、カーソルの HEX への攻撃の予測（plow は耕す攻撃で地形が変わるとき、その変化） */
+export type AttackPreview = AttackForecast & { plow: PlowChange | null };
 
 /**
  * 予約を実行した後にすること。confirm: なし（決定）、intercept: 迎撃の構えをとる、wait: 待機して行動を終える、
@@ -1136,7 +1142,7 @@ export class BattleApp {
    * 攻撃の相手を選ぶ状態のとき、o のユニットを攻撃したときの結果の予測（攻撃できなければ null）。
    * 範囲内でも選べない相手（一斉攻撃で取り囲んでいない）なら、その理由
    */
-  attackPreviewAt(o: Offset | null): AttackForecast | { rejected: string } | null {
+  attackPreviewAt(o: Offset | null): AttackPreview | { rejected: string } | null {
     const map = this.map;
     const plan = this.plan;
     if (!o || this.targeting?.kind !== 'attack' || !map || !plan) return null;
@@ -1152,7 +1158,10 @@ export class BattleApp {
       const status = this.statuses.get(u);
       return status ? [{ unit: u, status, pos: u }] : [];
     });
-    return attackForecast(map, attacker, target && ts ? { unit: target, status: ts, pos: target } : null, id, splash);
+    return {
+      ...attackForecast(map, attacker, target && ts ? { unit: target, status: ts, pos: target } : null, id, splash),
+      plow: this.targeting.attack.plows ? plowPreview(map, at) : null,
+    };
   }
 
   /** attack で target を攻撃できない理由（できれば null）。一斉攻撃は、ほかの味方とも隣接している相手しか選べない */
@@ -2076,6 +2085,7 @@ export class BattleApp {
       unitLeft: Math.max(0, plan.status.soldiers),
       targetLeft: ts ? Math.max(0, ts.soldiers) : 0,
       splash: [],
+      plowed: null,
     };
 
     // 殲滅されたユニットの指揮官の捕縛（相討ちなら、相手は隣接する敵に数えない）
@@ -2083,6 +2093,11 @@ export class BattleApp {
     const tw = target && ts && report.attack.targetDestroyed ? this.wipeOut(report, target, ts, target, plan.unit, both ? [plan.unit] : []) : null;
     const uw = target && report.attack.unitDestroyed ? this.wipeOut(report, plan.unit, plan.status, plan.unit, target, both ? [target] : []) : null;
     report.attack.splash = this.applySplash(report, attacker, target, attack.at, attack.id);
+    // 耕す攻撃（アーススパイク）は、ダメージを与えた後に狙った HEX を荒地にして、地形を描き直す
+    if (def.plows) {
+      report.attack.plowed = plowCell(map, attack.at);
+      if (report.attack.plowed) this.terrainChanged();
+    }
     // 目標の無い攻撃（乱撃・敵のいない地点）は、敵に与えたダメージの合計で士気が上がる
     if (!result) {
       const dealt = report.attack.splash.filter((h) => !h.friendly).reduce((sum, h) => sum + h.result.damage, 0);
@@ -2227,6 +2242,12 @@ export class BattleApp {
   }
 
   /** 防衛拠点の HEX の地面を塗る */
+  /** 戦闘中にマップの地形を書き換えた（耕した）後、地形・木・人工物・街道を描き直す（HEX の塗り・範囲の表示はそのまま残る） */
+  private terrainChanged(): void {
+    this.view.regenerate();
+  }
+
+
   private paintStronghold(): void {
     const hold = this.stronghold;
     const color = new THREE.Color(STRONGHOLD_COLOR);
@@ -2342,12 +2363,14 @@ export class BattleApp {
     const pos = BattleApp.planPos(plan);
     const options = this.moveOptions(plan);
     const attacks = attacksOf(plan.unit.type, plan.status);
-    // 狙える相手のいる攻撃（自分が中心の攻撃は、範囲に敵がいるとき）
-    const targetable = attacks.filter((id) =>
-      resolveAttack(plan.unit.type, id).aim === 'self'
-        ? splashUnits(map, plan.unit, pos, null, pos, id).some((u) => u.team !== plan.unit.team)
-        : attackTargets(map, plan.unit, pos, id, this.rangeBonusAt(plan.unit, pos)).length > 0,
-    );
+    // 狙える相手のいる攻撃（自分が中心の攻撃は、範囲に敵がいるとき。耕す攻撃は敵がいなくても、射程に HEX があれば地形に撃てる）
+    const bonus = this.rangeBonusAt(plan.unit, pos);
+    const targetable = attacks.filter((id) => {
+      const a = resolveAttack(plan.unit.type, id);
+      if (a.aim === 'self') return splashUnits(map, plan.unit, pos, null, pos, id).some((u) => u.team !== plan.unit.team);
+      if (a.plows) return attackRange(map, plan.unit, pos, id, bonus).length > 0;
+      return attackTargets(map, plan.unit, pos, id, bonus).length > 0;
+    });
     return {
       unit: plan.unit,
       status: plan.status,

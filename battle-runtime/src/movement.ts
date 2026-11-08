@@ -14,7 +14,8 @@
  *
  * 入城の決まり: 城を持たない側（攻撃側）のユニットは、番の初めに城の HEX の中かそのとなりにいた（nearCastle）ときだけ城の HEX に入れる。
  * そうでなければ、城の外から城の HEX へは入れない（castleLocked。城の中どうしは動ける。app.ts の moveOptions が決める）。
- * 城へ入るには、一度城の前で番を終える必要がある。
+ * 城へ入るには、一度城の前で番を終える必要がある。ただし城壁の崩れた HEX（HexCell.breached。アーススパイクで崩す）へは外から入れ、
+ * そこから城の中を進める（突破口）。
  * 防衛拠点（マップの stronghold）も同じで、攻撃側のユニットは番の初めに拠点の HEX の中かそのとなりにいた（nearStronghold）ときだけ
  * 拠点の HEX に入れる（strongholdLocked。城に入った番のうちに拠点まで駆け込めないよう、一度拠点の前で番を終える必要がある）。
  *
@@ -81,9 +82,9 @@ export function nearStronghold(map: HexMap, stronghold: Offset | null, pos: Offs
   return same(pos) || map.layout.neighbors(pos.col, pos.row).some(same);
 }
 
-/** 城の外の from から城の to へ入るか */
+/** 城の外の from から城の to へ入るか（城壁の崩れた HEX は突破口で、入城の決まりに縛られずに入れるので数えない） */
 export function entersCastle(from: HexCell, to: HexCell): boolean {
-  return to.feature === 'castle' && from.feature !== 'castle';
+  return to.feature === 'castle' && !to.breached && from.feature !== 'castle';
 }
 
 /**
