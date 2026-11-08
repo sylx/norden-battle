@@ -278,8 +278,11 @@ export const PILLAR_HIT_SEC = PILLAR_DRAW_SEC + PILLAR_SPIN_SEC + PILLAR_CHARGE_
 /** 魔法陣の色と、光線・爆発の色 */
 const CIRCLE_COLOR = 0x6cc0ff;
 const PILLAR_COLOR = 0xc8e8ff;
-/** 光線が降りてくる高さ（HEX の大きさ比） */
-const PILLAR_HEIGHT = 14;
+/**
+ * 光線が降りてくる長さ（カメラから地点までの距離比）。光線は画面の真上から降りるよう、カメラの上の向きに伸ばす
+ * （画面の面に沿う向きなので、画面のどこに出ても縦にまっすぐ写り、遠近で傾かない）
+ */
+const PILLAR_LENGTH = 1.2;
 /** 魔法陣がゆっくり回る速さ（ラジアン / 秒） */
 const CIRCLE_SPIN = 0.5;
 
@@ -324,7 +327,6 @@ export class PillarEffects {
     blast.scale.setScalar(radius * 1.15);
     const beam = new THREE.Mesh(this.plane, createStreakMaterial(PILLAR_COLOR));
     const sky = new THREE.Mesh(this.plane, createGlowMaterial(PILLAR_COLOR));
-    sky.position.copy(at).add(new THREE.Vector3(0, hexSize * PILLAR_HEIGHT, 0));
     const foot = new THREE.Mesh(this.plane, createGlowMaterial(PILLAR_COLOR));
     foot.position.copy(at).add(new THREE.Vector3(0, hexSize * 0.1, 0));
     const dome = new THREE.Mesh(this.plane, createGlowMaterial(PILLAR_COLOR));
@@ -364,6 +366,8 @@ export class PillarEffects {
       }
 
       // 光線: 空の点が灯り、細い光線が降りてきて、爆発に向けてどんどん太くなる。爆発のあとは広がりながら消える
+      const screenUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+      p.sky.position.copy(p.at).addScaledVector(screenUp, camera.position.distanceTo(p.at) * PILLAR_LENGTH);
       const fall = (t - chargeAt) / PILLAR_FALL_SEC;
       const fade = Math.max(0, after / PILLAR_FADE_SEC);
       p.beam.visible = fall > 0 && fade < 1;
