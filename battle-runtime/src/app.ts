@@ -13,10 +13,10 @@
  * - 突撃（騎兵）は相手を突き抜けて向こうの HEX へ飛び出る。飛び出る先は予約のときに決め、矢印もそこまで伸ばす。
  * - 決定でユニットがルートに沿って歩き、攻撃し、（騎兵なら）続きを歩く（その間は操作を受け付けない）。
  *   攻撃の演出: カメラが両者へ寄り（cameraFocus.ts）、攻撃して、カメラが元へ戻る。
- *   歩兵の通常攻撃は踏み込んで光の剣で斬る（slashFx.ts）。騎兵の通常攻撃・突撃は光るランスで貫く（lanceFx.ts）。
- *   弓兵の通常攻撃は無数の光の矢を放物線で降らせる（arrowFx.ts）。弓兵の迎撃も同じ演出で、弓兵と撃たれるユニットへ寄る。
- *   魔術師のサンダーフォールは相手の頭上に雷を落とす（thunderFx.ts）。魔術師の迎撃も同じ演出。
- *   ライフル兵の通常攻撃は光の弾を続けてまっすぐ撃ち、砲兵の通常攻撃は大きな光の弾を放物線で撃つ（projectileFx.ts）。迎撃も同じ演出。
+ *   歩兵の通常攻撃は踏み込んで光の剣で斬る（attackFx/slashFx.ts）。騎兵の通常攻撃・突撃は光るランスで貫く（attackFx/lanceFx.ts）。
+ *   弓兵の通常攻撃は無数の光の矢を放物線で降らせる（attackFx/arrowFx.ts）。弓兵の迎撃も同じ演出で、弓兵と撃たれるユニットへ寄る。
+ *   魔術師のサンダーフォールは相手の頭上に雷を落とす（attackFx/thunderFx.ts）。魔術師の迎撃も同じ演出。
+ *   ライフル兵の通常攻撃は光の弾を続けてまっすぐ撃ち、砲兵の通常攻撃は大きな光の弾を放物線で撃つ（attackFx/projectileFx.ts）。迎撃も同じ演出。
  *   一斉攻撃は、加わる味方も含めた全員へ寄り、それぞれの兵種の演出（斬撃・ランス）を少しずつずらして出す。
  *   突撃で駆け抜けるときは、飛び出る先の HEX まで画面に収める。
  *   兵数が 0 になったユニットは消える。
@@ -120,26 +120,26 @@ import {
   type AttackResult,
   type Combatant,
 } from './combat';
-import { ARROW_HIT_SEC, ARROW_RELEASE_SEC, ArrowEffects } from './arrowFx';
-import { BEAM_HIT_SEC, BeamEffects, BLAST_STYLE, FROST_STYLE, IMPACT_HIT_SEC, ImpactEffects, PILLAR_HIT_SEC, PillarEffects, SMASH_STYLE, SPIKE_STYLE } from './areaFx';
-import { BREATH_STYLE, BreathEffects, breathHitSec, FLAME_LANCE_STYLE } from './breathFx';
+import { ARROW_HIT_SEC, ARROW_RELEASE_SEC, ArrowEffects } from './attackFx/arrowFx';
+import { BEAM_HIT_SEC, BeamEffects, BLAST_STYLE, FROST_STYLE, IMPACT_HIT_SEC, ImpactEffects, PILLAR_HIT_SEC, PillarEffects, SMASH_STYLE, SPIKE_STYLE } from './attackFx/areaFx';
+import { BREATH_STYLE, BreathEffects, breathHitSec, FLAME_LANCE_STYLE } from './attackFx/breathFx';
 import { CameraFocus, type FocusTiming } from './cameraFocus';
 import { hasCondition, setCondition, tickConditions, tickCooldowns, type ConditionId } from './conditions';
 import { randomRoll } from './damage';
 import { demoTroops, Deployment, SIDE_TEAM, type DeployState, type TroopFactory } from './deployment';
 import { InterceptEffects } from './interceptFx';
-import { LANCE_HIT_SEC, LanceEffects } from './lanceFx';
+import { LANCE_HIT_SEC, LanceEffects } from './attackFx/lanceFx';
 import { applyMorale, moraleChange } from './morale';
 import { ActionMenuModel } from './menuModel';
 import { adjacentEnemies, retreatFailChance, type RetreatDestination, type RetreatDestinations, type RetreatReport } from './retreat';
 import { wipeoutCaptureChance, type WipeoutReport } from './wipeout';
 import { inEnemyZoc, movePath, moveRange, nearCastle, type MoveOptions, type MoveStep } from './movement';
 import { Popups } from './popups';
-import { BULLET_STYLE, GUNSHIP_STYLE, ProjectileEffects, SHELL_STYLE } from './projectileFx';
+import { BULLET_STYLE, GUNSHIP_STYLE, ProjectileEffects, SHELL_STYLE } from './attackFx/projectileFx';
 import { DEFAULT_INTERVALS, FACILITY_NAMES, firesOn, FORTRESS_CANNON_RANGE, rangeBonus, type BattleFacilities, type FiringFacility, type SideFacilities } from './facilities';
-import { SLASH_HIT_SEC, SlashEffects } from './slashFx';
+import { SLASH_HIT_SEC, SlashEffects } from './attackFx/slashFx';
 import { SpeechBubbles } from './speechBubbles';
-import { THUNDER_HIT_SEC, ThunderEffects } from './thunderFx';
+import { THUNDER_HIT_SEC, ThunderEffects } from './attackFx/thunderFx';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
 import { judgeBattle, loserOf, sideUnits, type BattleOutcome, type CapturedUnit, type CommanderLoss } from './victory';
