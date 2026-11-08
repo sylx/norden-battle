@@ -14,7 +14,7 @@
  * 「攻撃」の 2 階層目は兵種の攻撃の一覧（combat.ts の COMBAT_DEFS の attacks。定義は attacks.ts）の順に並ぶ。
  * 魔術師・上級魔術師は通常攻撃の代わりにサンダーフォール（行動力 4。最大行動力と同じなので移動した後は撃てない）。
  * 一斉攻撃は一斉攻撃を持つ兵種（歩兵・騎兵・ランツクネヒト）だけで、射程内に自分のほかの味方とも隣接している敵がいるときだけ並ぶ（hasVolleyTargets）。
- * クールタイム中の攻撃（UnitStatus.cooldowns）は灰色で残し、あと何ターンで使えるかを理由に出す。
+ * クールタイム中の攻撃（UnitStatus.cooldowns）は灰色で残し、残りターンを表示用の数値と理由に持たせる。
  * 迎撃は選んだらすぐに実行し（予約した移動があればそこまで動く）、迎撃の構えで待機して行動を終える。攻撃の後と騎兵はできない。
  * 待機（行動力 0）も選んだらすぐに実行し（予約した行動があれば実行してから）、残りの行動力を捨てて行動を終える。
  * 行動力が残っていない（待機・迎撃で行動を終えた後など）ときは待機を選べない。
@@ -126,6 +126,8 @@ const CANCEL: MenuAction = { id: 'cancel', name: '取消' };
 export interface MenuChild extends MenuAction {
   /** 選べない理由（選べないときだけ。灰色で出す） */
   reason?: string;
+  /** クールタイムの残りターン数（クールタイム中だけ） */
+  cooldown?: number;
 }
 
 export interface MenuEntry {
@@ -133,6 +135,8 @@ export interface MenuEntry {
   enabled: boolean;
   /** 選べない理由（enabled = false のとき） */
   reason?: string;
+  /** 全候補がクールタイム中のとき、最初に使えるようになるまでのターン数 */
+  cooldown?: number;
   /** 1 階層目で直接選ぶ行動 */
   action?: MenuAction;
   /** 2 階層目（選べるものと、選べないときも残すもの） */
@@ -143,13 +147,13 @@ export interface MenuEntry {
 export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
   const { unit, status, ap, canMove, zocLocked, planned } = ctx;
   const lacksAp = (cost: number | undefined) => ap < (cost ?? 0);
-  /** 2 階層目の行動を選べない理由（選べるなら null） */
-  const cooldownReason = (c: MenuAction): string | null => {
-    const n = (status.cooldowns as Partial<Record<string, number>>)[c.id];
-    return n ? `あと ${n} ターン` : null;
+  const cooldownTurns = (c: MenuAction): number | undefined => {
+    const n = isMenuAttack(c.id) ? status.cooldowns[c.id] : undefined;
+    return n !== undefined && n > 0 ? n : undefined;
   };
+  /** 2 階層目の行動を選べない理由（選べるなら null） */
   const childReason = (c: MenuAction): string | null =>
-    cooldownReason(c) ??
+    (cooldownTurns(c) ? `あと ${cooldownTurns(c)} ターン` : null) ??
     (lacksAp(c.cost)
       ? '行動力が足りない'
       : isMenuAttack(c.id) && !ctx.targetable.includes(c.id)
@@ -178,24 +182,37 @@ export function buildActionMenu(ctx: MenuContext): MenuEntry[] {
       if (lacksAp(def.cost)) return { name: def.name, enabled: false, reason: '行動力が足りない', action };
       return { name: def.name, enabled: true, action };
     }
-    if (def.attack) {
-      const reason = status.attacked ? 'このターンは攻撃済み' : ctx.attackPlanned ? '攻撃は予約済み' : !ctx.hasTargets ? '攻撃できる敵がいない' : null;
-      if (reason) return { name: def.name, enabled: false, reason };
-    }
     const cands: (MenuAction & { keepDisabled?: boolean })[] = [
       ...(def.skills ? status.skills.map((s) => ({ id: `skill:${s}` as const, name: SKILL_DEFS[s].name, cost: SKILL_DEFS[s].cost })) : []),
       ...(def.attack ? attackActions(unit.type, status) : []),
       ...def.children.filter((c) => !c.types || c.types.includes(unit.type)).map(({ id, name, cost, keepDisabled }) => ({ id, name, cost, keepDisabled })),
     ];
+    // 親の項目を選べないとき、クールタイム中の候補があれば最短の残りターンを親にも出す（サブメニューを開けないため）
+    const parentCooldown = (): { cooldown?: number } => {
+      const turns = cands.map(cooldownTurns).filter((n) => n !== undefined);
+      return turns.length > 0 ? { cooldown: Math.min(...turns) } : {};
+    };
+    if (def.attack) {
+      // 攻撃した・予約した後は、使った攻撃のクールタイムを出さない（このターンの分が入っていて 1 多い）
+      if (status.attacked) return { name: def.name, enabled: false, reason: 'このターンは攻撃済み' };
+      if (ctx.attackPlanned) return { name: def.name, enabled: false, reason: '攻撃は予約済み' };
+      if (!ctx.hasTargets) return { name: def.name, enabled: false, reason: '攻撃できる敵がいない', ...parentCooldown() };
+    }
     if (cands.length === 0) return { name: def.name, enabled: false, reason: 'この兵種は使えない' };
     const children = cands.flatMap(({ keepDisabled, ...c }): MenuChild[] => {
       const reason = childReason(c);
       if (reason === null) return [c];
       // クールタイム中の攻撃は灰色で残す
-      return keepDisabled || cooldownReason(c) ? [{ ...c, reason }] : [];
+      const cooldown = cooldownTurns(c);
+      if (cooldown) return [{ ...c, reason, cooldown }];
+      return keepDisabled ? [{ ...c, reason }] : [];
     });
     // 選べるものが無ければ選べない（灰色で残したものの理由を先に出す）
-    if (!children.some((c) => !c.reason)) return { name: def.name, enabled: false, reason: children[0]?.reason ?? childReason(cands[0])! };
+    if (!children.some((c) => !c.reason)) {
+      const cd = parentCooldown();
+      const allCooling = cands.every((c) => cooldownTurns(c));
+      return { name: def.name, enabled: false, reason: allCooling ? `あと ${cd.cooldown} ターン` : (children[0]?.reason ?? childReason(cands[0])!), ...cd };
+    }
     return { name: def.name, enabled: true, children };
   });
   if (planned) entries.push(...[CONFIRM, CANCEL].map((action) => ({ name: action.name, enabled: true, action })));

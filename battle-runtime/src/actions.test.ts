@@ -62,10 +62,45 @@ describe('攻撃の項目', () => {
   it('クールタイム中の攻撃は灰色で残り、あと何ターンかが理由に出る', () => {
     const s = { ...status('infantry'), cooldowns: { attack: 2 } };
     const children = buildActionMenu(ctx('infantry', { status: s })).find((e) => e.name === '攻撃')!.children!;
-    expect(children.map((c) => [c.id, c.reason])).toEqual([
-      ['attack', 'あと 2 ターン'],
-      ['volley', undefined],
+    expect(children.map((c) => [c.id, c.reason, c.cooldown])).toEqual([
+      ['attack', 'あと 2 ターン', 2],
+      ['volley', undefined, undefined],
     ]);
+  });
+
+  it('全攻撃がクールタイム中なら親の項目に最短の残りターン数を持たせる', () => {
+    const s = { ...status('dragon'), cooldowns: { claw: 3, breath: 1 } };
+    const entry = buildActionMenu(ctx('dragon', { status: s })).find((e) => e.name === '攻撃')!;
+    expect(entry).toMatchObject({ enabled: false, reason: 'あと 1 ターン', cooldown: 1 });
+    expect(canAct(ctx('mage', {
+      status: { ...status('mage'), cooldowns: { thunderfall: 2 }, skills: [] },
+      canMove: false, ap: 0, turnStart: false,
+    }))).toBe(false);
+  });
+
+  it('ほかの攻撃が別の理由で使えず、残りがクールタイム中なら親の項目に残りターン数を出す', () => {
+    // ベヒーモス: 殴りは隣に敵がいない、光線はクールタイム中
+    const s = { ...status('behemoth'), cooldowns: { beam: 2 } };
+    const entry = buildActionMenu(ctx('behemoth', { status: s, targetable: ['beam'] })).find((e) => e.name === '攻撃')!;
+    expect(entry).toMatchObject({ enabled: false, reason: 'あと 2 ターン', cooldown: 2 });
+    const none = buildActionMenu(ctx('behemoth', { status: s, targetable: [], hasTargets: false })).find((e) => e.name === '攻撃')!;
+    expect(none).toMatchObject({ enabled: false, reason: '攻撃できる敵がいない', cooldown: 2 });
+  });
+
+  it('クールタイムが 0 の攻撃や、選べる子がある親の項目に残りターン数を出さない', () => {
+    const ready = buildActionMenu(ctx('mage', { status: { ...status('mage'), cooldowns: { thunderfall: 0 } } })).find((e) => e.name === '攻撃')!;
+    expect(ready.enabled).toBe(true);
+    expect(ready.cooldown).toBeUndefined();
+    expect(ready.children?.[0].cooldown).toBeUndefined();
+
+    const partly = buildActionMenu(ctx('dragon', { status: { ...status('dragon'), cooldowns: { breath: 2 } } })).find((e) => e.name === '攻撃')!;
+    expect(partly.enabled).toBe(true);
+    expect(partly.cooldown).toBeUndefined();
+  });
+
+  it('攻撃した後は、使った攻撃のクールタイムを親の項目に出さない', () => {
+    const s = { ...status('dragon'), attacked: true, cooldowns: { breath: 2 } };
+    expect(buildActionMenu(ctx('dragon', { status: s })).find((e) => e.name === '攻撃')!.cooldown).toBeUndefined();
   });
 
   it('持たせた魔法は兵種の攻撃の後に並ぶ', () => {

@@ -7,6 +7,8 @@
  * - 上部は指揮官の顔とユニットの名前・残り行動力だけ（兵士数・士気・指揮官の能力は、地形の横の部隊のウィンドウ UnitInfoWindow.tsx に出す）。
  * - 2 階層目は 1 階層目の項目の横に開く。マウスは項目に乗せる、タッチはタップで開く。
  *   選べない項目（退却先の無い退却など）は灰色で出し、理由を title に持たせる。
+ *   クールタイム中の項目は、行動力の代わりに砂時計に残りターン数を重ねて出す。
+ *   親の項目を選べず、クールタイム中の子があるときは、親にも最短の残りターンを出す。
  * - 退却を選んだ後は、項目の代わりに退却先の拠点の一覧と失敗する確率を出す（「戻る」で項目に戻る）。
  *   強制退却（負けた陣営に残った部隊）は、メニューを赤い縁で囲み、項目の上に赤い「強制退却」の帯を出して、「戻る」を出さない。
  * - 選べる行動が無い（行動済みの E の印が付く。待機は数えない）ときは、項目の上に赤い「行動終了」の帯を出す。
@@ -20,6 +22,7 @@ import { lengthInRect, type ActionMenuModel, type MenuFrame, type RetreatMenu, t
 import { setFace } from '../unitTags';
 import type { UnitStatus } from '../unitStatus';
 import { useUnitName } from './factionsContext';
+import cooldownHourglass from './assets/cooldown-hourglass.webp';
 
 /** 上部の顔の円の直径（枠を除く。ui/battle.css の .menu-face と合わせる） */
 const FACE_SIZE = 40;
@@ -101,11 +104,11 @@ export default function ActionMenu({ model }: { model: ActionMenuModel }) {
         <div ref={subRef} className="menu-panel sub">
           <ThinFrame />
           <ul className="menu-body menu-items">
-            {sub.map(({ reason, ...a }) =>
+            {sub.map(({ reason, cooldown, ...a }) =>
               reason ? (
                 <li key={a.id} className="menu-item disabled" title={reason}>
                   <span className="name">{a.name}</span>
-                  {a.cost !== undefined && <Cost n={a.cost} />}
+                  {cooldown !== undefined ? <Cooldown turns={cooldown} /> : a.cost !== undefined && <Cost n={a.cost} />}
                 </li>
               ) : (
                 <li key={a.id} className="menu-item" data-sound="click" onClick={() => model.choose(a)}>
@@ -139,7 +142,7 @@ function Item({
   const content = (
     <>
       <span className="name">{entry.name}</span>
-      {action?.cost !== undefined && <Cost n={action.cost} />}
+      {entry.cooldown !== undefined ? <Cooldown turns={entry.cooldown} /> : action?.cost !== undefined && <Cost n={action.cost} />}
       {children && <span className="arrow" />}
     </>
   );
@@ -203,6 +206,21 @@ function RetreatList({ retreat, model }: { retreat: RetreatMenu; model: ActionMe
         )}
       </ul>
     </>
+  );
+}
+
+/** 砂時計に重ねて表示するクールタイムの残りターン数 */
+function Cooldown({ turns }: { turns: number }) {
+  return (
+    <span
+      className="cooldown"
+      style={{ backgroundImage: `url("${cooldownHourglass}")` }}
+      role="img"
+      aria-label={`クールタイム：あと ${turns} ターン`}
+      title={`あと ${turns} ターン`}
+    >
+      <span aria-hidden="true">{turns}</span>
+    </span>
   );
 }
 
