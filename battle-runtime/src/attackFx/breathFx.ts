@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { createSparkTexture, FX_RENDER_ORDER } from './fxShared';
+import { fxClock } from '../fxClock';
 
 /** 炎の見た目 */
 export interface BreathStyle {
@@ -128,14 +129,14 @@ export class BreathEffects {
       up,
       style,
       colors: style.colors.map((c) => new THREE.Color(c)),
-      start: performance.now(),
+      start: fxClock.now(),
     });
   }
 
   /** 毎フレーム、描画の前に呼ぶ */
   update(): void {
     if (this.items.length === 0) return;
-    const now = performance.now();
+    const now = fxClock.now();
     const p = new THREE.Vector3();
     const c = new THREE.Color();
     this.items = this.items.filter((b) => {

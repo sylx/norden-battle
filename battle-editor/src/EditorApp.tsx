@@ -17,7 +17,11 @@
  * - 状態: 選択中か調べているユニットに、状態（混乱・凍結・感電）を付け外しし、攻撃をクールタイム中にする（見え方の確認用）。
  * - 退却・捕縛: 軍ごとにダミーの退却先の拠点を渡すかどうか（渡さない軍は退却できない）・退却に失敗する確率と殲滅されて捕縛される確率・
  *   退却と殲滅の結果の記録。
- * 勢力は編成で選んだゲームの勢力。決着のカットインは攻撃側をプレイヤーとして勝利・敗北を出す。決着のウィンドウの「最初から」で、同じマップを読み込み直す。
+ * - CPU・速度: 陣営ごとに人が操作するか CPU（易しい・普通・難しい）に任せるか（戦闘の途中でも変えられる）と、演出の速度。ブラウザに覚えておく。
+ *   両方の陣営を CPU にすると、最後まで勝手に戦う。CPU の番はターン表示の早送り・スキップで速められる。
+ * 勢力は編成で選んだゲームの勢力。決着のカットインは人が操作する陣営をプレイヤーとして勝利・敗北を出す（両方とも人・両方とも CPU なら攻撃側）。
+ * 決着のウィンドウの「最初から」で、同じマップを読み込み直す。
+ * 部隊の道具の「編成を書き出す」で、編成を JSON に書き出せる（対戦シミュレータ npm run sim に渡す）。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cropBattleArea } from '@norden/map-runtime/core/battleArea';
@@ -34,6 +38,12 @@ import {
   ATTACK_DEFS,
   BattleScreen,
   COMBAT_DEFS,
+  cpuPlayer,
+  DIFFICULTIES,
+  DIFFICULTY_NAMES,
+  SIDE_TEAM,
+  type Difficulty,
+  type Player,
   CONDITION_DEFS,
   CONDITION_IDS,
   DEFAULT_INTERVALS,
@@ -87,11 +97,12 @@ import DamageTool from './DamageTool';
 const MARGIN = 12;
 const GAP = 6;
 
-type Tool = 'map' | 'troops' | 'damage' | 'facility' | 'perf' | 'bark' | 'status' | 'retreat';
+type Tool = 'map' | 'troops' | 'cpu' | 'damage' | 'facility' | 'perf' | 'bark' | 'status' | 'retreat';
 
 const TOOLS: Record<Tool, string> = {
   map: 'マップ',
   troops: '部隊',
+  cpu: 'CPU・速度',
   damage: 'ダメージ計算',
   facility: '拠点施設',
   perf: '描画負荷',
@@ -99,6 +110,28 @@ const TOOLS: Record<Tool, string> = {
   status: '状態',
   retreat: '退却・捕縛',
 };
+
+/** 陣営ごとの操作する人・CPU と、演出の速度 */
+interface CpuSettings {
+  attacker: 'human' | Difficulty;
+  defender: 'human' | Difficulty;
+  speed: number;
+}
+
+const DEFAULT_CPU: CpuSettings = { attacker: 'human', defender: 'human', speed: 1 };
+/** 選べる演出の速度の倍率 */
+const SPEEDS = [0.5, 1, 1.5, 2, 3] as const;
+const CPU_KEY = 'battle-editor.cpu';
+
+function loadCpu(): CpuSettings {
+  try {
+    const v = JSON.parse(localStorage.getItem(CPU_KEY) ?? '{}') as Partial<CpuSettings>;
+    const who = (x: unknown): CpuSettings['attacker'] => (DIFFICULTIES.includes(x as Difficulty) ? (x as Difficulty) : 'human');
+    return { attacker: who(v.attacker), defender: who(v.defender), speed: typeof v.speed === 'number' && v.speed > 0 ? v.speed : 1 };
+  } catch {
+    return DEFAULT_CPU;
+  }
+}
 
 /** 陣営ごとの拠点の施設を覚えておく localStorage のキー */
 const FACILITIES_KEY = 'battle-editor.facilities';
@@ -170,6 +203,26 @@ export default function EditorApp() {
   const troops = useMemo(() => rosterTroops(rosters), [rosters]);
   const statuses = useMemo(() => rosterStatuses(rosters), [rosters]);
   const factions = useMemo(() => rosterFactions(rosters), [rosters]);
+  /** 陣営ごとの操作する人・CPU と演出の速度（すぐ反映する。ブラウザに覚えておく） */
+  const [cpu, setCpu] = useState<CpuSettings>(loadCpu);
+  const changeCpu = (next: CpuSettings) => {
+    setCpu(next);
+    try {
+      localStorage.setItem(CPU_KEY, JSON.stringify(next));
+    } catch {
+      // 覚えられなくても、この画面の間は使える
+    }
+  };
+  const cpuPlayers = useMemo(() => {
+    const out: Partial<Record<TeamId, Player>> = {};
+    for (const side of SIDES) {
+      const who = cpu[side];
+      if (who !== 'human') out[SIDE_TEAM[side]] = cpuPlayer({ difficulty: who });
+    }
+    return out;
+  }, [cpu.attacker, cpu.defender]);
+  // 人が操作する陣営をプレイヤーとして決着のカットインを出す（両方とも人・両方とも CPU なら攻撃側）
+  const playerSide: DeploySide = cpu.attacker === 'human' || cpu.defender !== 'human' ? 'attacker' : 'defender';
   /** 陣営ごとの拠点の施設（すぐ反映する） */
   const [facilities, setFacilities] = useState<SideFacilities>(loadFacilities);
   const changeFacilities = (next: SideFacilities) => {
@@ -289,8 +342,9 @@ export default function EditorApp() {
       facilities={facilities}
       onEnd={() => setRestart((n) => n + 1)}
       endLabel="最初から"
-      // 両軍を操作するが、決着のカットイン（勝利・敗北）は攻撃側をプレイヤーとして出す
-      playerSide="attacker"
+      cpu={cpuPlayers}
+      speed={cpu.speed}
+      playerSide={playerSide}
       onApp={setApp}
       className="editor-screen"
     >
@@ -313,6 +367,7 @@ export default function EditorApp() {
             />
           ),
           troops: <TroopsTool draft={draft} onDraft={setDraft} dirty={draft !== rosters} onApply={applyRosters} placed={map?.units ?? []} />,
+          cpu: <CpuTool settings={cpu} factions={factions} onChange={changeCpu} />,
           damage: <DamageTool />,
           facility: <FacilityTool facilities={facilities} factions={factions} onChange={changeFacilities} />,
           perf: app && <PerfTool app={app} />,
@@ -886,6 +941,9 @@ function TroopsTool({
         <button className={dirty ? 'active' : ''} onClick={onApply}>
           この編成で最初から
         </button>
+        <button onClick={() => downloadRosters(draft)} title="対戦シミュレータ（npm run sim -- --rosters ファイル）に渡す">
+          編成を書き出す
+        </button>
       </div>
       <p className="hint">
         配備できるのは 1 陣営 {MAX_DEPLOY} 部隊まで（残りは配備のときに入れ替えられる）。直した編成は「この編成で最初から」で反映する
@@ -1001,6 +1059,52 @@ function FacilityTool({ facilities, factions, onChange }: { facilities: SideFaci
         要塞砲は番の終わりに拠点から {FORTRESS_CANNON_RANGE} HEX 以内の敵（城の HEX を除く）を、ガンシップは全域の敵を、ランダムに 1 つ撃つ（拠点のあるマップの防衛側に持たせる）
       </p>
       <p className="hint">バリスタは城の HEX にいる弓兵の射程 +1、魔導台は城の HEX にいる魔術師の射程 +1 と、番の初めにクールタイムがさらに 1 減る。変更はすぐ反映する</p>
+    </>
+  );
+}
+
+/** 編成を JSON に書き出す（対戦シミュレータに渡す。読むときは gameKnights.ts の parseRosters） */
+function downloadRosters(rosters: Rosters): void {
+  const blob = new Blob([JSON.stringify(rosters, null, 2) + '\n'], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'rosters.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/** 陣営ごとに人が操作するか CPU に任せるか（難易度）と、演出の速度 */
+function CpuTool({ settings, factions, onChange }: { settings: CpuSettings; factions: BattleFactions; onChange: (s: CpuSettings) => void }) {
+  return (
+    <>
+      {SIDES.map((side) => (
+        <label key={side} className="row">
+          <span>
+            {SIDE_NAMES[side]}（{teamName(factions, SIDE_TEAM[side])}）
+          </span>
+          <select value={settings[side]} onChange={(e) => onChange({ ...settings, [side]: e.target.value as CpuSettings['attacker'] })}>
+            <option value="human">人が操作する</option>
+            {DIFFICULTIES.map((d) => (
+              <option key={d} value={d}>
+                CPU（{DIFFICULTY_NAMES[d]}）
+              </option>
+            ))}
+          </select>
+        </label>
+      ))}
+      <p className="hint">戦闘の途中でも切り替えられる。両方を CPU にすると最後まで勝手に戦う。CPU の番はターン表示の「早送り」「スキップ」で速められる</p>
+      <p className="hint">難易度はまだ手に効かない（M008 の段階 3 で入れる）</p>
+      <label className="row">
+        <span>演出の速度</span>
+        <select value={settings.speed} onChange={(e) => onChange({ ...settings, speed: Number(e.target.value) })}>
+          {SPEEDS.map((v) => (
+            <option key={v} value={v}>
+              ×{v}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="hint">歩く・攻撃・カメラ・セリフ・施設の射撃の演出に掛かる（人の行動にも効く。演出の途中で変えても途切れない）</p>
     </>
   );
 }

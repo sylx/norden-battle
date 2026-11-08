@@ -7,7 +7,11 @@ export type { AttackLogEntry } from './ui/BattleLogWindow';
 export { BattleApp, TURN_ORDER } from './app';
 // 戦闘のルールで状態を書き換える処理（engine）のうち、BattleApp に渡すもの。engine の全体は '@norden/battle-runtime/engine'（three.js を読み込まない）
 export { mathRng, seededRng } from './engine';
-export type { BattleState, Rng } from './engine';
+export type { BattleState, Decision, Player, Rng } from './engine';
+// CPU の思考（軍ごとに BattleScreen の cpu・BattleApp の setCpu で渡す。CPU の番の早送りの倍率は CPU_FAST_FORWARD）
+export { CPU_FAST_FORWARD } from './app';
+export { cpuPlayer, DIFFICULTIES, DIFFICULTY_NAMES } from './cpu';
+export type { CpuOptions, Difficulty } from './cpu';
 export type { AttackPreview, BattleEvents, BattlePhase, ExecuteReport, FacilityReport, InterceptReport, Plan, PlannedAttack, SplashHit, StatusFactory } from './app';
 export type { ActionMenuModel, MenuFrame, MenuState, RetreatMenu } from './menuModel';
 

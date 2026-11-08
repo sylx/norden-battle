@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import type { SceneContext } from '@norden/map-runtime/render/scene';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
+import { fxClock } from './fxClock';
 
 /** 寄ったとき、ユニットの絵の範囲が画面の幅・高さに占める割合（play で変えなければ） */
 export const FOCUS_FILL = 0.6;
@@ -82,7 +83,7 @@ export class CameraFocus {
     this.focus.position.copy(target).addScaledVector(back, dist);
     this.home = home;
     this.timing = timing;
-    this.start = performance.now();
+    this.start = fxClock.now();
     this.pan = null;
     controls.enabled = false;
   }
@@ -92,13 +93,13 @@ export class CameraFocus {
     if (this.home) return;
     const { camera, controls } = this.ctx;
     const delta = point.clone().sub(controls.target).setY(0);
-    this.pan = { from: { target: controls.target.clone(), position: camera.position.clone() }, delta, start: performance.now() };
+    this.pan = { from: { target: controls.target.clone(), position: camera.position.clone() }, delta, start: fxClock.now() };
     controls.enabled = false;
   }
 
   /** カメラを揺らす（amount はワールド単位の揺れ幅） */
   shake(amount: number): void {
-    this.shakeStart = performance.now();
+    this.shakeStart = fxClock.now();
     this.shakeAmount = amount;
   }
 

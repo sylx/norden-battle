@@ -48,6 +48,10 @@ import { BattleScreen } from '@norden/battle-runtime';
   ゲームは勝った陣営と退却の結果を戦後処理に渡して結果の画面へ進む。
 - `playerSide`: プレイヤーの陣営（`'attacker'`・`'defender'`）。決着のカットインを、勝てば `CUTIN_TEMPLATES['battle-win']`（勝利）、
   負ければ `battle-lose`（敗北）にする（文字はテンプレートのまま）。プレイヤーが戦闘にいないなら省略し、そのときは `battle-win`（battle-editor は攻撃側をプレイヤーとして渡す）。
+- `cpu`: 軍ごとの CPU の打ち手（`{ red: cpuPlayer({ difficulty: 'normal' }) }` など。無い軍は人が操作する）。戦闘の途中でも変えられる。
+  CPU の軍の配備（自動配置）・番・強制退却は CPU が進め、その間は人の操作を受け付けない。CPU の番のターン表示には「早送り」（演出をさらに
+  `CPU_FAST_FORWARD` 倍に）と「スキップ」（番の残りを演出なしで進める。セリフ・頭上の数字は出さず、戦闘記録には載せる）を出す。
+- `speed`: 演出の速度の倍率（既定 1。歩く・攻撃・カメラ・セリフ・頭上の数字・施設の射撃に掛かる。プレイヤーの行動にも効き、戦闘の途中でも変えられる）。
 - `notice`: ステータス行に出す知らせ（マップを読めないときなど）。
 
 ## 戦闘の流れ
@@ -72,7 +76,7 @@ import { BattleScreen } from '@norden/battle-runtime';
    頭上の数字・戦闘記録に「捕縛」と出す。
    画面の上の中央の戦況のパネルに、軍ごとの兵数の合計の比を帯で出す。
    「ターン終了」で次の軍の番になり、その軍の行動力が戻る。両軍が 1 回ずつ行動したらターンの数が進む。
-   いまはどちらの軍も人が操作する（CPU の操作はまだ無い）。
+   軍ごとに CPU に任せられる（`cpu`。下の「CPU」）。
 3. 決着（`victory.ts`）: 行動を実行し終えるたびと、軍の番を終えるときに調べる。
    - 攻撃側: すべての部隊が殲滅または退却した（捕虜になったものも含む）ら負け
    - 防衛側: すべての部隊が殲滅または退却したら負け。防衛拠点（マップの `stronghold`。地面を金色に塗り、地形のウィンドウに「防衛拠点」の札）に
@@ -101,6 +105,30 @@ import { BattleScreen } from '@norden/battle-runtime';
 
 `BattleApp` は React なしでも使える（`new BattleApp(container)` → `loadMap(data)`、画面を離れるときは `dispose()`）。
 
+## CPU
+
+CPU の思考は `src/cpu/`（three.js を読み込まない。`@norden/battle-runtime/cpu`）。`cpuPlayer({ difficulty })` が engine の打ち手（`Player`）を作り、
+`BattleApp`（`setCpu`・BattleScreen の `cpu`）と描画なしの対戦シミュレータの両方で同じものを使う。
+
+- 1 手読み（`decide.ts`）: 部隊ごとに、行動の候補（移動先 × 攻撃 × 目標、移動だけ、その場で待機）を並べて点数を付け、一番いいものを選ぶ。
+  攻撃の点数は予測（`attackForecast` の期待値）から、与えるダメージ − 受ける反撃、殲滅・壊滅の見込み、士気の差、巻き添え（兵数は兵種の力で重みを付け、
+  軍団長の部隊は重く見る）。位置の点数は敵への近さ（射程のある兵種は射程の端）、攻撃側は防衛拠点への近さ・防衛側は拠点の周り、
+  次の敵の番に攻撃されそうな度合い（`threat.ts`）、地形の守り。重みは `weights.ts`
+- 兵力の比: 受けるダメージ・脅威の重みに「敵の兵力 ÷ 味方の兵力」を掛け、敵に近づく重みにはその逆数を掛ける（数で勝る側が押し込む）
+- 膠着: 戦況が動かない番が続いたら慎重さを下げて前に出る。往復しない: 攻撃せずに前の番の初めにいた HEX へ戻る手は減点する
+- 動かす順（`player.ts`）: 前に出る兵種 → 射程のある兵種 → 軍団長の部隊。同じ組では敵に近い部隊から
+- M008 の段階 1 では、敵ユニットを狙う攻撃と移動・待機だけを考える（範囲攻撃・地点を狙う魔法・迎撃の構え・鼓舞・退却・軍の作戦・配備は段階 2、
+  性格と難易度は段階 3）
+
+`BattleApp` の CPU の番: 番の初めのカットインが終わったら（`holdCpu`）、部隊を 1 つ選んで行動を決め、予約（移動の矢印・攻撃の矢印）を少し見せてから
+プレイヤーと同じ演出で実行する。行動できる部隊がいなくなったら番を終える。`skipCpuTurn()` で番の残りを演出なしで進め、終わったら絵を作り直す。
+
+## 演出の速度
+
+演出の時刻はすべて `fxClock.ts` の時計で測る（歩く・攻撃・迎撃・退却のアニメーション、カメラ、攻撃の演出、頭上の数字、セリフの吹き出し、施設の射撃）。
+`BattleApp` が毎フレーム、`speed`（設定。`new BattleApp(container, { speed })` か BattleScreen の `speed`）と CPU の番の早送り（`fastForward`）を掛けて進める。
+途中で速度を変えても、残りの時間の進み方が変わるだけで演出は途切れない。足元の輪・状態の印のような繰り返すだけの演出は実時間のまま。
+
 ## engine（描画なしの戦闘のルール）
 
 戦闘のルールで状態を書き換える処理（行動の実行・番の始まりと終わり・施設・決着）は `src/engine/` にあり、three.js・React・DOM を読み込まない。
@@ -114,8 +142,10 @@ engine の関数を呼び、返った結果で頭上の数字・セリフ・イ�
   攻撃が当たったら `resolveStrike`（演出の後に `afterStrike`）、迎撃が当たったら `resolveIntercept`（演出の後に `afterIntercept`）。描画なしでは `runAction` で順に呼ぶ。
 - 番と決着（`turn.ts`）: `startBattle`・`startTeamTurn`・`confusedPlan`・`endTeamTurn`・`firingFacilities`・`facilityTarget`・`fireFacility`・`passTurn`・`judge`・`nextRoutUnit`・`endBattle`。
 - 予約（`plan.ts`）: `Plan` を作る・読む関数（`newPlan`・`addLeg`・`setAttack`・`planPos`・`menuContext`・`isDone` など）。
-- 描画なしで回す（`sim.ts`）: `runBattle(state, { players, rng, playerRng })` が、軍ごとの打ち手（`Player`: 部隊の次の行動を返す関数）で
-  決着かターンの上限まで回す。`randomPlayer` はランダムに行動する仮の打ち手。強制退却の退却先は打ち手が選ぶ（既定は最初の拠点）。
+- 描画なしで回す（`sim.ts`）: `runBattle(state, { players, rng, playerRng })` が、軍ごとの打ち手（`Player`: 部隊の次の行動を返す `decide`、
+  番の初めの `beginTurn`、動かす順の `order`、強制退却の退却先の `routTo`）で決着かターンの上限まで回す。`randomPlayer` はランダムに行動する仮の打ち手。
+  `onAction`・`onFacility` で行動・施設の射撃を受け取れる（シミュレータの集計）。
+- three.js を読み込まないルールの口（部隊の状態・配備・攻撃の定義・勢力）は `@norden/battle-runtime/rules`。
 
 ```ts
 import { createBattleState, randomPlayer, runBattle, seededRng } from '@norden/battle-runtime/engine';
@@ -140,6 +170,15 @@ src/
     turn.ts        番の始まりと終わり（クールタイム・状態・入城の決まりの印・混乱の移動・施設の射撃・次の軍）と決着・強制退却
     sim.ts         描画なしで戦闘を回す（runBattle・打ち手 Player・ランダムな打ち手）
     index.ts       engine の公開するもの（'@norden/battle-runtime/engine'）
+  cpu/
+    decide.ts      1 手読み（候補の列挙と点数・兵力の比・膠着・往復しない）
+    threat.ts      次の敵の番に攻撃されそうな HEX
+    player.ts      CPU の打ち手（cpuPlayer。動かす順・番の初めの様子）
+    weights.ts     点数の重み
+    types.ts       難易度・CPU の設定
+    index.ts       CPU の公開するもの（'@norden/battle-runtime/cpu'）
+  rules.ts         three.js を読み込まないルールの口（'@norden/battle-runtime/rules'。部隊の状態・配備・攻撃の定義・勢力）
+  fxClock.ts       演出の時計（速度の倍率を掛けて進める。演出の時刻はすべてこれで測る）
   deployment.ts    配備フェーズ（配備する部隊・配置地点への置き方・陣営の順）
   menuModel.ts     行動メニューの状態（中身・2 階層目・毎フレームの位置の基準）
   actions.ts       行動の定義と行動メニューの項目の組み立て（攻撃の項目は兵種の攻撃の一覧から）
@@ -177,6 +216,8 @@ src/
     battle.css           戦闘画面のスタイル（すべて .battle-screen の中）
   test/fixtures.ts       ルールの単体テストの道具（three.js を使わない平地のマップ・ユニット・状態）
   test/engine.ts         engine のテストの道具（決まった値を順に返す乱数・戦闘の状態・予約の作り方）
+  test/scenario.ts       描画なしの戦闘のテストの場面（兵種を混ぜた両軍・拠点・城・要塞砲・退却先）
   *.test.ts              ルールの単体テスト（vitest。combat.test.ts のダメージの表はスナップショットで、ルールを作り替えても値が変わらないことを確かめる。
-                         engine/engine.test.ts は行動・番・決着の決まりを決まった乱数で、engine/sim.test.ts は描画なしの 1 戦の結果をシードごとのスナップショットで固定する）
+                         engine/engine.test.ts は行動・番・決着の決まりを決まった乱数で、engine/sim.test.ts は描画なしの 1 戦の結果をシードごとのスナップショットで固定する。
+                         cpu/cpu.test.ts は CPU がランダムな打ち手に勝ち越すこと・CPU どうしで最後まで戦えること）
 ```

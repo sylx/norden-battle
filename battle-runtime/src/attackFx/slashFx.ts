@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import type { Facing } from '@norden/map-runtime/core/units';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { createFlashMaterial, createFxMaterial, createSparks, createSparkTexture, FX_RENDER_ORDER, moveSparks } from './fxShared';
+import { fxClock } from '../fxClock';
 
 /** 刃が弧を振り抜く時間（秒）。半分の時点で相手の中心を通る */
 const SWEEP_SEC = 0.32;
@@ -114,13 +115,13 @@ export class SlashEffects {
       group.add(o);
     }
     this.group.add(group);
-    this.items.push({ group, arcs, flash, sparks, velocities, foot: target.foot.clone(), height: target.height, start: performance.now() });
+    this.items.push({ group, arcs, flash, sparks, velocities, foot: target.foot.clone(), height: target.height, start: fxClock.now() });
   }
 
   /** 毎フレーム、描画の前に呼ぶ */
   update(camera: THREE.Camera): void {
     if (this.items.length === 0) return;
-    const now = performance.now();
+    const now = fxClock.now();
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
     this.items = this.items.filter((s) => {
       const t = (now - s.start) / 1000;

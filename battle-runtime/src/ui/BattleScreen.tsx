@@ -27,6 +27,10 @@
  * - 軍は色（赤・青）ではなく勢力の名前で呼ぶ。陣営ごとの勢力は factions で渡す（factions.ts。中の UI には FactionsContext で配る）。
  *   部隊は率いる騎士の名前（UnitStatus.name）で「{騎士の名前}隊」と呼ぶ。騎士のいない部隊は「{勢力の名前} {兵種}」。
  * - 画面の下に操作の案内・予約の中身・実行した結果のステータス行を出す（notice を渡すとそちらを出す）。
+ * - 軍ごとに CPU に任せられる（cpu。cpu/ の cpuPlayer で作った打ち手を渡す）。CPU の軍の配備・番・強制退却は CPU が進め、
+ *   その間は人の操作を受け付けない。カットインを出している間は CPU を待たせる（BattleApp の holdCpu）。CPU の番のターン表示には、
+ *   ターン終了の代わりに早送り（演出をさらに CPU_FAST_FORWARD 倍に）とスキップ（番の残りを演出なしで進める）のボタンを出す。
+ * - 演出の速度の倍率は speed で渡す（プレイヤーの行動にも効く。戦闘の途中でも変えられる）。
  * - 親の要素いっぱいに広がる。children はその上に重ねる（エディタの道具・ゲームの見出しなど）。
  */
 import type { SideFacilities } from '../facilities';
@@ -34,7 +38,8 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { AlertDialog, Button, CUTIN_TEMPLATES, CutInLayer, ThinFrame, useCutIn, type CutInPlayOptions, type CutInQueue } from 'norden-ui';
 import type { MapData } from '@norden/map-runtime/core/mapData';
 import { TEAM_DEFS, type TeamId, type UnitData } from '@norden/map-runtime/core/units';
-import { BattleApp, type BattlePhase, type StatusFactory } from '../app';
+import { BattleApp, CPU_FAST_FORWARD, type BattlePhase, type StatusFactory } from '../app';
+import type { Player } from '../engine';
 import { demoBarks, type BarkSource } from '../barks';
 import type { DeploySide } from '@norden/map-runtime/core/mapData';
 import { SIDE_TEAM, type TroopFactory } from '../deployment';
@@ -126,6 +131,10 @@ export interface BattleScreenProps {
   playerSide?: DeploySide | null;
   /** ステータス行に出す知らせ（マップを読めないときなど）。あれば戦闘の案内の代わりに出す */
   notice?: ReactNode;
+  /** 軍ごとの CPU の打ち手（cpu/ の cpuPlayer。無い軍は人が操作する）。戦闘の途中でも変えられる */
+  cpu?: Partial<Record<TeamId, Player | null>>;
+  /** 演出の速度の倍率（既定は 1。プレイヤーの行動にも効く。戦闘の途中でも変えられる） */
+  speed?: number;
   /** BattleApp を作った・破棄した（null）とき。描画の設定を変えるときなどに使う */
   onApp?: (app: BattleApp | null) => void;
   className?: string;
@@ -147,6 +156,8 @@ export default function BattleScreen({
   endLabel = '戦闘を終える',
   playerSide = null,
   notice,
+  cpu,
+  speed = 1,
   onApp,
   className = '',
   children,
@@ -170,6 +181,9 @@ export default function BattleScreen({
   const [routNotice, setRoutNotice] = useState<{ title: string; message: string } | null>(null);
   /** いまの番の軍のユニットがすべて行動済み（ターン終了を目立たせる） */
   const [allDone, setAllDone] = useState(false);
+  /** CPU が操作している（ターン終了の代わりに早送り・スキップを出す）と、CPU の番の早送り */
+  const [cpuActive, setCpuActive] = useState(false);
+  const [fastForward, setFastForward] = useState(false);
   const latest = useRef({ statuses, troops, factions, cutInTexts, onRetreat, onWipeout, onApp, playerSide });
   latest.current = { statuses, troops, factions, cutInTexts, onRetreat, onWipeout, onApp, playerSide };
 
@@ -193,10 +207,12 @@ export default function BattleScreen({
       }),
       app.on('deploy', (state) => setStatus(deployStatus(latest.current.factions, state))),
       app.on('allDone', setAllDone),
+      app.on('cpu', setCpuActive),
       app.on('turn', (turn, team) => {
         setTurn({ turn, team });
         const { cutInTexts, factions } = latest.current;
-        void playCutIn(queue, 'turn', cutInTexts?.turn ? cutInTexts.turn(turn, team) : defaultTurnText(factions, turn, team));
+        // カットインの間は CPU を待たせる
+        app.holdCpu(playCutIn(queue, 'turn', cutInTexts?.turn ? cutInTexts.turn(turn, team) : defaultTurnText(factions, turn, team)));
       }),
       app.on('select', (unit) => {
         if (unit && unit === app.inspected) setStatus(inspectStatus(name, unit));
@@ -213,7 +229,9 @@ export default function BattleScreen({
         const loser = teamName(factions, SIDE_TEAM[loserOf(o)]);
         setRouting(true);
         setStatus(routStatus(factions, o, units.length));
-        void playCutIn(queue, 'turn', { text: BATTLE_END_REASON_NAMES[o.reason], subText: `${loser} 退却` }).then(() => {
+        const played = playCutIn(queue, 'turn', { text: BATTLE_END_REASON_NAMES[o.reason], subText: `${loser} 退却` });
+        app.holdCpu(played);
+        void played.then(() => {
           // 知らせる前に強制退却が終わっていたら（読み込み直したときも）出さない
           if (app.routing) setRoutNotice({ title: `${loser} 強制退却`, message: ROUT_MESSAGES[o.reason] ?? '全部隊は強制退却になります' });
         });
@@ -243,7 +261,9 @@ export default function BattleScreen({
     queue.clear();
     const id = ++introId.current;
     setIntro(true);
-    void playCutIn(queue, 'battle-start', (latest.current.cutInTexts?.start ?? defaultStartText)(map)).then(() => {
+    const played = playCutIn(queue, 'battle-start', (latest.current.cutInTexts?.start ?? defaultStartText)(map));
+    app.holdCpu(played);
+    void played.then(() => {
       if (introId.current === id) setIntro(false);
     });
     app.loadMap(map, latest.current.statuses, latest.current.troops);
@@ -261,6 +281,24 @@ export default function BattleScreen({
     if (app) app.facilities = facilities ?? {};
   }, [app, facilities]);
 
+  useEffect(() => {
+    if (!app) return;
+    for (const team of Object.keys(TEAM_DEFS) as TeamId[]) {
+      const player = cpu?.[team] ?? null;
+      if (app.cpuOf(team) !== player) app.setCpu(team, player);
+    }
+  }, [app, cpu]);
+
+  useEffect(() => {
+    if (app) app.speed = speed;
+  }, [app, speed]);
+
+  const toggleFastForward = () => {
+    if (!app) return;
+    app.fastForward = !fastForward;
+    setFastForward(!fastForward);
+  };
+
   const endTurn = () => {
     if (app?.endTurn()) setStatus(turnStatus(factions, app.turn, app.activeTeam));
   };
@@ -274,10 +312,10 @@ export default function BattleScreen({
             {map && <SituationPanel app={app} />}
             <TerrainWindow app={app} />
             <div className="battle-unit-column">
-              {phase === 'battle' && !intro && <UnitNavigator app={app} />}
+              {phase === 'battle' && !intro && !cpuActive && <UnitNavigator app={app} />}
               <UnitInfoWindow app={app} />
             </div>
-            {phase === 'deploy' && !intro && <DeployWindow app={app} />}
+            {phase === 'deploy' && !intro && !cpuActive && <DeployWindow app={app} />}
             {phase === 'battle' && <BattleLogWindow app={app} />}
             <ActionMenu model={app.menu} />
             {map && phase === 'battle' && !intro && !outcome && !routing && (
@@ -287,10 +325,24 @@ export default function BattleScreen({
                   ターン <output>{turn.turn}</output>
                 </span>
                 <span className="turn-team">{teamName(factions, turn.team)}のターン</span>
-                {allDone && <span className="turn-hint">全部隊 行動終了</span>}
-                <Button variant="primary" size="small" className="end-turn" onClick={endTurn}>
-                  ターン終了
-                </Button>
+                {cpuActive ? (
+                  <>
+                    <span className="turn-hint">CPU 行動中</span>
+                    <Button size="small" metal={fastForward ? 'gold' : 'silver'} className="cpu-fast" onClick={toggleFastForward} aria-pressed={fastForward}>
+                      {fastForward ? `早送り ×${CPU_FAST_FORWARD}` : '早送り'}
+                    </Button>
+                    <Button variant="primary" size="small" className="cpu-skip" onClick={() => app.skipCpuTurn()}>
+                      スキップ
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    {allDone && <span className="turn-hint">全部隊 行動終了</span>}
+                    <Button variant="primary" size="small" className="end-turn" onClick={endTurn}>
+                      ターン終了
+                    </Button>
+                  </>
+                )}
               </div>
             )}
           </>

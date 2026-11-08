@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { FX_RENDER_ORDER } from './fxShared';
 import { createSpriteSheetMaterial } from './spriteSheetFx';
+import { fxClock } from '../fxClock';
 
 export const EARTH_SPIKE_SEC = 1.8;
 /** 11 コマ目で岩が着地する。ダメージ・地形破壊・カメラの揺れをここに合わせる。 */
@@ -48,12 +49,12 @@ export class EarthSpikeEffects {
     mesh.frustumCulled = false;
     mesh.visible = false;
     this.group.add(mesh);
-    this.items.push({ mesh, start: performance.now() });
+    this.items.push({ mesh, start: fxClock.now() });
   }
 
   update(camera: THREE.Camera): void {
     if (this.items.length === 0) return;
-    const now = performance.now();
+    const now = fxClock.now();
     this.items = this.items.filter((item) => {
       const progress = (now - item.start) / (EARTH_SPIKE_SEC * 1000);
       if (progress >= 1) {

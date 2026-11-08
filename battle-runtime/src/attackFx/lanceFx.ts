@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { createFlashMaterial, createFxMaterial, createSparks, createSparkTexture, FX_RENDER_ORDER, moveSparks } from './fxShared';
+import { fxClock } from '../fxClock';
 
 /** 槍が現れる時間と、伸びる前に光を溜める時間、一気に伸びる時間（秒） */
 const APPEAR_SEC = 0.12;
@@ -138,14 +139,14 @@ export class LanceEffects {
       attackerFoot: attacker.foot,
       targetFoot: target.foot.clone(),
       height: h,
-      start: performance.now(),
+      start: fxClock.now(),
     });
   }
 
   /** 毎フレーム、描画の前に呼ぶ */
   update(camera: THREE.Camera): void {
     if (this.items.length === 0) return;
-    const now = performance.now();
+    const now = fxClock.now();
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
     this.items = this.items.filter((l) => {
       const t = (now - l.start) / 1000;

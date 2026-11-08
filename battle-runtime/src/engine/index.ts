@@ -59,5 +59,5 @@ export {
   startTeamTurn,
 } from './turn';
 export type { FacilityReport, JudgeResult } from './turn';
-export { randomPlayer, runBattle, runTeamTurn, runTurnEnd, settle } from './sim';
+export { MAX_ACTIONS_PER_UNIT, pendingUnits, randomPlayer, runBattle, runTeamTurn, runTurnEnd, settle } from './sim';
 export type { Decision, Player, RoutChooser, SimOptions, SimResult } from './sim';

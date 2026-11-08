@@ -14,6 +14,7 @@ import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import type { BarkTone } from './barks';
 import { setFace } from './unitTags';
 import type { UnitStatus } from './unitStatus';
+import { fxClock } from './fxClock';
 
 /** 1 秒に出す字数 */
 const TYPE_CPS: Record<BarkTone, number> = { shout: 30, calm: 24, weak: 12 };
@@ -107,7 +108,7 @@ export class SpeechBubbles {
       chars,
       tone,
       away,
-      start: performance.now() + delay * 1000,
+      start: fxClock.now() + delay * 1000,
       total: typeSec + HOLD_SEC + HOLD_PER_CHAR_SEC * chars.length + FADE_SEC,
       foot: null,
       height: 0,
@@ -123,7 +124,7 @@ export class SpeechBubbles {
   update(placements: readonly UnitPlacement[], camera: THREE.PerspectiveCamera, visible: boolean): void {
     this.root.hidden = !visible;
     if (this.items.length === 0 || !visible) return;
-    const now = performance.now();
+    const now = fxClock.now();
     const W = this.root.clientWidth;
     const H = this.root.clientHeight;
     const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);

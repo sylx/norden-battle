@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { FX_RENDER_ORDER } from './fxShared';
 import { createSpriteSheetMaterial } from './spriteSheetFx';
+import { fxClock } from '../fxClock';
 
 const EXPLOSION_SEC = 1.3;
 const FRAME_COUNT = 16;
@@ -43,9 +44,9 @@ export class ExplosionEffects {
 
   /**
    * at（地面の点）に爆発を出す。size は大きさの基準（ワールド。画像の幅はその 2.3 倍、高さは 3.1 倍）。
-   * start は爆発が始まる時刻（performance.now()）。先の時刻なら、その時まで隠しておく（低 FPS でも時間差を保つ）
+   * start は爆発が始まる時刻（fxClock.now()）。先の時刻なら、その時まで隠しておく（低 FPS でも時間差を保つ）
    */
-  spawn(at: THREE.Vector3, size: number, start = performance.now()): void {
+  spawn(at: THREE.Vector3, size: number, start = fxClock.now()): void {
     const material = createSpriteSheetMaterial(this.texture);
     material.uniforms.uFlip.value = Math.random() < 0.5 ? 0 : 1;
     const mesh = new THREE.Mesh(this.plane, material);
@@ -60,7 +61,7 @@ export class ExplosionEffects {
   }
 
   update(camera: THREE.Camera): void {
-    const now = performance.now();
+    const now = fxClock.now();
     this.items = this.items.filter((item) => {
       const age = (now - item.start) / 1000;
       if (age >= EXPLOSION_SEC) {

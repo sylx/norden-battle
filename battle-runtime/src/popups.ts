@@ -3,6 +3,7 @@
  */
 import * as THREE from 'three';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
+import { fxClock } from './fxClock';
 
 /** 表示している時間（秒）と、その間に浮かぶ高さ（CSS ピクセル）。show の timing で変えられる */
 const DURATION = 3;
@@ -58,7 +59,7 @@ export class Popups {
     el.className = `popup ${className}`;
     el.textContent = text;
     this.root.appendChild(el);
-    const now = performance.now();
+    const now = fxClock.now();
     const near = Math.max(p.height, 1e-6) * STACK_NEAR;
     // 同じところに出したばかりの数字があれば、その上に積む
     const lift = this.items
@@ -83,7 +84,7 @@ export class Popups {
   /** 毎フレーム、描画の後に呼ぶ */
   update(camera: THREE.PerspectiveCamera): void {
     if (this.items.length === 0) return;
-    const now = performance.now();
+    const now = fxClock.now();
     const w = this.root.clientWidth;
     const h = this.root.clientHeight;
     const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);

@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { ExplosionEffects } from './explosionFx';
 import { createFlashMaterial, createFxMaterial, createSparks, createSparkTexture, FX_RENDER_ORDER, moveSparks } from './fxShared';
+import { fxClock } from '../fxClock';
 
 /** 弾の飛ばし方と見た目（大きさは絵の高さ比、時間は秒） */
 export interface ProjectileStyle {
@@ -223,7 +224,7 @@ export class ProjectileEffects {
       shots.push({ from, to, apex, launch, trail, head, muzzle: muzzleFlash, impact, sparkGroup, sparks, velocities });
       end = Math.max(end, launch + st.flight * (1 + st.trail), launch + st.flight + Math.max(st.impactSec, st.sparks?.sec ?? 0));
     }
-    const start = performance.now();
+    const start = fxClock.now();
     // 火球と煙は、弾が届いた時点から相手の足元に立ち上がる（ばらつく弾でも足元は 1 か所）
     if (st.explosion) {
       for (const shot of shots) this.explosions.spawn(target.foot, st.explosion * h, start + (shot.launch + st.flight) * 1000);
@@ -236,7 +237,7 @@ export class ProjectileEffects {
     this.explosions.update(camera);
     if (this.items.length === 0) return;
     const st = this.style;
-    const now = performance.now();
+    const now = fxClock.now();
     const view = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     this.items = this.items.filter((s) => {
       const t = (now - s.start) / 1000;

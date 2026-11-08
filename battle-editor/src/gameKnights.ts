@@ -10,20 +10,9 @@
  *   （兵種はマップのユニットのまま）。ほかの軍は表示確認用の仮の状態。
  * - 部隊の状態から騎士を引けるようにしておく（knightOfStatus。セリフを指揮官の騎士で喋らせる）。
  */
-import {
-  demoStatuses,
-  SIDE_TEAM,
-  SPELL_IDS,
-  troopStatus,
-  type BattleFactions,
-  type Portrait,
-  type SkillId,
-  type SpellId,
-  type StatusFactory,
-  type Troop,
-  type TroopFactory,
-  type UnitStatus,
-} from '@norden/battle-runtime';
+// 値は three.js を読み込まない口から読む（対戦シミュレータが Node でこのファイルを使う）
+import { demoStatuses, SIDE_TEAM, SPELL_IDS, troopStatus } from '@norden/battle-runtime/rules';
+import type { BattleFactions, Portrait, SkillId, SpellId, StatusFactory, Troop, TroopFactory, UnitStatus } from '@norden/battle-runtime';
 import type { DeploySide } from '@norden/map-runtime/core/mapData';
 import { UNIT_TYPES, type UnitData, type UnitType } from '@norden/map-runtime/core/units';
 import characterData from '../../../src/data/characterData.json';

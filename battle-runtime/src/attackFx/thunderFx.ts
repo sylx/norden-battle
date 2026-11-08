@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { createFlashMaterial, createFxMaterial, createSparks, createSparkTexture, FX_RENDER_ORDER, moveSparks } from './fxShared';
+import { fxClock } from '../fxClock';
 
 /** 稲妻が上から下へ走る時間（秒）。出してからこの時間で相手に落ちる */
 const REVEAL_SEC = 0.06;
@@ -119,7 +120,7 @@ interface Thunder {
   velocities: Float32Array;
   foot: THREE.Vector3;
   style: BoltStyle;
-  /** 出す時刻（performance.now。先の時刻なら、それまで出さない） */
+  /** 出す時刻（fxClock.now。先の時刻なら、それまで出さない） */
   start: number;
   /** 今の形で光っている strokes の番号 */
   stroke: number;
@@ -189,13 +190,13 @@ export class ThunderEffects {
       group.add(o);
     }
     this.group.add(group);
-    this.items.push({ group, bolt, flash, sparks, velocities, foot: foot.clone(), style, start: performance.now() + delaySec * 1000, stroke: 0 });
+    this.items.push({ group, bolt, flash, sparks, velocities, foot: foot.clone(), style, start: fxClock.now() + delaySec * 1000, stroke: 0 });
   }
 
   /** 毎フレーム、描画の前に呼ぶ */
   update(camera: THREE.Camera): void {
     if (this.items.length === 0) return;
-    const now = performance.now();
+    const now = fxClock.now();
     this.items = this.items.filter((th) => {
       const t = (now - th.start) / 1000;
       const { strokes, flashSec, flashSize } = th.style;

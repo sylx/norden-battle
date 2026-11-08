@@ -118,12 +118,13 @@ import {
   COMBAT_DEFS,
 } from './combat';
 import * as engine from './engine';
-import type { ActionEnd, ActionPhase, ActionRun, AttackReport, BattleState, ExecuteReport, FacilityReport, Plan, Rng, SplashHit } from './engine';
+import type { ActionEnd, ActionPhase, ActionRun, AttackReport, BattleState, Decision, ExecuteReport, FacilityReport, FinishedAction, Plan, Player, Rng, SplashHit } from './engine';
 import { ARROW_HIT_SEC, ARROW_RELEASE_SEC, ArrowEffects } from './attackFx/arrowFx';
 import { BEAM_HIT_SEC, BeamEffects, BLAST_STYLE, FROST_STYLE, HAMMER_STYLE, IMPACT_HIT_SEC, ImpactEffects, PILLAR_HIT_SEC, PillarEffects, SMASH_STYLE, SPIKE_STYLE } from './attackFx/areaFx';
 import { EARTH_SPIKE_HIT_SEC } from './attackFx/earthSpikeFx';
 import { BREATH_STYLE, BreathEffects, breathHitSec, FLAME_LANCE_STYLE } from './attackFx/breathFx';
 import { CameraFocus, type FocusTiming } from './cameraFocus';
+import { fxClock } from './fxClock';
 import { hasCondition, setCondition, type ConditionId } from './conditions';
 import { demoTroops, Deployment, SIDE_TEAM, type DeployState, type TroopFactory } from './deployment';
 import { InterceptEffects } from './interceptFx';
@@ -209,6 +210,14 @@ const GUNSHIP_OFFSET = { x: -2.5, y: 7 };
 const LOCKED_POPUP = { duration: 0.8, rise: 10 };
 /** 耕す攻撃（アーススパイク）で地形が変わったときの頭上の文字 */
 const PLOW_POPUP = '地形破壊';
+/** CPU の番: カットインの後に動き出すまで・予約を見せてから実行するまで・次の部隊へ進むまでの間（演出の時刻でミリ秒） */
+const CPU_START_MS = 500;
+const CPU_SHOW_MS = 650;
+const CPU_GAP_MS = 250;
+/** CPU の番の早送りで、演出の速度にさらに掛ける倍率 */
+export const CPU_FAST_FORWARD = 3;
+/** CPU の番をスキップしたとき、実行中の演出を終わらせるまでの速度の倍率 */
+const SKIP_SPEED = 40;
 /** 混乱したユニットが勝手に動き出すまでの間（ミリ秒。番を終えてから・前の動きの後） */
 const AUTO_DELAY_MS = 900;
 /** 魔術師が雷を呼んで跳ねる時間（秒。雷が落ちる時点で終わる） */
@@ -300,6 +309,8 @@ export interface BattleEvents {
   facility: [report: FacilityReport];
   /** 実行のほかで、ユニットの状態（付いている状態など）を書き換えたとき（表示確認用の setCondition など） */
   statusChange: [unit: UnitData];
+  /** CPU に任せる軍・CPU が操作しているか（cpuActive）が変わったとき */
+  cpu: [active: boolean];
 }
 
 /** マップのユニットに戦闘中の状態を配る（既定は表示確認用の仮の値） */
@@ -442,15 +453,38 @@ export class BattleApp {
   readonly done = new Set<UnitData>();
   /** 配備フェーズの間の配備（戦闘が始まったら null） */
   deployment: Deployment | null = null;
+  /** 演出の速度の倍率（設定。プレイヤーの行動にも効く。戦闘の途中でも変えられ、演出の途中で変えても途切れない。fxClock.ts） */
+  speed = 1;
+  /** CPU の番を早送りする（CPU が操作している間だけ、演出の速度にさらに CPU_FAST_FORWARD を掛ける） */
+  fastForward = false;
+  /** CPU の打ち手の乱数（ルールの乱数 rng とは別） */
+  cpuRng: Rng = engine.mathRng;
   /** 戦闘の状態（engine。マップを読み込むまでは null） */
   private battle: BattleState | null = null;
+  /** 軍ごとの CPU の打ち手（いない軍は人が操作する） */
+  private cpus: Partial<Record<TeamId, Player>> = {};
+  /** CPU を待たせているもの（カットインなど）の数 */
+  private cpuHolds = 0;
+  /** CPU が次に動く時刻（演出の時刻） */
+  private cpuAt = 0;
+  /** この番に CPU が動かすのをやめた部隊と、部隊ごとの行動の回数 */
+  private cpuPassed = new Set<UnitData>();
+  private cpuCount = new Map<UnitData, number>();
+  /** CPU が予約を見せている行動（cpuAt に実行する） */
+  private cpuShow: Decision | null = null;
+  /** この番の軍の作戦を立てたか */
+  private cpuBegun = false;
+  /** CPU の番のスキップを頼まれている（実行中の演出を速く終わらせてから、残りを演出なしで進める） */
+  private cpuSkip = false;
+  /** 前のフレームの cpuActive（変わったら cpu のイベントで知らせる） */
+  private cpuWasActive = false;
   private retreatsOf: RetreatDestinations = {};
   private facilitiesOf: SideFacilities = {};
 
   private readonly listeners = new Map<keyof BattleEvents, Set<(...args: never[]) => void>>();
   private readonly container: HTMLElement;
   private readonly onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape' || this.exec || this.outcome || this.routing) return;
+    if (e.key !== 'Escape' || this.exec || this.outcome || this.routing || this.cpuActive) return;
     if (this.deployment) this.pickTroop(null);
     else if (this.targeting) this.cancelTargeting();
     else if (this.menu.closeRetreat()) this.emit('targetCancel');
@@ -460,7 +494,7 @@ export class BattleApp {
   };
   private targeting: Targeting | null = null;
   private exec: Execution | null = null;
-  /** 番の終わりに勝手に動かす混乱したユニット（順に）と、次を動かす時刻（performance.now()）。動かしている間は autoRunning */
+  /** 番の終わりに勝手に動かす混乱したユニット（順に）と、次を動かす時刻（fxClock.now()）。動かしている間は autoRunning */
   private autoQueue: UnitData[] = [];
   private autoAt = 0;
   private autoRunning = false;
@@ -479,8 +513,9 @@ export class BattleApp {
   private downPos: { x: number; y: number } | null = null;
 
   /** container にキャンバス・情報札・頭上の数字を置く（行動メニューやウィンドウは置かない。ui/BattleScreen.tsx） */
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, options: { speed?: number } = {}) {
     this.container = container;
+    this.speed = options.speed ?? 1;
     this.ctx = new SceneContext(container);
     this.view = new MapView(this.ctx);
     this.tags = new UnitTags(container);
@@ -489,8 +524,8 @@ export class BattleApp {
     this.cameraFocus = new CameraFocus(this.ctx);
     this.ctx.overlay.add(this.interceptFx.group, this.conditionFx.group, this.slashFx.group, this.lanceFx.group, this.arrowFx.group, this.thunderFx.group, this.bulletFx.group, this.shellFx.group, this.clawFx.group, this.breathFx.group, this.impactFx.group, this.beamFx.group, this.pillarFx.group, this.gunshipFx.group);
     this.menu.onAction = (unit, action) => {
-      // 混乱したユニットを勝手に動かしている間・施設が撃っている間は操作を受け付けない
-      if (this.autoMoving || this.autoEnding || this.salvo) return;
+      // 混乱したユニットを勝手に動かしている間・施設が撃っている間・CPU が操作している間は操作を受け付けない
+      if (this.autoMoving || this.autoEnding || this.salvo || this.cpuActive) return;
       // 混乱・凍結しているユニットは操作できない
       if (engine.locked(this.statuses.get(unit))) return;
       if (action.id === 'confirm') return this.execute('confirm');
@@ -503,7 +538,9 @@ export class BattleApp {
       else if (isAttack(action.id)) this.startAttack(action, action.id);
       this.emit('action', unit, action);
     };
-    this.menu.onRetreat = (_unit, to) => this.execute('retreat', to);
+    this.menu.onRetreat = (_unit, to) => {
+      if (!this.cpuActive) this.execute('retreat', to);
+    };
     const el = this.ctx.renderer.domElement;
     el.addEventListener('pointermove', (e) => this.setPointer(e));
     el.addEventListener('pointerleave', () => this.setHover(null));
@@ -627,6 +664,7 @@ export class BattleApp {
   loadMap(data: MapData, makeStatuses: StatusFactory = demoStatuses, makeTroops: TroopFactory = demoTroops): void {
     const map = new HexMap(data);
     this.exec = null;
+    fxClock.clearTimers();
     this.popups.clear();
     this.bubbles.clear();
     this.slashFx.clear();
@@ -645,6 +683,9 @@ export class BattleApp {
     this.bulletFx.clear();
     this.shellFx.clear();
     this.cameraFocus.stop();
+    this.cpuSkip = false;
+    this.cpuShow = null;
+    this.cpuTurnStart();
     this.battle = engine.createBattleState(map, makeStatuses(map.allUnits()), {
       stronghold: data.stronghold ?? null,
       retreats: this.retreatsOf,
@@ -686,7 +727,7 @@ export class BattleApp {
    * 選んだユニットへカメラを動かす。選んだら true（実行中・未行動のユニットがいなければ false）
    */
   selectPending(dir: 1 | -1): boolean {
-    if (this.exec || this.autoMoving || this.autoEnding) return false;
+    if (this.exec || this.autoMoving || this.autoEnding || this.cpuActive) return false;
     const all = this.teamUnits();
     const pending = all.filter((u) => !this.done.has(u));
     if (pending.length === 0) return false;
@@ -773,6 +814,7 @@ export class BattleApp {
     this.setSelected(null);
     engine.startBattle(state);
     this.autoDone = false;
+    this.cpuTurnStart();
     this.refreshMarks();
     this.emit('phase', 'battle');
     this.emit('turn', this.turn, this.activeTeam);
@@ -784,6 +826,11 @@ export class BattleApp {
    * 混乱したユニットがいれば、先に順に勝手に動かしてから番を終える（autoEnding）
    */
   endTurn(): boolean {
+    return !this.cpuActive && this.doEndTurn();
+  }
+
+  /** 番を終える（endTurn の中身。CPU からも呼ぶ） */
+  private doEndTurn(): boolean {
     const state = this.battle;
     if (this.exec || !state || this.deployment || this.outcome || this.routing || this.autoMoving || this.autoEnding || this.salvo) return false;
     this.setSelected(null);
@@ -793,7 +840,7 @@ export class BattleApp {
       const confused = engine.confusedUnits(state);
       if (confused.length > 0) {
         this.autoQueue = confused;
-        this.autoAt = performance.now() + AUTO_DELAY_MS;
+        this.autoAt = fxClock.now() + AUTO_DELAY_MS;
         this.autoEnding = true;
         return true;
       }
@@ -824,6 +871,7 @@ export class BattleApp {
     if (!state) return;
     engine.passTurn(state);
     this.autoDone = false;
+    this.cpuTurnStart();
     this.refreshMarks();
     this.emit('turn', this.turn, this.activeTeam);
   }
@@ -916,7 +964,7 @@ export class BattleApp {
     while (unit && !map?.allUnits().includes(unit)) unit = this.autoQueue.shift();
     const status = unit && this.statuses.get(unit);
     if (!map || !state || !unit || !status || this.outcome || this.routing) return;
-    this.autoAt = performance.now() + AUTO_DELAY_MS;
+    this.autoAt = fxClock.now() + AUTO_DELAY_MS;
     this.setSelected({ col: unit.col, row: unit.row });
     const p = this.view.units.placements().find((x) => x.unit === unit);
     if (p) this.popups.show(p, '混乱', 'retreat');
@@ -933,6 +981,251 @@ export class BattleApp {
     this.execute('wait');
   }
 
+  /**
+   * team を CPU に任せる（player は CPU の打ち手。null で人の操作に戻す）。戦闘の途中でも変えられる。
+   * CPU の打ち手は cpu/ の cpuPlayer で作る（描画なしの対戦シミュレータと同じもの）
+   */
+  setCpu(team: TeamId, player: Player | null): void {
+    if (player) this.cpus[team] = player;
+    else delete this.cpus[team];
+    this.cpuShow = null;
+    this.cpuAt = Math.max(this.cpuAt, fxClock.now() + CPU_START_MS);
+    // 操作する側が変わったら、選択と行動メニューを作り直す
+    if (!this.exec) this.setSelected(null);
+    this.refreshMarks();
+    this.cpuWasActive = this.cpuActive;
+    this.emit('cpu', this.cpuWasActive);
+  }
+
+  /** team の CPU の打ち手（人が操作する軍なら null） */
+  cpuOf(team: TeamId): Player | null {
+    return this.cpus[team] ?? null;
+  }
+
+  /** いま CPU が操作しているか（CPU の軍の配備・番・強制退却）。その間は人の操作を受け付けない */
+  get cpuActive(): boolean {
+    if (this.deployment) {
+      const team = this.deployState?.team;
+      return !!team && !!this.cpus[team];
+    }
+    const state = this.battle;
+    if (!state || state.outcome) return false;
+    return !!this.cpus[state.rout?.team ?? state.activeTeam];
+  }
+
+  /** p が終わるまで CPU を待たせる（カットインを出している間など） */
+  holdCpu(p: Promise<unknown>): void {
+    this.cpuHolds++;
+    void p.finally(() => {
+      this.cpuHolds--;
+      this.cpuAt = Math.max(this.cpuAt, fxClock.now() + CPU_START_MS);
+    });
+  }
+
+  /** CPU の番をスキップする（実行中の演出を速く終わらせてから、番の残りを演出なしで進める）。CPU の番でなければ false */
+  skipCpuTurn(): boolean {
+    if (!this.cpuActive || this.deployment || this.routing) return false;
+    this.cpuSkip = true;
+    return true;
+  }
+
+  /** CPU の番をスキップしている最中か */
+  get cpuSkipping(): boolean {
+    return this.cpuSkip;
+  }
+
+  /** この番の演出の速度（設定の速度。CPU の番の早送り・スキップでさらに速くする） */
+  private fxSpeed(): number {
+    if (this.cpuSkip) return SKIP_SPEED;
+    return this.speed * (this.fastForward && this.cpuActive ? CPU_FAST_FORWARD : 1);
+  }
+
+  /** 軍の番が始まったときに、CPU の番の様子を戻す */
+  private cpuTurnStart(): void {
+    this.cpuPassed = new Set();
+    this.cpuCount = new Map();
+    this.cpuBegun = false;
+    this.cpuShow = null;
+    this.cpuSkip = false;
+    this.cpuAt = fxClock.now() + CPU_START_MS;
+  }
+
+  /**
+   * CPU を 1 歩進める（毎フレーム）。演出・カットインの間は待つ。
+   * 配備: 自動配置して配備を終える。番: 部隊を 1 つ選んで行動を決め（打ち手の order・decide）、予約を少し見せてから実行する。
+   * 行動できる部隊がいなくなったら番を終える。強制退却: 退却先を選んで退却する
+   */
+  private stepCpu(): void {
+    const active = this.cpuActive;
+    if (active !== this.cpuWasActive) {
+      this.cpuWasActive = active;
+      this.emit('cpu', active);
+    }
+    const state = this.battle;
+    if (!state || !active || this.exec || this.salvo || this.autoMoving || this.autoEnding || this.cpuHolds > 0) return;
+    if (this.deployment) {
+      this.deployment.auto();
+      this.deployChanged();
+      if (!this.finishDeploy()) this.setCpu(this.deployState!.team, null);
+      return;
+    }
+    if (state.outcome || fxClock.now() < this.cpuAt) return;
+    if (state.rout) {
+      const cpu = this.cpus[state.rout.team];
+      const unit = this.plan?.unit;
+      const to = cpu && unit && (cpu.routTo?.(state, unit) ?? engine.retreatDestinations(state, unit)[0]);
+      if (to) this.execute('retreat', to);
+      this.cpuAt = fxClock.now() + CPU_GAP_MS;
+      return;
+    }
+    const cpu = this.cpus[state.activeTeam]!;
+    if (this.cpuSkip) return this.skipRest(cpu);
+    // 予約を見せていた行動を実行する
+    const shown = this.cpuShow;
+    if (shown) {
+      this.cpuShow = null;
+      this.execute(shown.end, shown.to);
+      this.cpuAt = fxClock.now() + CPU_GAP_MS;
+      return;
+    }
+    const d = this.cpuNext(cpu);
+    if (d === 'end') {
+      this.doEndTurn();
+      return;
+    }
+    if (!d) return;
+    // 部隊を選んでカメラを寄せ、予約を見せてから実行する（予約の無い待機などはすぐ）
+    const unit = d.plan.unit;
+    this.setSelected({ col: unit.col, row: unit.row });
+    if (!engine.planned(d.plan)) {
+      this.execute(d.end, d.to);
+      this.cpuAt = fxClock.now() + CPU_GAP_MS;
+      return;
+    }
+    this.plan = d.plan;
+    this.planChanged();
+    const p = this.view.units.placements().find((x) => x.unit === unit);
+    if (p) this.cameraFocus.panTo(p.foot);
+    this.cpuShow = d;
+    this.cpuAt = fxClock.now() + CPU_SHOW_MS;
+  }
+
+  /**
+   * CPU の次の行動（部隊を選んで決める）。行動できる部隊がいなければ 'end'（番を終える）、
+   * 選んだ部隊が何もしなければ null（その部隊はこの番はもう動かさない）
+   */
+  private cpuNext(cpu: Player): Decision | 'end' | null {
+    const state = this.battle!;
+    if (!this.cpuBegun) {
+      this.cpuBegun = true;
+      cpu.beginTurn?.(state, this.cpuRng);
+    }
+    const pending = engine.pendingUnits(state, this.cpuPassed);
+    if (pending.length === 0) return 'end';
+    const unit = (cpu.order ? cpu.order(state, pending, this.cpuRng) : pending)[0];
+    const d = cpu.decide(state, unit, this.cpuRng);
+    const n = (this.cpuCount.get(unit) ?? 0) + 1;
+    this.cpuCount.set(unit, n);
+    if (!d || n >= engine.MAX_ACTIONS_PER_UNIT) this.cpuPassed.add(unit);
+    return d;
+  }
+
+  /**
+   * CPU の番の残りを演出なしで進める（スキップ）。部隊の行動・番の終わり（混乱の移動・入城の判定・施設の射撃）を engine で続けて行い、
+   * 戦闘記録のためにイベントは演出ありと同じ順に出す（セリフ・頭上の数字は出さない）。終わったら絵を作り直して次の軍の番にする。
+   * 人の軍の強制退却になったら、そこで止めて退却先を選ばせる
+   */
+  private skipRest(cpu: Player): void {
+    const state = this.battle!;
+    this.cpuSkip = false;
+    this.cpuShow = null;
+    this.setSelected(null);
+    let plowed = false;
+    let stopped = false;
+    const executed = (report: ExecuteReport) => {
+      if (report.attack?.plowed) plowed = true;
+      if (report.retreat) this.emit('retreat', report.retreat);
+      for (const w of report.wipeouts) this.emit('wipeout', w);
+      this.emit('execute', report);
+    };
+    /** 決着を調べた結果を進める。CPU の軍の強制退却は演出なしで進め、人の軍なら止める。決着した・止めたら true */
+    const settle = (r: engine.JudgeResult): boolean => {
+      if (r.kind === 'none') return false;
+      if (r.kind === 'end') return true;
+      const rout = state.rout;
+      const loser = rout && this.cpus[rout.team];
+      if (r.kind === 'routStart') this.emit('rout', r.outcome, r.units);
+      if (!loser) {
+        stopped = true;
+        return true;
+      }
+      for (let unit = engine.nextRoutUnit(state); unit; unit = engine.nextRoutUnit(state)) {
+        const plan = engine.newPlan(state, unit);
+        const to = loser.routTo?.(state, unit) ?? engine.retreatDestinations(state, unit)[0];
+        const done = plan && to && engine.runAction(state, plan, 'retreat', to, this.rng);
+        if (done) executed(done.report);
+      }
+      return true;
+    };
+    const run = (d: Decision): FinishedAction | null => {
+      const done = engine.runAction(state, d.plan, d.end, d.to, this.rng);
+      if (done) executed(done.report);
+      return done?.finished ?? null;
+    };
+    let over = false;
+    // 残りの部隊を動かす
+    for (;;) {
+      const d = this.cpuNext(cpu);
+      if (d === 'end') break;
+      const fin = d && run(d);
+      if (fin && settle(engine.judge(state, fin.ended))) {
+        over = true;
+        break;
+      }
+    }
+    // 番を終える: 混乱したユニットの移動 → 入城の判定 → 施設の射撃 → 次の軍の番
+    if (!over && !this.autoDone) {
+      this.autoDone = true;
+      for (const unit of engine.confusedUnits(state)) {
+        if (!state.map.allUnits().includes(unit)) continue;
+        const plan = engine.confusedPlan(state, unit, this.rng);
+        const fin = plan && run({ plan, end: 'wait' });
+        if (fin && settle(engine.judge(state, fin.ended))) {
+          over = true;
+          break;
+        }
+      }
+    }
+    if (!over) over = settle(engine.endTeamTurn(state));
+    if (!over) {
+      const firing = engine.firingFacilities(state);
+      for (const kind of firing?.kinds ?? []) {
+        const target = engine.facilityTarget(state, kind, firing!.side, this.rng);
+        if (!target) continue;
+        const { wipeout, ...report } = engine.fireFacility(state, kind, firing!.side, target, this.rng);
+        this.emit('facility', report);
+        if (!wipeout) continue;
+        this.emit('wipeout', wipeout);
+        if (settle(engine.judge(state))) {
+          over = true;
+          break;
+        }
+      }
+    }
+    // 絵を作り直す
+    this.tags.setStatuses(this.statuses);
+    if (plowed) this.terrainChanged();
+    this.view.rebuildUnits();
+    if (state.outcome) return this.ended();
+    if (stopped) {
+      // 人の軍の強制退却: 退却先を選ばせる
+      this.refreshMarks();
+      return this.nextRout();
+    }
+    if (!over) this.passTurn();
+    else this.refreshMarks();
+  }
+
   /** 混乱したユニットを勝手に動かしている（その間は操作を受け付けない） */
   get autoMoving(): boolean {
     return this.autoQueue.length > 0 || this.autoRunning;
@@ -940,7 +1233,7 @@ export class BattleApp {
 
   /** 番の終わりに混乱したユニットを動かし終えたら、番を終える（決着や強制退却になっていたらやめる） */
   private stepAutoEnding(): void {
-    if (this.exec || this.autoMoving || performance.now() < this.autoAt) return;
+    if (this.exec || this.autoMoving || fxClock.now() < this.autoAt) return;
     this.autoEnding = false;
     if (this.outcome || this.routing) return;
     this.finishTurn();
@@ -1034,7 +1327,7 @@ export class BattleApp {
   }
 
   private click(o: Offset | null): void {
-    if (this.outcome || this.routing || this.autoMoving || this.autoEnding || this.salvo) return;
+    if (this.outcome || this.routing || this.autoMoving || this.autoEnding || this.salvo || this.cpuActive) return;
     if (this.deployment) {
       this.deployment.click(o);
       return this.deployChanged();
@@ -1311,7 +1604,7 @@ export class BattleApp {
       this.exec = null;
       return this.finish(exec);
     }
-    exec.start = performance.now();
+    exec.start = fxClock.now();
     exec.hit = false;
     exec.fx = null;
     exec.phase = phase;
@@ -1603,7 +1896,7 @@ export class BattleApp {
     if (kind === 'spike') return area.forEach((o) => this.impactFx.spawn(this.groundPoint(o), size, SPIKE_STYLE));
     // 光の柱が届いたところで爆発する
     const map = this.map;
-    const blastAt = (sec: number) => setTimeout(() => this.map === map && this.impactFx.spawn(this.groundPoint(at), size, BLAST_STYLE), sec * 1000);
+    const blastAt = (sec: number) => fxClock.after(sec, () => this.map === map && this.impactFx.spawn(this.groundPoint(at), size, BLAST_STYLE));
     if (kind === 'meteor') {
       // 魔法陣と爆発は範囲の HEX をすべて覆う大きさ（一番遠い HEX の中心まで + HEX の内接円の半径）
       const center = this.groundPoint(at);
@@ -1621,7 +1914,7 @@ export class BattleApp {
     if (kind === 'hammer') {
       // 周りに雷を次々と落としてから太い雷を目標に落とし、落ちたところで衝撃を広げる
       this.thunderFx.storm(tp, (x, z) => this.view.groundAt(x, z), size);
-      return void setTimeout(() => this.map === map && this.impactFx.spawn(tp.foot.clone(), size, HAMMER_STYLE), HAMMER_HIT_SEC * 1000);
+      return void fxClock.after(HAMMER_HIT_SEC, () => this.map === map && this.impactFx.spawn(tp.foot.clone(), size, HAMMER_STYLE));
     }
     if ((kind === 'breath' || kind === 'flame') && up) {
       const to = fx?.end ? this.groundPoint(fx.end) : tp.foot;
@@ -1812,7 +2105,9 @@ export class BattleApp {
     const unit = engine.nextRoutUnit(this.battle!);
     if (!unit) return this.ended();
     this.setSelected({ col: unit.col, row: unit.row });
-    this.openRetreat(unit, true);
+    // CPU の軍は CPU が退却先を選ぶ（stepCpu）
+    if (!this.cpuActive) this.openRetreat(unit, true);
+    else this.cpuAt = fxClock.now() + CPU_SHOW_MS;
     const p = this.view.units.placements().find((x) => x.unit === unit);
     if (p) this.cameraFocus.panTo(p.foot);
   }
@@ -1821,6 +2116,8 @@ export class BattleApp {
   private ended(): void {
     const outcome = this.outcome;
     if (!outcome) return;
+    this.cpuSkip = false;
+    this.cpuShow = null;
     this.setSelected(null);
     this.done.clear();
     this.view.units.setDimmed(() => false);
@@ -1906,7 +2203,7 @@ export class BattleApp {
   private holdForTalk(exec: Execution, talk: number): void {
     if (talk <= 0) return;
     const fx = exec.fx;
-    const elapsed = (performance.now() - exec.start) / 1000;
+    const elapsed = (fxClock.now() - exec.start) / 1000;
     // カメラが戻り始める時点（演出の無い攻撃は段階の終わり）
     const holdEnd = fx ? fx.lead + fx.strikeSec + FX_HOLD_SEC : exec.duration;
     const extra = elapsed + talk - holdEnd;
@@ -1941,7 +2238,8 @@ export class BattleApp {
   }
 
   private openMenu(): void {
-    this.menu.open(this.battle && this.plan ? engine.menuContext(this.battle, this.plan) : null);
+    // CPU が操作している間は行動メニューを出さない
+    this.menu.open(this.battle && this.plan && !this.cpuActive ? engine.menuContext(this.battle, this.plan) : null);
   }
 
 
@@ -2001,20 +2299,22 @@ export class BattleApp {
   }
 
   private frame(): void {
+    fxClock.speed = this.fxSpeed();
+    fxClock.tick();
     if (this.pointerDirty) {
       this.pointerDirty = false;
       this.setHover(this.pick());
     }
     const exec = this.exec;
-    if (exec?.phase.kind === 'walk') this.stepWalk(exec, exec.phase, performance.now());
-    else if (exec?.phase.kind === 'strike') this.stepStrike(exec, performance.now());
-    else if (exec?.phase.kind === 'intercept') this.stepIntercept(exec, exec.phase, performance.now());
-    else if (exec?.phase.kind === 'retreat') this.stepRetreat(exec, performance.now());
+    if (exec?.phase.kind === 'walk') this.stepWalk(exec, exec.phase, fxClock.now());
+    else if (exec?.phase.kind === 'strike') this.stepStrike(exec, fxClock.now());
+    else if (exec?.phase.kind === 'intercept') this.stepIntercept(exec, exec.phase, fxClock.now());
+    else if (exec?.phase.kind === 'retreat') this.stepRetreat(exec, fxClock.now());
     // 攻撃の演出の間は、移動のルートと攻撃の矢印を隠す（演出が終われば、残りのルートをまた出す）
     const v = this.view;
     const arrowsShown = !this.exec?.fx;
     for (const arrow of [v.pathArrow, v.afterPathArrow, v.attackArrow, v.supportArrow]) arrow.group.visible = arrowsShown;
-    this.cameraFocus.update(performance.now());
+    this.cameraFocus.update(fxClock.now());
     this.slashFx.update(this.ctx.camera);
     this.clawFx.update(this.ctx.camera);
     this.breathFx.update();
@@ -2022,10 +2322,11 @@ export class BattleApp {
     this.beamFx.update(this.ctx.camera);
     this.pillarFx.update(this.ctx.camera);
     this.gunshipFx.update(this.ctx.camera);
-    if (this.salvo) this.stepSalvo(performance.now());
+    if (this.salvo) this.stepSalvo(fxClock.now());
     // 混乱したユニットを順に勝手に動かし、動かし終えたら番を終える
-    if (!this.exec && this.autoQueue.length > 0 && performance.now() >= this.autoAt) this.nextAuto();
+    if (!this.exec && this.autoQueue.length > 0 && fxClock.now() >= this.autoAt) this.nextAuto();
     else if (this.autoEnding) this.stepAutoEnding();
+    this.stepCpu();
     this.lanceFx.update(this.ctx.camera);
     this.arrowFx.update(this.ctx.camera);
     this.thunderFx.update(this.ctx.camera);

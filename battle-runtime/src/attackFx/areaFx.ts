@@ -15,6 +15,7 @@ import type { UnitPlacement } from '@norden/map-runtime/render/units';
 import { ExplosionEffects } from './explosionFx';
 import { EARTH_SPIKE_SEC, EarthSpikeEffects } from './earthSpikeFx';
 import { createFlashMaterial, createFxMaterial, createSparks, createSparkTexture, FX_RENDER_ORDER, moveSparks } from './fxShared';
+import { fxClock } from '../fxClock';
 
 /** 衝撃の見た目 */
 export interface ImpactStyle {
@@ -97,14 +98,14 @@ export class ImpactEffects {
     ring.renderOrder = FX_RENDER_ORDER;
     ring.frustumCulled = false;
     this.group.add(board, ring);
-    this.items.push({ board, flash, sparks, velocities, ring, at: at.clone(), scale, style, start: performance.now() });
+    this.items.push({ board, flash, sparks, velocities, ring, at: at.clone(), scale, style, start: fxClock.now() });
   }
 
   /** 毎フレーム、描画の前に呼ぶ */
   update(camera: THREE.Camera): void {
     this.earthSpikes.update(camera);
     if (this.items.length === 0) return;
-    const now = performance.now();
+    const now = fxClock.now();
     this.items = this.items.filter((s) => {
       const t = (now - s.start) / 1000;
       const k = t / s.style.sec;
@@ -288,11 +289,11 @@ export class BeamEffects {
     }
     streak.visible = tip.visible = trail.visible = false;
     this.group.add(trail, glow, streak, tip);
-    this.items.push({ glow, streak, tip, trail, foot: shooter.foot.clone(), mouthX, mouthY, sweepFrom, sweepTo, burns, hexSize, start: performance.now() });
+    this.items.push({ glow, streak, tip, trail, foot: shooter.foot.clone(), mouthX, mouthY, sweepFrom, sweepTo, burns, hexSize, start: fxClock.now() });
   }
 
   update(camera: THREE.Camera): void {
-    const now = performance.now();
+    const now = fxClock.now();
     this.items = this.items.filter((b) => {
       const t = (now - b.start) / 1000;
       if (t > BEAM_HIT_SEC + BEAM_BURN_SEC) {
@@ -482,12 +483,12 @@ export class PillarEffects {
       o.visible = false;
     }
     this.group.add(circle, beam, sky, foot, blast, dome);
-    this.items.push({ circle, beam, sky, foot, blast, dome, at: at.clone(), radius, hexSize, start: performance.now() });
+    this.items.push({ circle, beam, sky, foot, blast, dome, at: at.clone(), radius, hexSize, start: fxClock.now() });
   }
 
   update(camera: THREE.Camera): void {
     if (this.items.length === 0) return;
-    const now = performance.now();
+    const now = fxClock.now();
     this.items = this.items.filter((p) => {
       const t = (now - p.start) / 1000;
       if (t > PILLAR_HIT_SEC + PILLAR_BLAST_SEC) {
