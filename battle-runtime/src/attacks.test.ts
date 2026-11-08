@@ -93,10 +93,10 @@ describe('状態とクールタイムのターン', () => {
     const s = status('infantry');
     setCondition(s, 'freeze', 2);
     setCondition(s, 'freeze', 1);
-    setCondition(s, 'shock', 1);
+    setCondition(s, 'confusion', 1);
     expect(s.conditions).toEqual([
       { id: 'freeze', turns: 2 },
-      { id: 'shock', turns: 1 },
+      { id: 'confusion', turns: 1 },
     ]);
     tickConditions(s);
     expect(s.conditions).toEqual([{ id: 'freeze', turns: 1 }]);
@@ -181,15 +181,25 @@ describe('段階 3 の兵種・魔法・状態', () => {
     expect(new Set(splashUnits(m, lk, lk, null, lk, 'rampage'))).toEqual(new Set([enemy, ally]));
   });
 
-  it('チェインライトニングは目標から隣り合う敵へ 2 回まで跳ぶ（味方には跳ばない）', () => {
-    const m = testMap();
-    const mage = place(m, 'mage', 'blue', 1, 3);
-    const target = place(m, 'infantry', 'red', 3, 3);
-    const second = place(m, 'infantry', 'red', 4, 3);
-    place(m, 'infantry', 'blue', 3, 2);
-    const third = place(m, 'infantry', 'red', 5, 3);
-    place(m, 'infantry', 'red', 6, 3);
-    expect(splashUnits(m, mage, mage, target, target, 'chainLightning')).toEqual([second, third]);
+  it('トールハンマーは目標だけに当たり、城・森の地形効果を無視する', () => {
+    const m = testMap(9, 7, [
+      { col: 4, row: 3, feature: 'castle' },
+      { col: 4, row: 5, terrain: 'forest' },
+    ]);
+    const mage = place(m, 'mage', 'blue', 2, 3);
+    const walled = place(m, 'infantry', 'red', 4, 3);
+    place(m, 'infantry', 'red', 5, 3);
+    const inForest = place(m, 'infantry', 'red', 4, 5);
+    const open = place(m, 'infantry', 'red', 2, 5);
+    expect(splashUnits(m, mage, mage, walled, walled, 'thorHammer')).toEqual([]);
+    const hit = (target: typeof walled, id: 'thorHammer' | 'thunderfall') => attackResult(m, combatant(mage), combatant(target), id, { damage: 0, counter: 0 });
+    expect(hit(walled, 'thunderfall').defense).toBeGreaterThan(0);
+    expect(hit(inForest, 'thunderfall').defense).toBeGreaterThan(0);
+    for (const target of [walled, inForest]) {
+      const r = hit(target, 'thorHammer');
+      expect(r.defense).toBe(0);
+      expect(r.damage).toBe(hit(open, 'thorHammer').damage);
+    }
   });
 
   it('地点を狙う攻撃は、狙った HEX に敵がいればそれが目標で、いなければ目標は無い', () => {
@@ -248,14 +258,12 @@ describe('段階 3 の兵種・魔法・状態', () => {
     expect(s.morale).toBe(morale + 5);
   });
 
-  it('感電した迎撃の構えのユニットは撃たない。凍結・感電すると構えが解ける', () => {
+  it('迎撃の構えのユニットは射程に入った敵を撃つ。凍結すると構えが解ける', () => {
     const m = testMap();
     const archer = place(m, 'archer', 'red', 6, 3);
     const mover = place(m, 'cavalry', 'blue', 1, 3);
     const s = { ...status('archer'), intercepting: true };
     expect(interceptorsAt(m, new Map([[archer, s]]), mover, { col: 4, row: 3 })).toEqual([archer]);
-    const shocked = { ...status('archer'), intercepting: true, conditions: [{ id: 'shock' as const, turns: 1 }] };
-    expect(interceptorsAt(m, new Map([[archer, shocked]]), mover, { col: 4, row: 3 })).toEqual([]);
     const frozen = { ...status('archer'), intercepting: true };
     setCondition(frozen, 'freeze', 1);
     expect(frozen.intercepting).toBe(false);

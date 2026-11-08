@@ -5,12 +5,12 @@
  *   同じ状態が付いていれば、長いほうの残りターンにする。
  * - 付いたユニットの軍の番が終わるときに残りのターンを 1 減らし、0 で消す（tickConditions）。
  * - 情報札に印（mark）、部隊のウィンドウに名前と残りターン数を出す。
- * - 効果（app.ts の startTeamTurn・actions.ts・combat.ts）: 凍結はその番に一切行動できない（迎撃の構えも解ける）。
- *   感電は行動力が半分で、迎撃できない（構えも解け、構えもとれない）。混乱は操作できず、番の初めにランダムな HEX へ勝手に移動して行動を終える。
+ * - 効果（app.ts の startTeamTurn）: 凍結はその番に一切行動できない（迎撃の構えも解ける）。
+ *   混乱は操作できず、番の初めにランダムな HEX へ勝手に移動して行動を終える。
  */
 import type { UnitStatus } from './unitStatus';
 
-export const CONDITION_IDS = ['confusion', 'freeze', 'shock'] as const;
+export const CONDITION_IDS = ['confusion', 'freeze'] as const;
 export type ConditionId = (typeof CONDITION_IDS)[number];
 
 export interface ConditionDef {
@@ -25,7 +25,6 @@ export interface ConditionDef {
 export const CONDITION_DEFS: Record<ConditionId, ConditionDef> = {
   confusion: { id: 'confusion', name: '混乱', mark: '混', color: '#c070e0' },
   freeze: { id: 'freeze', name: '凍結', mark: '凍', color: '#70c8f0' },
-  shock: { id: 'shock', name: '感電', mark: '電', color: '#f0d040' },
 };
 
 /** 付いている状態と残りのターン数 */
@@ -43,8 +42,8 @@ export function setCondition(status: UnitStatus, id: ConditionId, turns: number)
   }
   if (i >= 0) status.conditions[i] = { id, turns: Math.max(status.conditions[i].turns, turns) };
   else status.conditions.push({ id, turns });
-  // 凍結・感電すると迎撃の構えは解ける
-  if (id === 'freeze' || id === 'shock') status.intercepting = false;
+  // 凍結すると迎撃の構えは解ける
+  if (id === 'freeze') status.intercepting = false;
 }
 
 /** status に id の状態が付いているか */

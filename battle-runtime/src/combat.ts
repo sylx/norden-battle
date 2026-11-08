@@ -10,8 +10,6 @@
  * - ランツクネヒトの乱撃は狙わずに自分の周りの敵・味方すべてに当たる（目標が無い。士気は敵に与えたダメージの合計で上がる。noMainMorale）。
  * - ブレインは攻撃しない（攻撃の一覧が空）。攻撃の無い部隊は反撃しない。
  * - 地点を狙う攻撃（cell）は、狙った HEX に敵がいればそれが目標（mainTargetAt）。いなければ目標は無く、範囲のユニットはすべて巻き添え。
- * - チェインライトニング（chain）は、目標から隣り合う敵へ順に跳ぶ（splashUnits）。
- * - 感電した迎撃の構えのユニットは撃たない（interceptorsAt）。
  * - 当たる範囲（attacks.ts の Shape）: path・line の攻撃は、隣より遠い HEX は 6 方向の直線上だけを狙える（canAim）。
  *   範囲にいる目標以外のユニット（splashUnits。敵、friendlyFire なら味方も）は巻き添えで、目標を撃ったのと同じ計算（倍率は splashPower）で
  *   反撃は無い（splashResult）。撃ったユニットの士気は目標への攻撃の分だけ増減し、巻き添えでは増減しない。
@@ -32,6 +30,7 @@
  * - 地形効果（cellDefense。森・砦・城など）のある HEX にいる相手へのダメージは減り、
  *   弓兵・砲兵が相手より高い HEX から攻撃するとダメージが増える（damage.ts）。
  *   砲兵が城・砦（WALLED_FEATURES）にいる相手を攻撃するときは、地形効果が半分になる（damage.ts の terrainDefense）。
+ *   地形効果を無視する攻撃（トールハンマー）では、相手は地形効果の無い HEX にいるものとして計算する（AttackResult.defense も 0）。
  * - 反撃の無い攻撃か距離 2 以上からの攻撃は間接攻撃（Hit.indirect）で、ライフル兵・砲兵は受けるダメージが減る（damage.ts の INDIRECT_TAKEN）。
  *   施設（要塞砲・ガンシップ）の砲撃も間接攻撃。
  * - 一斉攻撃は攻撃の一覧に一斉攻撃を持つ兵種（歩兵・騎兵・ランツクネヒト）だけで、相手が攻撃する自分のほかの味方（同じく一斉攻撃を持つ兵種）とも
@@ -46,7 +45,6 @@ import { dirBetween } from '@norden/map-runtime/core/roads';
 import { TERRAIN_DEFS } from '@norden/map-runtime/core/terrainTypes';
 import type { UnitData, UnitType } from '@norden/map-runtime/core/units';
 import type { ActionId } from './actions';
-import { hasCondition } from './conditions';
 import { FACILITY_SHOOTERS, type FiringFacility } from './facilities';
 import { ATTACK_DEFS, isAttackId, type AttackDef, type AttackId, type Inflict, type MenuAttackId, type Shape, type StrikeFxKind } from './attacks';
 import { calcCounter, calcDamage, highGroundLevels, terrainDefense, type Fighter, type Hit } from './damage';
@@ -128,6 +126,8 @@ export interface ResolvedAttack extends Pick<AttackDef, 'id' | 'name' | 'cost' |
   indirect: boolean;
   magic: boolean;
   cooldown: number;
+  /** 相手のいる HEX の地形効果を無視する */
+  ignoresTerrain: boolean;
   inflicts: readonly Inflict[];
   fx: StrikeFxKind;
 }
@@ -154,6 +154,7 @@ export function resolveAttack(type: UnitType, id: AttackId): ResolvedAttack {
     indirect: !!def.indirect,
     magic: def.magic ?? !!c.magic,
     cooldown: def.cooldown ?? 0,
+    ignoresTerrain: !!def.ignoresTerrain,
     inflicts: def.inflicts ?? [],
     fx: def.fx ?? c.fx,
   };
@@ -250,7 +251,6 @@ export function areaCells(map: HexMap, from: Offset, aimed: Offset, shape: Shape
     case 'around':
       return cellsWithin(map, from, shape.radius).filter(notFrom);
     case 'single':
-    case 'chain':
       return [aimed];
   }
 }
@@ -261,34 +261,11 @@ export function areaCells(map: HexMap, from: Offset, aimed: Offset, shape: Shape
  */
 export function splashUnits(map: HexMap, unit: UnitData, from: Offset, main: UnitData | null, aimed: Offset, id: AttackId): UnitData[] {
   const a = resolveAttack(unit.type, id);
-  if (a.shape.kind === 'chain') return chainUnits(map, unit, main ?? map.unitAt(aimed.col, aimed.row) ?? null, a.shape.jumps);
   return areaCells(map, from, aimed, a.shape).flatMap((o) => {
     const u = map.unitAt(o.col, o.row);
     if (!u || u === unit || u === main || (u.team === unit.team && !a.friendlyFire)) return [];
     return [u];
   });
-}
-
-/**
- * チェインの跳び先: start から、まだ当たっていない隣り合う敵（unit の敵。並びの順で最初のもの）へ jumps 回まで跳ぶ。
- * 跳び先が無ければそこで止まる
- */
-function chainUnits(map: HexMap, unit: UnitData, start: UnitData | null, jumps: number): UnitData[] {
-  if (!start) return [];
-  const hit = new Set<UnitData>([unit, start]);
-  const out: UnitData[] = [];
-  let cur = start;
-  for (let j = 0; j < jumps; j++) {
-    const next = map.layout
-      .neighbors(cur.col, cur.row)
-      .map((o) => map.unitAt(o.col, o.row))
-      .find((u): u is UnitData => !!u && u.team !== unit.team && !hit.has(u));
-    if (!next) break;
-    hit.add(next);
-    out.push(next);
-    cur = next;
-  }
-  return out;
 }
 
 /** unit が aimed を id の攻撃で狙ったときの目標（unit を狙う攻撃は aimed のユニット、地点を狙う攻撃は aimed にいる敵、自分が中心の攻撃は無し） */
@@ -389,7 +366,8 @@ export function attackResult(map: HexMap, attacker: Combatant, defender: Combata
   const volley = a.special === 'volley';
   const supporters = volley ? volleySupporters(map, attacker.unit, defender.pos).length : 0;
   const att = { ...fighter(map, attacker, encircledAt(map, attacker, defender)), supporters };
-  const def = fighter(map, defender, encircledAt(map, defender, attacker));
+  const at = fighter(map, defender, encircledAt(map, defender, attacker));
+  const def = a.ignoresTerrain ? { ...at, defense: 0, walled: false } : at;
   // 攻撃の無い部隊（ブレイン）は反撃しない
   const direct = !splash && !a.indirect && hexDistance(map, attacker.pos, defender.pos) <= 1 && canFight(defender.unit.type);
   // 間接攻撃: 反撃の無い攻撃か、距離 2 以上から
@@ -518,8 +496,7 @@ export function interceptorsAt(
 ): UnitData[] {
   return map.allUnits().filter((u) => {
     const status = statuses.get(u);
-    // 感電したユニットは迎撃できない
-    if (u.team === mover.team || !COMBAT_DEFS[u.type].ranged || !status?.intercepting || hasCondition(status, 'shock')) return false;
+    if (u.team === mover.team || !COMBAT_DEFS[u.type].ranged || !status?.intercepting) return false;
     return canAim(map, u.type, 'interceptFire', u, pos, bonusOf(u));
   });
 }

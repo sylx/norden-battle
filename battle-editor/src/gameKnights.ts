@@ -25,7 +25,7 @@ import {
   type UnitStatus,
 } from '@norden/battle-runtime';
 import type { DeploySide } from '@norden/map-runtime/core/mapData';
-import { UNIT_TYPES, type UnitType } from '@norden/map-runtime/core/units';
+import { UNIT_TYPES, type UnitData, type UnitType } from '@norden/map-runtime/core/units';
 import characterData from '../../../src/data/characterData.json';
 import characterStart from '../../../src/data/characterStart.json';
 import factionData from '../../../src/data/factionData.json';
@@ -182,13 +182,17 @@ export function rosterTroops(rosters: Rosters): TroopFactory {
   };
 }
 
+/** マップに置いてある side の陣営のユニット（防衛側は赤軍、攻撃側は青軍）。編成の行を割り当てる順（上から） */
+export function placedUnits<U extends Pick<UnitData, 'team' | 'col' | 'row'>>(units: readonly U[], side: DeploySide): U[] {
+  return units.filter((u) => u.team === SIDE_TEAM[side]).sort((a, b) => a.row - b.row || a.col - b.col);
+}
+
 /** マップに置いてあるユニットの状態（防衛側の編成を赤軍、攻撃側の編成を青軍に上から順に。ほかと余りは仮の状態） */
 export function rosterStatuses(rosters: Rosters): StatusFactory {
   return (units) => {
     const out = demoStatuses(units);
     for (const side of SIDES) {
-      const team = units.filter((u) => u.team === SIDE_TEAM[side]).sort((a, b) => a.row - b.row || a.col - b.col);
-      team.forEach((u, i) => {
+      placedUnits(units, side).forEach((u, i) => {
         const status = entryStatus(rosters[side], i, u.type);
         if (status) out.set(u, status);
       });
@@ -212,12 +216,13 @@ export function parseRosters(value: unknown): Rosters | null {
           (UNIT_TYPES as readonly string[]).includes(e.type) &&
           Number.isFinite(e.soldiers) &&
           Number.isFinite(e.morale) &&
-          (e.spells === undefined || (Array.isArray(e.spells) && e.spells.every((id) => (SPELL_IDS as readonly string[]).includes(id)))),
+          (e.spells === undefined || Array.isArray(e.spells)),
       )
     );
   };
-  // 魔法を覚える前に保存した編成には spells が無い
-  const fill = (r: SideRoster): SideRoster => ({ ...r, entries: r.entries.map((e) => ({ ...e, spells: e.spells ?? [] })) });
+  // 魔法を覚える前に保存した編成には spells が無い。無くなった魔法（チェインライトニングなど）は外す
+  const isSpell = (id: unknown) => (SPELL_IDS as readonly unknown[]).includes(id);
+  const fill = (r: SideRoster): SideRoster => ({ ...r, entries: r.entries.map((e) => ({ ...e, spells: (e.spells ?? []).filter(isSpell) })) });
   const v = value as Partial<Rosters> | null;
   return v && ok(v.attacker) && ok(v.defender) ? { attacker: fill(v.attacker), defender: fill(v.defender) } : null;
 }

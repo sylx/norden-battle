@@ -16,6 +16,7 @@
  *   歩兵の通常攻撃は踏み込んで光の剣で斬る（attackFx/slashFx.ts）。騎兵の通常攻撃・突撃は光るランスで貫く（attackFx/lanceFx.ts）。
  *   弓兵の通常攻撃は無数の光の矢を放物線で降らせる（attackFx/arrowFx.ts）。弓兵の迎撃も同じ演出で、弓兵と撃たれるユニットへ寄る。
  *   魔術師のサンダーフォールは相手の頭上に雷を落とす（attackFx/thunderFx.ts）。魔術師の迎撃も同じ演出。
+ *   トールハンマーはカメラを大きく引き、目標の周りに雷を次々と落としてから太い雷を目標に落とす（thunderFx.ts の storm）。
  *   ライフル兵の通常攻撃は光の弾を続けてまっすぐ撃ち、砲兵の通常攻撃は大きな光の弾を放物線で撃つ（attackFx/projectileFx.ts）。迎撃も同じ演出。
  *   一斉攻撃は、加わる味方も含めた全員へ寄り、それぞれの兵種の演出（斬撃・ランス）を少しずつずらして出す。
  *   突撃で駆け抜けるときは、飛び出る先の HEX まで画面に収める。
@@ -24,7 +25,7 @@
  *   目標の手前の HEX にいるユニットにも敵・味方を問わず当たる。迎撃も同じ。攻撃の相手を選ぶときは、カーソルを乗せた相手で当たる範囲を塗る。
  * - クールタイムのある攻撃は、使った次の自分の番から使えない（UnitStatus.cooldowns。軍の番が始まるときに減らす）。
  * - 状態（conditions.ts）は、付いたユニットの軍の番が終わるときに残りのターンを減らす。攻撃の inflicts で付く。
- *   軍の番が始まるときに効く（startTeamTurn）: 凍結はその番に行動できない、感電は行動力が半分（迎撃もできない）、
+ *   軍の番が始まるときに効く（startTeamTurn）: 凍結はその番に行動できない、
  *   混乱は操作できず、番の初めにランダムな HEX へ勝手に移動して行動を終える（順に自動で実行する。その間は操作を受け付けない）。
  * - 入城の決まり: 攻撃側のユニットは、番の初めに城の HEX の中かそのとなりにいたときだけ城の HEX へ入れる（UnitStatus.atCastle。
  *   movement.ts の castleLocked。突撃の飛び出しも）。防衛拠点も同じで、番の初めに拠点の HEX の中かそのとなりにいたときだけ拠点の HEX へ入れる
@@ -122,7 +123,7 @@ import {
   type Combatant,
 } from './combat';
 import { ARROW_HIT_SEC, ARROW_RELEASE_SEC, ArrowEffects } from './attackFx/arrowFx';
-import { BEAM_HIT_SEC, BeamEffects, BLAST_STYLE, FROST_STYLE, IMPACT_HIT_SEC, ImpactEffects, PILLAR_HIT_SEC, PillarEffects, SMASH_STYLE, SPIKE_STYLE } from './attackFx/areaFx';
+import { BEAM_HIT_SEC, BeamEffects, BLAST_STYLE, FROST_STYLE, HAMMER_STYLE, IMPACT_HIT_SEC, ImpactEffects, PILLAR_HIT_SEC, PillarEffects, SMASH_STYLE, SPIKE_STYLE } from './attackFx/areaFx';
 import { BREATH_STYLE, BreathEffects, breathHitSec, FLAME_LANCE_STYLE } from './attackFx/breathFx';
 import { CameraFocus, type FocusTiming } from './cameraFocus';
 import { hasCondition, setCondition, tickConditions, tickCooldowns, type ConditionId } from './conditions';
@@ -140,7 +141,7 @@ import { BULLET_STYLE, GUNSHIP_STYLE, ProjectileEffects, SHELL_STYLE } from './a
 import { DEFAULT_INTERVALS, FACILITY_NAMES, firesOn, FORTRESS_CANNON_RANGE, rangeBonus, type BattleFacilities, type FiringFacility, type SideFacilities } from './facilities';
 import { SLASH_HIT_SEC, SlashEffects } from './attackFx/slashFx';
 import { SpeechBubbles } from './speechBubbles';
-import { THUNDER_HIT_SEC, ThunderEffects } from './attackFx/thunderFx';
+import { HAMMER_HIT_SEC, THUNDER_HIT_SEC, ThunderEffects } from './attackFx/thunderFx';
 import { UnitTags } from './unitTags';
 import { demoStatuses, type UnitStatus } from './unitStatus';
 import { judgeBattle, loserOf, sideUnits, type BattleOutcome, type CapturedUnit, type CommanderLoss } from './victory';
@@ -191,11 +192,11 @@ const SHELL_STRIKE_SEC = 1.9;
 const CLAW_STRIKE_SEC = 0.7;
 const BREATH_STRIKE_SEC = 2 * breathHitSec(BREATH_STYLE);
 const FLAME_STRIKE_SEC = 2 * breathHitSec(FLAME_LANCE_STYLE);
-/** 周りをなぎ払う（乱撃）、地面を揺らす（殴り）、溜めた光線で範囲を薙ぎ払う（光線）、雷が跳ねる（チェイン）、凍らせる（フロスト）、岩が突き出る（スパイク）、魔法陣から光の柱が降って爆発する（メテオ） */
+/** 周りをなぎ払う（乱撃）、地面を揺らす（殴り）、溜めた光線で範囲を薙ぎ払う（光線）、大きな雷が落ちて衝撃が広がる（トールハンマー）、凍らせる（フロスト）、岩が突き出る（スパイク）、魔法陣から光の柱が降って爆発する（メテオ） */
 const WHIRL_STRIKE_SEC = 0.8;
 const SMASH_STRIKE_SEC = 0.6;
 const BEAM_STRIKE_SEC = 2 * BEAM_HIT_SEC;
-const CHAIN_STRIKE_SEC = 1.4;
+const HAMMER_STRIKE_SEC = 2 * HAMMER_HIT_SEC;
 const FROST_STRIKE_SEC = 0.8;
 const SPIKE_STRIKE_SEC = 0.8;
 const METEOR_STRIKE_SEC = 2 * PILLAR_HIT_SEC;
@@ -204,8 +205,6 @@ const CANNON_STRIKE_SEC = 2 * SHELL_STYLE.hitSec;
 const GUNSHIP_STRIKE_SEC = 2 * GUNSHIP_STYLE.hitSec;
 /** ガンシップの掃射を撃つところ（目標の上空。HEX の大きさ比の横・高さ） */
 const GUNSHIP_OFFSET = { x: -2.5, y: 7 };
-/** チェインライトニングの雷が次の相手へ跳ぶまでの時間（秒） */
-const CHAIN_STEP_SEC = 0.14;
 /** 混乱したユニットが勝手に動き出すまでの間（ミリ秒。番のカットインや前の動きの後） */
 const AUTO_DELAY_MS = 900;
 /** 鼓舞で回復する士気（この範囲の整数） */
@@ -231,6 +230,8 @@ const STRONGHOLD_COLOR = 0xf0c030;
 const VOLLEY_FX_STAGGER_SEC = 0.06;
 /** メテオの演出で寄るときの、ユニットの絵の範囲が画面に占める割合（ほかの攻撃より離れて、魔法陣と降る光の柱の大きさを見せる） */
 const METEOR_FOCUS_FILL = 0.3;
+/** トールハンマーの演出で寄るときの割合（メテオよりさらに引いて、周りに次々と落ちる雷と空の高さを見せる） */
+const HAMMER_FOCUS_FILL = 0.18;
 
 /** 攻撃の演出の種類ごとの、エフェクトを出してから当たるまでの時間（秒）と、当たったときのカメラの揺れ（hexSize 比） */
 const STRIKE_FX: Record<StrikeFxKind, { hitSec: number; cameraShake: number }> = {
@@ -246,7 +247,7 @@ const STRIKE_FX: Record<StrikeFxKind, { hitSec: number; cameraShake: number }> =
   whirl: { hitSec: SLASH_HIT_SEC, cameraShake: 0.06 },
   smash: { hitSec: IMPACT_HIT_SEC, cameraShake: 0.1 },
   beam: { hitSec: BEAM_HIT_SEC, cameraShake: 0.14 },
-  chain: { hitSec: THUNDER_HIT_SEC, cameraShake: 0.08 },
+  hammer: { hitSec: HAMMER_HIT_SEC, cameraShake: 0.2 },
   frost: { hitSec: IMPACT_HIT_SEC, cameraShake: 0.03 },
   spike: { hitSec: IMPACT_HIT_SEC, cameraShake: 0.07 },
   meteor: { hitSec: PILLAR_HIT_SEC, cameraShake: 0.18 },
@@ -1005,7 +1006,7 @@ export class BattleApp {
   }
 
   /**
-   * team の番を始める。行動力などを戻し（refreshTeam）、状態を効かせる: 凍結は行動力 0、感電は行動力が半分。
+   * team の番を始める。行動力などを戻し（refreshTeam）、状態を効かせる: 凍結は行動力 0。
    * 混乱したユニットは、少し間をおいてから順に勝手に動かす（autoQueue）
    */
   private startTeamTurn(team: TeamId): void {
@@ -1020,7 +1021,6 @@ export class BattleApp {
       if (this.facilitiesOf(team)?.magicTower && COMBAT_DEFS[unit.type].magic && this.map?.get(unit.col, unit.row)?.feature === 'castle') tickCooldowns(status);
       if (hasCondition(status, 'freeze')) status.ap = 0;
       else if (hasCondition(status, 'confusion')) confused.push(unit);
-      else if (hasCondition(status, 'shock')) status.ap = Math.floor(status.maxAp / 2);
     }
     this.autoQueue = confused;
     this.autoAt = performance.now() + AUTO_DELAY_MS;
@@ -1563,7 +1563,7 @@ export class BattleApp {
           whirl: WHIRL_STRIKE_SEC,
           smash: SMASH_STRIKE_SEC,
           beam: BEAM_STRIKE_SEC,
-          chain: CHAIN_STRIKE_SEC,
+          hammer: HAMMER_STRIKE_SEC,
           frost: FROST_STRIKE_SEC,
           spike: SPIKE_STRIKE_SEC,
           meteor: METEOR_STRIKE_SEC,
@@ -1589,7 +1589,7 @@ export class BattleApp {
           // 範囲の巻き添えになるユニットも画面に収める
           const a = attack!;
           const splash = splashUnits(map, exec.plan.unit, exec.plan.unit, a.target, a.at, a.id);
-          this.focusOn([exec.plan.unit, ...(a.target ? [a.target] : []), ...exec.supporters, ...splash], a.landing, timing, a.at, kind === 'meteor' ? METEOR_FOCUS_FILL : undefined);
+          this.focusOn([exec.plan.unit, ...(a.target ? [a.target] : []), ...exec.supporters, ...splash], a.landing, timing, a.at, kind === 'meteor' ? METEOR_FOCUS_FILL : kind === 'hammer' ? HAMMER_FOCUS_FILL : undefined);
         }
         else this.focusOn([phase.shooter, exec.plan.unit], null, timing);
       } else {
@@ -1836,14 +1836,13 @@ export class BattleApp {
     return areaCells(this.map!, plan.unit, attack.at, def.shape).at(-1) ?? null;
   }
 
-  /** kind の演出で、範囲のエフェクトを出す HEX（なぎ払いは当たるユニット、岩・メテオ・光線は範囲、跳ねる雷は目標から跳ぶ順） */
+  /** kind の演出で、範囲のエフェクトを出す HEX（なぎ払いは当たるユニット、岩・メテオ・光線は範囲） */
   private fxArea(plan: Plan, kind: StrikeFxKind): Offset[] {
     const attack = plan.attack;
     const map = this.map!;
     if (!attack) return [];
     const splash = splashUnits(map, plan.unit, plan.unit, attack.target, attack.at, attack.id);
     if (kind === 'whirl') return splash.map((u) => ({ col: u.col, row: u.row }));
-    if (kind === 'chain') return [...(attack.target ? [attack.target] : []), ...splash].map((u) => ({ col: u.col, row: u.row }));
     if (kind === 'spike' || kind === 'meteor' || kind === 'beam') return areaCells(map, plan.unit, attack.at, resolveAttack(plan.unit.type, attack.id).shape);
     return [];
   }
@@ -1899,16 +1898,13 @@ export class BattleApp {
       this.beamFx.spawn(up, this.groundPoint(at), area.map((o) => this.groundPoint(o)), size);
       return;
     }
-    if (kind === 'chain') {
-      // 目標から跳ぶ順に、少しずつ遅らせて雷を落とす
-      area.forEach((o, i) => {
-        const p = placementAt(o);
-        if (p) setTimeout(() => this.map === map && this.thunderFx.spawn(p), i * CHAIN_STEP_SEC * 1000);
-      });
-      return;
-    }
     const tp = target && placements.find((p) => p.unit === target);
     if (!tp) return;
+    if (kind === 'hammer') {
+      // 周りに雷を次々と落としてから太い雷を目標に落とし、落ちたところで衝撃を広げる
+      this.thunderFx.storm(tp, (x, z) => this.view.groundAt(x, z), size);
+      return void setTimeout(() => this.map === map && this.impactFx.spawn(tp.foot.clone(), size, HAMMER_STYLE), HAMMER_HIT_SEC * 1000);
+    }
     if ((kind === 'breath' || kind === 'flame') && up) {
       const to = fx?.end ? this.groundPoint(fx.end) : tp.foot;
       return this.breathFx.spawn(up, to, kind === 'breath' ? BREATH_STYLE : FLAME_LANCE_STYLE);
@@ -2485,12 +2481,14 @@ function holdCurve(t: number): number {
 
 /**
  * 演出のある攻撃の、攻撃するユニットの踏み込み・跳ねる量（t は攻撃のアニメーションの 0〜1）。
- * 直接攻撃は踏み込んだまま当てて戻る。弓兵は矢を放ち始めてから放ち終えるまで、魔術師は雷を呼んでから落ちるまで、
+ * 直接攻撃は踏み込んだまま当てて戻る。弓兵は矢を放ち始めてから放ち終えるまで、魔術師は雷を呼んでから落ちるまで（トールハンマーは雷を呼び始めるとき）、
  * ライフル兵は弾を撃ち始めてから撃ち終えるまでに 1 回跳ねる。砲兵は撃った反動で 1 回跳ねる
  */
 function fxMotion(fx: StrikeFx, t: number): number {
   if (fx.kind === 'arrows') return hopCurve(t, fx.strikeSec, ARROW_HIT_SEC, ARROW_RELEASE_SEC);
   if (fx.kind === 'thunder') return hopCurve(t, fx.strikeSec, THUNDER_CAST_SEC, THUNDER_CAST_SEC);
+  // トールハンマーは雷を呼び始めるときに跳ねる
+  if (fx.kind === 'hammer') return hopCurve(t, fx.strikeSec, HAMMER_HIT_SEC, THUNDER_CAST_SEC);
   if (fx.kind === 'bullets') return hopCurve(t, fx.strikeSec, BULLET_STYLE.hitSec, BULLET_STYLE.fireSpread);
   if (fx.kind === 'shell') return hopCurve(t, fx.strikeSec, SHELL_STYLE.hitSec, SHELL_RECOIL_SEC);
   return holdCurve(t);

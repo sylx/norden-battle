@@ -71,6 +71,7 @@ import {
   knightLabel,
   NO_FACTION,
   parseRosters,
+  placedUnits,
   portraitOf,
   ROSTER_SIZE,
   rosterFactions,
@@ -311,7 +312,7 @@ export default function EditorApp() {
               onOpen={(f) => void f.text().then((text) => loadJsonText(text, f.name))}
             />
           ),
-          troops: <TroopsTool draft={draft} onDraft={setDraft} dirty={draft !== rosters} onApply={applyRosters} />,
+          troops: <TroopsTool draft={draft} onDraft={setDraft} dirty={draft !== rosters} onApply={applyRosters} placed={map?.units ?? []} />,
           damage: <DamageTool />,
           facility: <FacilityTool facilities={facilities} factions={factions} onChange={changeFacilities} />,
           perf: app && <PerfTool app={app} />,
@@ -735,9 +736,23 @@ function Face({ portrait }: { portrait: Portrait }) {
 
 const SIDES: readonly DeploySide[] = ['attacker', 'defender'];
 
-function TroopsTool({ draft, onDraft, dirty, onApply }: { draft: Rosters; onDraft: (r: Rosters) => void; dirty: boolean; onApply: () => void }) {
+function TroopsTool({
+  draft,
+  onDraft,
+  dirty,
+  onApply,
+  placed,
+}: {
+  draft: Rosters;
+  onDraft: (r: Rosters) => void;
+  dirty: boolean;
+  onApply: () => void;
+  /** マップに置いてあるユニット（編成の行が上から順に割り当たり、兵種はマップの方になる） */
+  placed: readonly UnitData[];
+}) {
   const [side, setSide] = useState<DeploySide>('attacker');
   const roster = draft[side];
+  const placedTypes = placedUnits(placed, side).map((u) => u.type);
   const setRoster = (r: SideRoster) => onDraft({ ...draft, [side]: r });
   const setEntry = (i: number, patch: Partial<SideRoster['entries'][number]>) =>
     setRoster({ ...roster, entries: roster.entries.map((e, j) => (j === i ? { ...e, ...patch } : e)) });
@@ -789,6 +804,9 @@ function TroopsTool({ draft, onDraft, dirty, onApply }: { draft: Rosters; onDraf
         <tbody>
           {roster.entries.map((e, i) => {
             const k = knightById(e.knightId)!;
+            // マップに置いてあるユニットに割り当たる行は、マップのユニットの兵種で戦う
+            const mapType = placedTypes[i];
+            const type = mapType ?? e.type;
             return (
               <tr key={i}>
                 <td>
@@ -826,6 +844,7 @@ function TroopsTool({ draft, onDraft, dirty, onApply }: { draft: Rosters; onDraf
                       </option>
                     ))}
                   </select>
+                  {mapType && mapType !== e.type && <div className="hint">マップでは{UNIT_DEFS[mapType].name}</div>}
                 </td>
                 <td>
                   <input type="number" className="num" min={1} max={9999} step={10} value={e.soldiers} onChange={(ev) => setEntry(i, { soldiers: num(ev.target.value, 9999) })} />
@@ -834,7 +853,7 @@ function TroopsTool({ draft, onDraft, dirty, onApply }: { draft: Rosters; onDraf
                   <input type="number" className="num narrow" min={0} max={MAX_MORALE} value={e.morale} onChange={(ev) => setEntry(i, { morale: num(ev.target.value, MAX_MORALE) })} />
                 </td>
                 <td>
-                  {COMBAT_DEFS[e.type].magic ? (
+                  {COMBAT_DEFS[type].magic ? (
                     SPELL_IDS.map((id) => (
                       <label key={id} className="spell">
                         <input
@@ -873,7 +892,7 @@ function TroopsTool({ draft, onDraft, dirty, onApply }: { draft: Rosters; onDraf
         {dirty ? '（未反映の変更あり）' : ''}
       </p>
       <p className="hint">魔法は魔術師・上級魔術師だけが使う（サンダーフォールは必ず使える。ゲームでは魔導書の装備から渡す）</p>
-      <p className="hint">スキルはゲームの騎士にまだ無いので、表示確認用に行の順で仮に配る。配備の無いマップでは、防衛側を赤軍・攻撃側を青軍のユニットに上から順に割り当てる</p>
+      <p className="hint">スキルはゲームの騎士にまだ無いので、表示確認用に行の順で仮に配る。マップに置いてあるユニットには、防衛側を赤軍・攻撃側を青軍に上から順に割り当てる（兵種はマップのユニットの兵種になり、魔法の欄もそれに従う）</p>
     </>
   );
 }

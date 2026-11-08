@@ -4,7 +4,7 @@
  * - 計算は戦闘と同じ battle-runtime の calcDamage・calcCounter・moraleBreakdown（damage.ts・morale.ts の値を直せばそのまま反映される）。
  * - 攻撃側: 兵種・兵数・士気・統率・武力・知力（magic の兵種は武力の代わりに知力を使う。mightFor）・攻撃（魔術師・上級魔術師は全魔法）・
  *   当たり方（直撃: 狙った相手 / 範囲: 巻き添え（splashPower。反撃なし・撃った側の士気は増減しない）/ 迎撃: 迎撃の構えの間接ユニットの自動攻撃）。
- * - 防御側: 兵種・兵数・士気・統率・武力・知力・地形（人工物の城・砦は攻城の兵種に攻撃されると地形効果が減る）。
+ * - 防御側: 兵種・兵数・士気・統率・武力・知力・地形（人工物の城・砦は攻城の兵種に攻撃されると地形効果が減る。地形効果を無視する攻撃（トールハンマー）では効かない）。
  * - 状況: 包囲・迎撃の構え（近接の兵種）・標高差（高所の兵種）・一斉攻撃に加わる味方の数・隣接しているか（反撃を受けるか）。
  *   反撃は攻撃側の HEX の地形・包囲も効くので、攻撃側にも地形・包囲を置く。
  * - 結果: ダメージ（ランダムの真ん中と幅）・反撃・両軍の士気の増減（士気が減らない兵種も反映）・計算と士気の増減の内訳・同じ攻撃を続けたときに倒すまでの回数・防御側の兵種ごとの比較。
@@ -213,6 +213,8 @@ interface Scene {
   direct: boolean;
   /** 範囲の巻き添えか（撃った側の士気は増減しない） */
   splash: boolean;
+  /** 地形効果を無視する攻撃か（トールハンマー。def は地形効果の無い HEX にいるものにしてある） */
+  ignoresTerrain: boolean;
 }
 
 function outcome({ att, def, hit, direct, splash }: Scene, damageRoll: number, counterRoll: number): Outcome {
@@ -276,12 +278,15 @@ export default function DamageTool() {
     if (!r || !mode) return null;
     // 間接攻撃: 反撃の無い攻撃か、離れた所から
     const hit: Hit = { power: mode === 'splash' ? r.splashPower : r.power, magic: r.magic, volley: r.special === 'volley', indirect: r.indirect || !adjacent };
+    const def = fighterOf(defender, { guarding: input.guarding && guardable, supporters: 0, elevation: Math.max(0, -input.elevation) });
     return {
       att: fighterOf(attacker, { guarding: false, supporters: hit.volley ? input.supporters : 0, elevation: Math.max(0, input.elevation) }),
-      def: fighterOf(defender, { guarding: input.guarding && guardable, supporters: 0, elevation: Math.max(0, -input.elevation) }),
+      // 地形効果を無視する攻撃は、戦闘（combat.ts の attackResult）と同じく地形効果の無い HEX にいるものとして計算する
+      def: r.ignoresTerrain ? { ...def, defense: 0, walled: false } : def,
       hit,
       direct: mode === 'direct' && !r.indirect && adjacent && canFight(defender.type),
       splash: mode === 'splash',
+      ignoresTerrain: r.ignoresTerrain,
     };
   }, [attacker, defender, input.supporters, input.elevation, input.guarding, guardable, r, mode, adjacent]);
 
@@ -578,7 +583,13 @@ function Results({
           <Factor
             name="地形"
             v={f.terrain}
-            note={f.defense ? `地形効果 ${Math.round(f.defense * 100)}%${f.defense < def.defense ? '（攻城の兵種なので減る）' : ''}` : ''}
+            note={
+              scene.ignoresTerrain && placeOf(defender.place).defense
+                ? `${r.name}は地形効果（${Math.round(placeOf(defender.place).defense * 100)}%）を無視する`
+                : f.defense
+                  ? `地形効果 ${Math.round(f.defense * 100)}%${f.defense < def.defense ? '（攻城の兵種なので減る）' : ''}`
+                  : ''
+            }
           />
           <Factor
             name="高所"

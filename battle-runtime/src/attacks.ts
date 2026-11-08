@@ -26,7 +26,7 @@ export const ATTACK_IDS = [
   'maul',
   'beam',
   'flameLance',
-  'chainLightning',
+  'thorHammer',
   'frostNova',
   'earthSpike',
   'meteorFall',
@@ -40,7 +40,7 @@ export type MenuAttackId = Exclude<AttackId, 'interceptFire'>;
  * 部隊に持たせる魔法（UnitStatus.spells。magic の兵種だけが使える。ゲームでは魔導書の装備から渡す）。
  * サンダーフォールは魔術師・上級魔術師が必ず持つので含めない
  */
-export const SPELL_IDS = ['flameLance', 'chainLightning', 'frostNova', 'earthSpike', 'meteorFall'] as const satisfies readonly MenuAttackId[];
+export const SPELL_IDS = ['flameLance', 'thorHammer', 'frostNova', 'earthSpike', 'meteorFall'] as const satisfies readonly MenuAttackId[];
 export type SpellId = (typeof SPELL_IDS)[number];
 
 /**
@@ -49,7 +49,7 @@ export type SpellId = (typeof SPELL_IDS)[number];
  * bullets: まっすぐ飛ぶ光の弾（ライフル兵の通常攻撃）、shell: 放物線で飛ぶ大きな光の弾（砲兵の通常攻撃）、
  * claw: 3 本の爪の跡（ドラゴンのクロウ）、breath: 範囲の端まで吹く炎（ドラゴンのブレス）、flame: 細く速い炎の槍（フレイムランス）、
  * whirl: 周りをなぎ払う斬撃（乱撃）、smash: 地面を揺らす衝撃（ゴーレム・ベヒーモスの殴り）、beam: 溜めて放つ光線と爆発（ベヒーモス）、
- * chain: 跳ねていく雷（チェインライトニング）、frost: 氷の結晶（フロストノヴァ）、spike: 地面から突き出る岩（アーススパイク）、
+ * hammer: 大きな雷と衝撃（トールハンマー）、frost: 氷の結晶（フロストノヴァ）、spike: 地面から突き出る岩（アーススパイク）、
  * meteor: 空から落ちる光の柱と爆発（メテオフォール）
  */
 export type StrikeFxKind =
@@ -65,7 +65,7 @@ export type StrikeFxKind =
   | 'whirl'
   | 'smash'
   | 'beam'
-  | 'chain'
+  | 'hammer'
   | 'frost'
   | 'spike'
   | 'meteor';
@@ -81,9 +81,7 @@ export type Shape =
   /** 狙った HEX とその周り radius HEX（光線・アーススパイク・メテオ） */
   | { kind: 'burst'; radius: number }
   /** 自分の周り radius HEX（自分は除く。aim: 'self'。乱撃） */
-  | { kind: 'around'; radius: number }
-  /** 目標から近くのユニットへ跳ぶ（チェインライトニング。跳び方は段階 3 で決める。いまは目標だけ） */
-  | { kind: 'chain'; jumps: number };
+  | { kind: 'around'; radius: number };
 
 /** 当たったユニットに付く状態 */
 export interface Inflict {
@@ -117,6 +115,8 @@ export interface AttackDef {
   magic?: boolean;
   /** 使った次の自分の番から、この回数の番は使えない */
   cooldown?: number;
+  /** 相手のいる HEX の地形効果（森・城・砦など）を無視する */
+  ignoresTerrain?: boolean;
   inflicts?: readonly Inflict[];
   /** 演出（省略: 兵種の通常攻撃の演出） */
   fx?: StrikeFxKind;
@@ -191,19 +191,17 @@ export const ATTACK_DEFS: Record<AttackId, AttackDef> = {
     cooldown: 1,
     fx: 'flame',
   },
-  // サンダーフォールの強化版。目標から隣り合う敵へ跳ぶ（敵だけ）。当たった敵は感電することがある
-  chainLightning: {
-    id: 'chainLightning',
-    name: 'チェインライトニング',
+  // サンダーフォールの上位版。強い雷を 1 体に落とす。空から落ちるので、城壁や森に隠れていても地形効果で減らない
+  thorHammer: {
+    id: 'thorHammer',
+    name: 'トールハンマー',
     cost: 4,
-    power: 1.1,
+    power: 2.0,
     aim: 'unit',
-    shape: { kind: 'chain', jumps: 2 },
-    splashPower: 0.35,
     indirect: true,
     cooldown: 2,
-    inflicts: [{ condition: 'shock', chance: 0.5, turns: 1 }],
-    fx: 'chain',
+    ignoresTerrain: true,
+    fx: 'hammer',
   },
   // 近くの敵 1 体を凍らせる（ダメージは小さい）
   frostNova: {

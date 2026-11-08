@@ -2,7 +2,7 @@
  * 範囲の攻撃・大型の兵種のエフェクト。
  *
  * - ImpactEffects: 地面に広がる衝撃の輪と、はじける光・飛び散る破片（ゴーレム・ベヒーモスの殴り、フロストノヴァの氷、
- *   アーススパイクの岩、メテオの爆発）。見た目は ImpactStyle で変える。
+ *   アーススパイクの岩、メテオの爆発、トールハンマーの雷の衝撃）。見た目は ImpactStyle で変える。
  * - BeamEffects: 口元に光を溜めてから光線を放ち、範囲をさっと横切るように薙ぎ払って焼き尽くす（ベヒーモスの光線）。
  *   光線の先が通った HEX から火球と煙の連続画像（ExplosionEffects）が立ち上がり、焼け跡が燃え上がる。
  * - PillarEffects: 地点を中心に魔法陣が描かれて回り、中心へ縮むと同時に空から細い光線が降りてきて太くなり、
@@ -34,6 +34,8 @@ export const SMASH_STYLE: ImpactStyle = { color: 0xffc070, ringColor: 0xc89050, 
 export const FROST_STYLE: ImpactStyle = { color: 0xbfeaff, ringColor: 0x70c8ff, size: 0.8, shards: 34, speed: 1.6, gravity: 1.5, sec: 0.9 };
 export const SPIKE_STYLE: ImpactStyle = { color: 0xd8a868, ringColor: 0x8a6438, size: 0.7, shards: 22, speed: 2.8, gravity: 7, sec: 0.7 };
 export const BLAST_STYLE: ImpactStyle = { color: 0xffb050, ringColor: 0xff7020, size: 1.5, shards: 40, speed: 3.2, gravity: 4, sec: 0.9 };
+/** トールハンマーの雷が落ちたところに広がる衝撃（雷の色） */
+export const HAMMER_STYLE: ImpactStyle = { color: 0xdfe4ff, ringColor: 0x8fa0ff, size: 2.2, shards: 60, speed: 4.2, gravity: 3, sec: 1.0 };
 
 /** 衝撃は出した時点で当たる（はじける光が最初に最も明るい） */
 export const IMPACT_HIT_SEC = 0.02;

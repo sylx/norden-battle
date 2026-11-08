@@ -138,9 +138,7 @@ describe('攻撃の項目', () => {
 });
 
 describe('ほかの項目', () => {
-  it('感電していると迎撃できない。ブレインは退却できない', () => {
-    const shocked = { ...status('archer'), conditions: [{ id: 'shock' as const, turns: 1 }] };
-    expect(buildActionMenu(ctx('archer', { status: shocked })).find((e) => e.name === '迎撃')!.reason).toBe('感電していて迎撃できない');
+  it('ブレインは退却できない', () => {
     const special = buildActionMenu(ctx('brain')).find((e) => e.name === '特殊')!;
     expect(special.reason ?? special.children?.find((c) => c.id === 'retreat')?.reason).toBe('この部隊は退却できない');
   });
