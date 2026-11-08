@@ -1870,7 +1870,7 @@ export class BattleApp {
       return;
     }
     if (kind === 'spike') return area.forEach((o) => this.impactFx.spawn(this.groundPoint(o), size, SPIKE_STYLE));
-    // 光の柱・光線が届いたところで爆発する
+    // 光の柱が届いたところで爆発する
     const map = this.map;
     const blastAt = (sec: number) => setTimeout(() => this.map === map && this.impactFx.spawn(this.groundPoint(at), size, BLAST_STYLE), sec * 1000);
     if (kind === 'meteor') {
@@ -1881,9 +1881,9 @@ export class BattleApp {
       return void blastAt(PILLAR_HIT_SEC);
     }
     if (kind === 'beam' && up) {
-      // 範囲を薙ぎ払い終えたところで、狙った HEX が爆発する
+      // 各 HEX の爆発は、光線の通過に合わせて BeamEffects が再生する。
       this.beamFx.spawn(up, this.groundPoint(at), area.map((o) => this.groundPoint(o)), size);
-      return void blastAt(BEAM_HIT_SEC);
+      return;
     }
     if (kind === 'chain') {
       // 目標から跳ぶ順に、少しずつ遅らせて雷を落とす

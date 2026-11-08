@@ -1,0 +1,17 @@
+Generator: built-in image_gen (transparent_background: true)
+Asset: beam-explosion.webp
+Layout: 4 columns x 4 rows, 16 frames, left-to-right then top-to-bottom
+Export: 1254x1254 RGBA PNG -> each equal cell cropped and Lanczos resized to 240x240,
+        centered in a 256x256 cell with 8px transparent gutters; 1024x1024 RGBA WebP, quality=88, method=6
+Runtime: 1.3 seconds, adjacent frames blended, fixed ground anchor at 88.5% from top
+
+Use case: stylized-concept
+Asset type: production 4 by 4 sprite sheet of ONE ground explosion animation for a fantasy strategy game, transparent RGBA.
+Primary request: exactly 16 consecutive frames of a heavy incandescent ground eruption left in the wake of a colossal creature's sweeping energy beam. Evoke the terrifying weight of the Giant Warrior beam aftermath in Nausicaa: a yellow-white flash erupts into a towering orange fireball, rolling lobes of dense ochre and charcoal smoke, and fading embers. Hand-drawn theatrical anime effects animation, painterly cel shading, bold readable silhouettes, not photorealistic and not vector circles.
+Layout: square canvas, EXACTLY FOUR equal columns and FOUR equal rows, uniform cells with no borders, no text and no numbers. Read frames left to right then top to bottom. Each cell depicts ONE moment of the SAME evolving plume, NOT different explosions. Same fixed camera, scale, horizontal center, and ground contact point across all 16 cells. Ground contact always at x=50%, y=88% of each cell. Camera faces the plume from slightly above like a game billboard. Each complete explosion and all its particles fit inside its own cell, with at least 8% transparent padding on every side. Do not normalize each frame's size: small at start, large at peak, thin and dissolving at end.
+Timeline:
+Row 1: frame 1 small white-hot ignition at ground; frame 2 narrow upward white/yellow jet; frame 3 expanding yellow/orange fireball with a narrow fiery stem; frame 4 larger orange billowing blast rising.
+Row 2: frame 5 massive rolling fireball; frame 6 peak broad cauliflower-shaped incandescent plume; frame 7 orange lobes curling upward with brown smoke rims; frame 8 flame cooling as dark smoke rolls around it.
+Row 3: frame 9 mostly ochre/charcoal smoke with orange cracks; frame 10 smoke rises and spreads with shrinking fire at base; frame 11 thinner separated smoke curls with embers; frame 12 increasingly wispy smoke.
+Row 4: frame 13 scattered soft smoke wisps; frame 14 faint separated smoke wisps, little ash; frame 15 only a few very faint wisps; frame 16 almost completely transparent with the last trace of smoke.
+Constraints: genuine alpha transparency across the entire canvas outside the plume; retain opaque dark smoke inside it. No checkerboard painted into pixels, no solid background, no terrain, no character, no beam, no ground circle, no captions, no panel lines. Keep the same plume's shapes evolving coherently, no crop, no cross-cell overlap.

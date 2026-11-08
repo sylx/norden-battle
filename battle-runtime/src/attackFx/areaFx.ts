@@ -2,16 +2,17 @@
  * 範囲の攻撃・大型の兵種のエフェクト。
  *
  * - ImpactEffects: 地面に広がる衝撃の輪と、はじける光・飛び散る破片（ゴーレム・ベヒーモスの殴り、フロストノヴァの氷、
- *   アーススパイクの岩、光線・メテオの爆発）。見た目は ImpactStyle で変える。
+ *   アーススパイクの岩、メテオの爆発）。見た目は ImpactStyle で変える。
  * - BeamEffects: 口元に光を溜めてから光線を放ち、範囲をさっと横切るように薙ぎ払って焼き尽くす（ベヒーモスの光線）。
- *   光線の先が通った HEX から炎がはじけ（ImpactEffects）、焼け跡が燃え上がる。
+ *   光線の先が通った HEX から火球と煙の連続画像（BeamExplosionEffects）が立ち上がり、焼け跡が燃え上がる。
  * - PillarEffects: 地点を中心に魔法陣が描かれて回り、中心へ縮むと同時に空から細い光線が降りてきて太くなり、
  *   範囲が光で飽和して爆発する（メテオフォール）。飛び散る破片は ImpactEffects。
  *
- * どれもユニットの絵より手前に、深度テストをせず加算で描く（fxShared.ts）。
+ * ユニットの絵より手前に、深度テストをせず描く。光は加算（fxShared.ts）、光線の爆発画像は煙の色が残る透過合成。
  */
 import * as THREE from 'three';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
+import { BeamExplosionEffects } from './beamExplosionFx';
 import { createFlashMaterial, createFxMaterial, createSparks, createSparkTexture, FX_RENDER_ORDER, moveSparks } from './fxShared';
 
 /** 衝撃の見た目 */
@@ -203,8 +204,8 @@ const BEAM_COLOR = 0xffe0a0;
 const BEAM_WIDTH = 0.45;
 const BURN_WIDTH = 1.1;
 const SWEEP_OVERSHOOT = 0.7;
-/** 光線が通ったところではじける炎 */
-const BURN_STYLE: ImpactStyle = { color: 0xffa040, ringColor: 0xff5010, size: 0.75, shards: 16, speed: 1.6, gravity: 1.2, sec: 0.75 };
+/** 光線の通過から火球が噴き上がるまでの間（秒） */
+const BEAM_EXPLOSION_DELAY_SEC = 0.06;
 
 interface Beam {
   glow: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
@@ -229,12 +230,12 @@ interface Beam {
 export class BeamEffects {
   readonly group = new THREE.Group();
   private readonly plane = new THREE.PlaneGeometry(2, 2);
-  private readonly impacts = new ImpactEffects();
+  private readonly explosions = new BeamExplosionEffects();
   private items: Beam[] = [];
 
   constructor() {
     this.group.name = 'beam-fx';
-    this.group.add(this.impacts.group);
+    this.group.add(this.explosions.group);
   }
 
   /**
@@ -281,8 +282,6 @@ export class BeamEffects {
   }
 
   update(camera: THREE.Camera): void {
-    this.impacts.update(camera);
-    if (this.items.length === 0) return;
     const now = performance.now();
     this.items = this.items.filter((b) => {
       const t = (now - b.start) / 1000;
@@ -325,11 +324,12 @@ export class BeamEffects {
         b.tip.material.uniforms.uT.value = 0.25 + 0.5 * fade;
       }
 
-      // 光線の先が通った HEX から炎がはじける
+      // 薙ぎ払いの進行式を逆算し、各 HEX の通過直後に画像の爆発を再生する。
       for (const burn of b.burns) {
         if (burn.done || !firing || k < burn.k) continue;
         burn.done = true;
-        this.impacts.spawn(burn.at, b.hexSize, BURN_STYLE);
+        const crossedAt = BEAM_CHARGE_SEC + BEAM_SWEEP_SEC * (1 - Math.sqrt(1 - burn.k));
+        this.explosions.spawn(burn.at, b.hexSize, b.start + (crossedAt + BEAM_EXPLOSION_DELAY_SEC) * 1000);
       }
 
       // 焼け跡: 光線の先まで焼け、通った直後は白く熱く、冷めながら赤く燃える。薙ぎ終えると一斉に燃え上がってから消える
@@ -344,12 +344,14 @@ export class BeamEffects {
       }
       return true;
     });
+    // 光線が消えたあとも煙を更新し、新たな爆発は生まれたフレームから正しい位置で描く。
+    this.explosions.update(camera);
   }
 
   clear(): void {
     for (const b of this.items) this.dispose(b);
     this.items = [];
-    this.impacts.clear();
+    this.explosions.clear();
   }
 
   private dispose(b: Beam): void {
