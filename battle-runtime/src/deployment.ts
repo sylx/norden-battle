@@ -7,7 +7,8 @@
  *   配置地点の外をクリックすると選ぶのをやめる。
  * - 1 つの陣営が置けるのは MAX_DEPLOY 部隊まで（配置地点がそれより少なければ配置地点の数まで）。置かなかった部隊は戦闘に出ない。
  *   上限まで置いた後も、置いた部隊と未配備の部隊を入れ替えることはできる。
- * - 「配備完了」（1 部隊以上置いたとき）で次の陣営へ。最後の陣営が終われば戦闘が始まる。
+ * - 「配備完了」（1 部隊以上置き、軍団長の部隊を置いたとき）で次の陣営へ。最後の陣営が終われば戦闘が始まる。
+ *   自動配置は軍団長の部隊から先に置く。
  *
  * マップのユニットと戦闘中の状態（statuses）を直接書き換える。描画の更新は BattleApp がする。
  */
@@ -53,6 +54,8 @@ export interface DeployState {
   limit: number;
   /** この後に配備する陣営があるか */
   more: boolean;
+  /** 軍団長の部隊がまだ置かれていない（配備完了できない） */
+  commanderMissing: boolean;
 }
 
 /** 表示確認用の仮の部隊の兵種の並び（自動配置は先頭から MAX_DEPLOY 部隊を置くので、確かめたい兵種は前の方に入れる） */
@@ -130,6 +133,7 @@ export class Deployment {
       slots: this.slots().length,
       limit: this.limit(),
       more: this.index < this.sides.length - 1,
+      commanderMissing: troops.some((t) => t.status.commander && !placed.has(t.id)),
     };
     return this.snapshot;
   }
@@ -193,7 +197,9 @@ export class Deployment {
     const side = this.side;
     if (!side) return;
     const free = this.slots().filter((s) => !this.map.unitAt(s.col, s.row));
-    for (const troop of this.troops) {
+    // 軍団長の部隊から先に置く（置かないと配備完了できない）
+    const order = [...this.troops.filter((t) => t.status.commander), ...this.troops.filter((t) => !t.status.commander)];
+    for (const troop of order) {
       if (troop.side !== side || this.units.has(troop)) continue;
       if (this.placedCount() >= this.limit()) break;
       const slot = free.shift();
@@ -204,10 +210,12 @@ export class Deployment {
     this.changed();
   }
 
-  /** 配備を終えて次の陣営へ進む（1 部隊も置いていなければ何もしない）。進めたら true */
+  /** 配備を終えて次の陣営へ進む（1 部隊も置いていないか、軍団長の部隊を置いていなければ何もしない）。進めたら true */
   finish(): boolean {
     const side = this.side;
-    if (!side || !this.troops.some((t) => t.side === side && this.units.has(t))) return false;
+    if (!side) return false;
+    const troops = this.troops.filter((t) => t.side === side);
+    if (!troops.some((t) => this.units.has(t)) || troops.some((t) => t.status.commander && !this.units.has(t))) return false;
     this.index++;
     this.picked = null;
     this.changed();

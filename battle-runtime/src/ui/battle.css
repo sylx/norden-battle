@@ -1689,6 +1689,17 @@
   color: var(--accent);
 }
 
+/* 軍団長の部隊を置いていない（配備完了できない）。フッターの上に 1 行で出す */
+.battle-screen .deploy-window .deploy-warn {
+  margin: 8px 0 0;
+  padding: 3px 6px;
+  border: 1px solid #d06040;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #e07050;
+}
+
 .battle-screen .deploy-window .deploy-count output {
   font-size: 16px;
   font-weight: 600;

@@ -104,7 +104,7 @@ export function deployStatus(f: BattleFactions, { side, team, troops, picked, pl
       return `${who}: ${limit} 部隊まで置きました。${name}は置いた部隊の上に置くと入れ替えられます / Esc・範囲外クリック: 選ぶのをやめる`;
     return `${who}: ${name}を置く HEX を選んでください（軍の色の HEX。部隊の上なら入れ替え）/ Esc・範囲外クリック: 選ぶのをやめる`;
   }
-  return `${who}: 一覧で部隊を選び、軍の色の HEX に置いてください（${limit} 部隊まで）/ 置いた部隊をクリック: 選び直して動かす / 左ドラッグ: 移動 / ホイール: ズーム`;
+  return `${who}: 一覧で部隊を選び、軍の色の HEX に置いてください（${limit} 部隊まで。軍団長の部隊は必ず置く）/ 置いた部隊をクリック: 選び直して動かす / 左ドラッグ: 移動 / ホイール: ズーム`;
 }
 
 /** 決定で予約を実行し終えたとき */

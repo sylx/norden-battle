@@ -814,7 +814,7 @@ export class BattleApp {
     this.deployChanged();
   }
 
-  /** 配備を終えて次の陣営の配備へ進む。最後の陣営なら戦闘を始める。進めたら true（1 部隊も置いていなければ false） */
+  /** 配備を終えて次の陣営の配備へ進む。最後の陣営なら戦闘を始める。進めたら true（1 部隊も置いていないか、軍団長の部隊を置いていなければ false） */
   finishDeploy(): boolean {
     const d = this.deployment;
     if (!d?.finish()) return false;
