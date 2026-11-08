@@ -713,6 +713,18 @@
   font-size: 30px;
 }
 
+/* 数字の下に添える行（popups.ts の addLine） */
+.battle-screen .popup-line {
+  text-align: center;
+}
+
+/* アーススパイクで耕したとき（ダメージの数字に添える行・空いた HEX に出す文字） */
+.battle-screen .popup.terrain,
+.battle-screen .popup-line.terrain {
+  color: #e0b870;
+  font-size: 28px;
+}
+
 /* --- セリフの吹き出し（speechBubbles.ts。顔の大きさは FACE_SIZE、しっぽは TAIL_H・TAIL_INSET と合わせる） --- */
 .battle-screen .barks {
   position: absolute;

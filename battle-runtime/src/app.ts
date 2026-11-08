@@ -210,6 +210,8 @@ const GUNSHIP_STRIKE_SEC = 2 * GUNSHIP_STYLE.hitSec;
 const GUNSHIP_OFFSET = { x: -2.5, y: 7 };
 /** 操作できない味方（混乱・凍結）を選んだときの頭上の文字は、少しだけ浮かんですぐ消す */
 const LOCKED_POPUP = { duration: 0.8, rise: 10 };
+/** 耕す攻撃（アーススパイク）で地形が変わったときの頭上の文字 */
+const PLOW_POPUP = '地形破壊';
 /** 混乱したユニットが勝手に動き出すまでの間（ミリ秒。番を終えてから・前の動きの後） */
 const AUTO_DELAY_MS = 900;
 /** 鼓舞で回復する士気（この範囲の整数） */
@@ -2161,12 +2163,24 @@ export class BattleApp {
     const at = (u: UnitData) => placements.find((p) => p.unit === u);
     const tp = target && at(target);
     const up = at(plan.unit);
-    if (!result) return;
-    const label = result.supporters > 0 ? `一斉 -${result.damage}` : `-${result.damage}`;
-    if (tp) this.popups.show(tp, `${label}${wipeoutLabel(tw)}`, 'damage');
-    // 突撃は当たる時点で相手と重なっているので、反撃の数字は駆け抜ける絵に付いていかせて、相手の数字から離す
-    const counterText = `-${result.counter}${wipeoutLabel(uw)}`;
-    if (up && result.direct) this.popups.show(up, counterText, 'counter', !!attack.landing);
+    if (result) {
+      const label = result.supporters > 0 ? `一斉 -${result.damage}` : `-${result.damage}`;
+      if (tp) this.popups.show(tp, `${label}${wipeoutLabel(tw)}`, 'damage');
+      // 突撃は当たる時点で相手と重なっているので、反撃の数字は駆け抜ける絵に付いていかせて、相手の数字から離す
+      const counterText = `-${result.counter}${wipeoutLabel(uw)}`;
+      if (up && result.direct) this.popups.show(up, counterText, 'counter', !!attack.landing);
+    }
+    if (report.attack.plowed) this.showPlowed(report.attack.plowed.at);
+  }
+
+  /** 耕した HEX に「地形破壊」と出す。そこにユニットがいればダメージの数字の下に添え、空いた HEX なら地面から出す */
+  private showPlowed(o: Offset): void {
+    const map = this.map!;
+    const unit = map.unitAt(o.col, o.row);
+    const p = unit && this.view.units.placements().find((x) => x.unit === unit);
+    if (p) return this.popups.addLine(p, PLOW_POPUP, 'terrain');
+    const c = map.layout.offsetToWorld(o.col, o.row);
+    this.popups.show({ foot: new THREE.Vector3(c.x, this.view.groundAt(c.x, c.z), c.z), height: 0 }, PLOW_POPUP, 'terrain');
   }
 
   /**

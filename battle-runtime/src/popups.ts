@@ -13,8 +13,13 @@ export interface PopupTiming {
   rise: number;
 }
 
+/** 数字を出す位置（ユニットの絵の UnitPlacement、または地面の点と高さ 0） */
+export type PopupAnchor = Pick<UnitPlacement, 'foot' | 'height'>;
+
 interface Popup {
   el: HTMLDivElement;
+  /** 出したときに渡された足元（addLine で、同じユニットに出した数字を探す） */
+  anchor: THREE.Vector3;
   /** 足元（頭の位置は足元 + 絵の高さ。カメラ正対なので画面上はカメラの上方向）。ユニットに付いていくときは絵の位置そのもの */
   foot: THREE.Vector3;
   height: number;
@@ -38,12 +43,25 @@ export class Popups {
    * follow なら、出した後もユニットの絵の動きに付いていく（突撃で相手を駆け抜けるときなど）。そうでなければ出したところに留まる。
    * timing で表示している時間と浮かぶ高さを変える（省くと DURATION・RISE）
    */
-  show(p: UnitPlacement, text: string, className: string, follow = false, timing: PopupTiming = { duration: DURATION, rise: RISE }): void {
+  show(p: PopupAnchor, text: string, className: string, follow = false, timing: PopupTiming = { duration: DURATION, rise: RISE }): void {
     const el = document.createElement('div');
     el.className = `popup ${className}`;
     el.textContent = text;
     this.root.appendChild(el);
-    this.items.push({ el, foot: follow ? p.foot : p.foot.clone(), height: p.height, start: performance.now(), ...timing });
+    this.items.push({ el, anchor: p.foot, foot: follow ? p.foot : p.foot.clone(), height: p.height, start: performance.now(), ...timing });
+  }
+
+  /**
+   * p のユニットに最後に出した数字の下に text の行を添える（アーススパイクのダメージに「地形破壊」など）。
+   * まだ何も出していなければ、text だけを出す
+   */
+  addLine(p: PopupAnchor, text: string, className: string): void {
+    const item = [...this.items].reverse().find((x) => x.anchor === p.foot);
+    if (!item) return this.show(p, text, className);
+    const line = document.createElement('div');
+    line.className = `popup-line ${className}`;
+    line.textContent = text;
+    item.el.appendChild(line);
   }
 
   /** 毎フレーム、描画の後に呼ぶ */
