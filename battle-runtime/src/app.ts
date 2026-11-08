@@ -228,6 +228,8 @@ const STRONGHOLD_COLOR = 0xf0c030;
 
 /** 一斉攻撃で、加わるユニットごとにエフェクトをずらす時間（秒） */
 const VOLLEY_FX_STAGGER_SEC = 0.06;
+/** メテオの演出で寄るときの、ユニットの絵の範囲が画面に占める割合（ほかの攻撃より離れて、魔法陣と降る光の柱の大きさを見せる） */
+const METEOR_FOCUS_FILL = 0.3;
 
 /** 攻撃の演出の種類ごとの、エフェクトを出してから当たるまでの時間（秒）と、当たったときのカメラの揺れ（hexSize 比） */
 const STRIKE_FX: Record<StrikeFxKind, { hitSec: number; cameraShake: number }> = {
@@ -1573,7 +1575,7 @@ export class BattleApp {
           // 範囲の巻き添えになるユニットも画面に収める
           const a = attack!;
           const splash = splashUnits(map, exec.plan.unit, exec.plan.unit, a.target, a.at, a.id);
-          this.focusOn([exec.plan.unit, ...(a.target ? [a.target] : []), ...exec.supporters, ...splash], a.landing, timing, a.at);
+          this.focusOn([exec.plan.unit, ...(a.target ? [a.target] : []), ...exec.supporters, ...splash], a.landing, timing, a.at, kind === 'meteor' ? METEOR_FOCUS_FILL : undefined);
         }
         else this.focusOn([phase.shooter, exec.plan.unit], null, timing);
       } else {
@@ -1839,14 +1841,14 @@ export class BattleApp {
 
   /**
    * 攻撃の演出で、units（先頭が攻撃するユニット）の絵が画面に収まるところまでカメラを寄せる。
-   * landing（突撃で飛び出る先）があれば、そこに置いた攻撃するユニットの絵も収める
+   * landing（突撃で飛び出る先）があれば、そこに置いた攻撃するユニットの絵も収める。fill は絵の範囲が画面に占める割合（省くと既定）
    */
-  private focusOn(units: readonly UnitData[], landing: Offset | null, timing: FocusTiming, aimed: Offset | null = null): void {
+  private focusOn(units: readonly UnitData[], landing: Offset | null, timing: FocusTiming, aimed: Offset | null = null, fill?: number): void {
     const placements = this.view.units.placements().filter((p) => units.includes(p.unit));
     const self = placements.find((p) => p.unit === units[0]);
     // 突撃で飛び出る先と、狙った地点（ユニットのいない HEX を狙ったとき）も収める
     for (const o of [landing, aimed]) if (o && self) placements.push({ ...self, foot: this.groundPoint(o) });
-    this.cameraFocus.play(placements, timing);
+    this.cameraFocus.play(placements, timing, fill);
   }
 
   /**

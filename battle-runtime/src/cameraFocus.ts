@@ -8,8 +8,8 @@ import * as THREE from 'three';
 import type { SceneContext } from '@norden/map-runtime/render/scene';
 import type { UnitPlacement } from '@norden/map-runtime/render/units';
 
-/** 寄ったとき、ユニットの絵の範囲が画面の幅・高さに占める割合 */
-const FILL = 0.6;
+/** 寄ったとき、ユニットの絵の範囲が画面の幅・高さに占める割合（play で変えなければ） */
+export const FOCUS_FILL = 0.6;
 /** 揺れの時間（秒） */
 const SHAKE_SEC = 0.28;
 /** panTo で注視点を動かす時間（秒） */
@@ -43,8 +43,8 @@ export class CameraFocus {
     this.ctx = ctx;
   }
 
-  /** units の絵がすべて画面に収まるところまで寄って、timing のとおりに戻る */
-  play(units: readonly UnitPlacement[], timing: FocusTiming): void {
+  /** units の絵がすべて画面に収まるところまで寄って、timing のとおりに戻る。fill は絵の範囲が画面に占める割合（小さいほど離れる） */
+  play(units: readonly UnitPlacement[], timing: FocusTiming, fill = FOCUS_FILL): void {
     const { camera, controls } = this.ctx;
     if (units.length === 0) return;
     // 続けて寄るときは、最初に寄る前の位置へ戻す
@@ -73,7 +73,7 @@ export class CameraFocus {
       .addScaledVector(up, (y0 + y1) / 2 - mean.dot(up));
     const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     const dist = THREE.MathUtils.clamp(
-      Math.max((x1 - x0) / (2 * tanV * camera.aspect * FILL), (y1 - y0) / (2 * tanV * FILL)),
+      Math.max((x1 - x0) / (2 * tanV * camera.aspect * fill), (y1 - y0) / (2 * tanV * fill)),
       controls.minDistance,
       controls.maxDistance,
     );
