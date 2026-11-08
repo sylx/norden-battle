@@ -159,13 +159,13 @@ export const ATTACK_DEFS: Record<AttackId, AttackDef> = {
     cooldown: 1,
     fx: 'breath',
   },
-  // ゴーレム・ベヒーモスの殴り（直接攻撃）
-  smash: { id: 'smash', name: '殴り', cost: 2, power: 0.9, aim: 'unit', fx: 'smash' },
-  maul: { id: 'maul', name: '殴り', cost: 2, power: 1.0, aim: 'unit', fx: 'smash' },
-  // ベヒーモスの光線。目標に大ダメージ、周り 1 HEX にも当たる（味方にも）
+  // ゴーレムの鉄拳・ベヒーモスの蹂躙（直接攻撃）
+  smash: { id: 'smash', name: '鉄拳', cost: 2, power: 0.9, aim: 'unit', fx: 'smash' },
+  maul: { id: 'maul', name: '蹂躙', cost: 2, power: 1.0, aim: 'unit', fx: 'smash' },
+  // ベヒーモスの終末の光（光線）。目標に大ダメージ、周り 1 HEX にも当たる（味方にも）
   beam: {
     id: 'beam',
-    name: '光線',
+    name: '終末の光',
     cost: 3,
     power: 0.8,
     aim: 'unit',
