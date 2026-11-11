@@ -1,6 +1,6 @@
 /**
  * CPU の思考（cpu/）のテスト。描画なしで戦わせて、ランダムな打ち手にはっきり勝ち越すこと・CPU どうしで最後まで戦えること・
- * シードが同じなら同じ結果になることを確かめる。手の細かい強さはシミュレータ（npm run sim）で見る。
+ * シードが同じなら同じ結果になることを確かめる。性格（段階 3）・難易度で手が変わることも確かめる。手の細かい強さはシミュレータ（npm run sim）で見る。
  */
 import { describe, expect, it } from 'vitest';
 import type { UnitData } from '@norden/map-runtime/core/units';
@@ -11,6 +11,8 @@ import { hexDistance, splashUnits } from '../combat';
 import { Deployment, type Troop } from '../deployment';
 import { runAction } from '../engine/action';
 import { planPos } from '../engine/plan';
+import type { BattleState } from '../engine/state';
+import type { BattleStyle } from '../unitStatus';
 import { seededRng } from '../engine/rng';
 import { randomPlayer, runBattle, type Player } from '../engine/sim';
 import { judge } from '../engine/turn';
@@ -19,7 +21,8 @@ import { candidates, decide, type Mood } from './decide';
 import { deployTroops } from './deploy';
 import { cpuPlayer } from './player';
 import { planTeam } from './strategy';
-import { BASIC_FEATURES } from './types';
+import { armyTemperOf, temperOf } from './temper';
+import { BASIC_FEATURES, DIFFICULTY_PROFILES, featuresOf } from './types';
 
 const cpu = cpuPlayer({ difficulty: 'normal' });
 /** 段階 1 の CPU */
@@ -206,4 +209,145 @@ describe('CPU（段階 2）', () => {
     expect(col('c')).toBeLessThan(Math.min(col('k'), col('i')));
     expect(hexDistance(map, at.get('m')!, { col: 11, row: 3 })).toBeGreaterThanOrEqual(hexDistance(map, at.get('a')!, { col: 11, row: 3 }));
   });
+});
+
+/** 段階 3: 性格と難易度 */
+describe('CPU（段階 3）', () => {
+  const normal = { difficulty: 'normal' as const };
+  const nearestEnemy = (state: BattleState, at: { col: number; row: number }, team: UnitData['team']) =>
+    Math.min(...state.map.allUnits().filter((u) => u.team !== team).map((u) => hexDistance(state.map, at, u)));
+  const withStyle = (state: BattleState, unit: UnitData, style: BattleStyle | undefined) => {
+    const s = state.statuses.get(unit)!;
+    if (style) s.personality = style;
+    else delete s.personality;
+  };
+
+  it('性格の気質: 猛進は退却せず、軍団長の部隊は性格の効きが半分になる', () => {
+    const plain = status('infantry', { personality: 'aggressive' });
+    const commander = status('infantry', { personality: 'aggressive', commander: true });
+    expect(temperOf(plain).retreat).toBeNull();
+    expect(temperOf(plain).danger).toBeLessThan(1);
+    expect(temperOf(commander).danger).toBeGreaterThan(temperOf(plain).danger);
+    expect(temperOf(commander).danger).toBeLessThan(1);
+    // 性格を見ないなら標準
+    expect(temperOf(plain, false).retreat).not.toBeNull();
+    expect(temperOf(status('infantry'))).toEqual(temperOf(plain, false));
+  });
+
+  it('猛進の部隊は慎重な部隊より敵の近くで行動を終える', () => {
+    const map = testMap(16, 7);
+    const unit = place(map, 'infantry', 'red', 2, 3);
+    const foes = [place(map, 'archer', 'blue', 12, 3), place(map, 'infantry', 'blue', 11, 2), place(map, 'infantry', 'blue', 11, 4)];
+    const state = battle(map, [unit, ...foes]);
+    const end = (style: BattleStyle) => {
+      withStyle(state, unit, style);
+      return nearestEnemy(state, planPos(decide(state, unit, normal)!.plan), 'red');
+    };
+    expect(end('aggressive')).toBeLessThan(end('cautious'));
+  });
+
+  it('慎重な部隊は早めに退却し、猛進の部隊は退却しない', () => {
+    const map = testMap();
+    const unit = place(map, 'infantry', 'red', 3, 3);
+    const foes = [place(map, 'cavalry', 'blue', 5, 2), place(map, 'cavalry', 'blue', 5, 4), place(map, 'infantry', 'blue', 6, 3)];
+    const state = battle(map, [[unit, { soldiers: 40 }], ...foes], { retreats: { red: [{ id: 'r', name: '赤の後方' }] } });
+    // 兵が戦闘の初めの 40%（標準の 35% より多く、慎重の 50% 以下）
+    state.statuses.get(unit)!.initialSoldiers = 100;
+    const end = (style: BattleStyle | undefined) => {
+      withStyle(state, unit, style);
+      return decide(state, unit, normal)!.end;
+    };
+    expect(end(undefined)).not.toBe('retreat');
+    expect(end('cautious')).toBe('retreat');
+    state.statuses.get(unit)!.initialSoldiers = 500;
+    expect(end(undefined)).toBe('retreat');
+    expect(end('aggressive')).not.toBe('retreat');
+  });
+
+  it('実利は弱った相手を、勇敢は強い相手を狙う', () => {
+    const map = testMap();
+    const unit = place(map, 'cavalry', 'red', 3, 3);
+    const strong = place(map, 'infantry', 'blue', 4, 2);
+    const weak = place(map, 'infantry', 'blue', 4, 4);
+    // 標準は弱った相手を狙う（点数 95 対 55）。勇敢は強い相手（116 対 106）、実利は弱った相手（137 対 50）
+    const state = battle(map, [[unit, { soldiers: 600 }], [strong, { soldiers: 600 }], [weak, { soldiers: 400 }]]);
+    state.statuses.get(weak)!.initialSoldiers = 1000;
+    const target = (style: BattleStyle) => {
+      withStyle(state, unit, style);
+      return decide(state, unit, normal)!.plan.attack?.target;
+    };
+    expect(target('pragmatic')).toBe(weak);
+    expect(target('valiant')).toBe(strong);
+  });
+
+  it('軍団長の性格で負けを認めるしきい値が変わる（慎重は早く、猛進は遅く）', () => {
+    const map = testMap();
+    const commander = place(map, 'infantry', 'red', 1, 3);
+    const foes = [place(map, 'infantry', 'blue', 7, 2), place(map, 'infantry', 'blue', 7, 4)];
+    // 味方の兵力は戦闘の初めの 35%、敵は味方の 2.5 倍ほど
+    const state = battle(map, [[commander, { soldiers: 350, commander: true }], [foes[0], { soldiers: 450 }], [foes[1], { soldiers: 450 }]]);
+    state.statuses.get(commander)!.initialSoldiers = 1000;
+    const concede = (style: BattleStyle | undefined) => {
+      withStyle(state, commander, style);
+      return planTeam(state, 'red').concede;
+    };
+    expect(concede(undefined)).toBe(0);
+    expect(concede('cautious')).toBeGreaterThan(0);
+    expect(concede('aggressive')).toBe(0);
+    expect(armyTemperOf(state.statuses.get(commander)).concedeLeft).toBeLessThan(armyTemperOf(undefined).concedeLeft);
+  });
+
+  it('難易度: 易しいは危険な HEX と狙いの集中を見ず、難しいだけが連携し、易しいほどノイズが大きい', () => {
+    expect(featuresOf({ difficulty: 'easy' })).toMatchObject({ danger: false, focus: false, teamwork: false, strategy: true });
+    expect(featuresOf({ difficulty: 'normal' })).toMatchObject({ danger: true, focus: true, teamwork: false });
+    expect(featuresOf({ difficulty: 'hard' })).toMatchObject({ danger: true, focus: true, teamwork: true });
+    expect(DIFFICULTY_PROFILES.easy.noise).toBeGreaterThan(DIFFICULTY_PROFILES.normal.noise);
+    expect(DIFFICULTY_PROFILES.hard.noise).toBe(0);
+  });
+
+  it('ノイズを入れても、一番いい手からノイズの点数より悪い手は選ばない', () => {
+    // 敵が遠く、点数の近い移動先がいくつもある
+    const map = testMap(16, 7);
+    const unit = place(map, 'cavalry', 'red', 1, 3);
+    const foes = [place(map, 'infantry', 'blue', 14, 3), place(map, 'archer', 'blue', 15, 2)];
+    const state = battle(map, [unit, ...foes]);
+    const easy = { difficulty: 'easy' as const };
+    const list = candidates(state, unit, { urgency: 0 }, featuresOf(easy));
+    const best = Math.max(...list.map((c) => c.score));
+    const rng = seededRng(3);
+    const seen = new Set<string>();
+    for (let i = 0; i < 20; i++) {
+      const d = decide(state, unit, easy, { urgency: 0 }, rng)!;
+      const pos = planPos(d.plan);
+      const c = list.find((x) => (x.step ? x.step.col === pos.col && x.step.row === pos.row : pos.col === unit.col && pos.row === unit.row) && (x.attack?.id ?? null) === (d.plan.attack?.id ?? null) && x.end === d.end)!;
+      expect(c).toBeDefined();
+      expect(c.score).toBeGreaterThanOrEqual(best - DIFFICULTY_PROFILES.easy.noise);
+      seen.add(`${pos.col},${pos.row},${d.end}`);
+    }
+    // ノイズで手がばらつく
+    expect(seen.size).toBeGreaterThan(1);
+  });
+
+  it('連携: まだ動いていない味方と合わせて殲滅できる相手への攻撃を高く見る', () => {
+    const map = testMap();
+    const unit = place(map, 'infantry', 'red', 3, 3);
+    const ally = place(map, 'cavalry', 'red', 3, 5);
+    const foe = place(map, 'infantry', 'blue', 4, 3);
+    // unit だけでは殲滅できない（与えるのは 46〜70）が、騎兵の味方（88 ほど）と合わせれば殲滅できる
+    const state = battle(map, [unit, ally, [foe, { soldiers: 130 }]]);
+    const attackOn = (teamwork: boolean) =>
+      Math.max(...candidates(state, unit, { urgency: 0 }, { ...featuresOf(normal), teamwork }).filter((c) => c.attack && !c.step).map((c) => c.score));
+    expect(attackOn(true)).toBeGreaterThan(attackOn(false));
+  });
+
+  it('難しい・易しいの CPU どうしでも最後まで戦い、シードが同じなら同じ結果になる', () => {
+    const hard = cpuPlayer({ difficulty: 'hard' });
+    const easy = cpuPlayer({ difficulty: 'easy' });
+    for (const seed of SEEDS.slice(0, 3)) {
+      const a = play(hard, easy, seed);
+      expect(a.winner).not.toBeNull();
+      expect(play(hard, easy, seed)).toEqual(a);
+      expect(play(easy, hard, seed).winner).not.toBeNull();
+    }
+  }, 60_000);
 });

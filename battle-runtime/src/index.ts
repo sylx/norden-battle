@@ -30,8 +30,8 @@ export { CONDITION_DEFS, CONDITION_IDS } from './conditions';
 export type { Condition, ConditionDef, ConditionId } from './conditions';
 
 // ユニットの戦闘中の状態
-export { demoStatus, demoStatuses, MAX_MORALE, troopStatus, typeTraits } from './unitStatus';
-export type { Portrait, TroopInit, UnitStatus } from './unitStatus';
+export { BATTLE_STYLE_NAMES, BATTLE_STYLES, battleStyleOf, demoStatus, demoStatuses, MAX_MORALE, troopStatus, typeTraits } from './unitStatus';
+export type { BattleStyle, Portrait, TroopInit, UnitStatus } from './unitStatus';
 
 // ユニットそのものの力（基本攻撃力・基本防御力。戦う前の比べ合いに使う）
 export { basicAttack, basicDefense, MAX_BASIC_DEFENSE, STANDARD_UNIT } from './damage';

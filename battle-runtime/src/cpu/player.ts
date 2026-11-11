@@ -5,7 +5,9 @@
  * - 番の初め（beginTurn）: 戦況が動いていない番の数を数え（膠着したら前のめりにする）、部隊のいる HEX を覚える（次の番に往復しない）。
  *   軍の作戦を立てる（strategy.ts。拠点の守りの部隊・負けを認めるか）
  * - 動かす順（order）: 前に出る兵種（射程の無い兵種）を先に、射程のある兵種を後に、軍団長の部隊を最後に。同じ組では敵に近い部隊から
- *   （前の部隊が道を空け、敵を削ってから後ろの部隊が撃つ）。負けを認めそうなら軍団長の部隊が最初（退却して戦闘を終える）
+ *   （前の部隊が道を空け、敵を削ってから後ろの部隊が撃つ）。負けを認めそうなら軍団長の部隊が最初（退却して戦闘を終える）。
+ *   連携（teamwork。難しい）では、1 部隊動かすごとに、その場で待つより一番得をする部隊を選ぶ
+ * - 手を選ぶ（decide）: 難易度のノイズは打ち手の乱数から引く（ルールの乱数の並びはずれない）
  * - 強制退却の退却先は最初の拠点
  */
 import type { Offset } from '@norden/map-runtime/core/hex';
@@ -13,15 +15,16 @@ import type { TeamId, UnitData } from '@norden/map-runtime/core/units';
 import { COMBAT_DEFS, hexDistance } from '../combat';
 import type { Player } from '../engine/sim';
 import { retreatDestinations, type BattleState } from '../engine/state';
-import { decide, type Mood } from './decide';
+import { decide, moveGain, type Mood } from './decide';
 import { deployTroops } from './deploy';
 import { chooseGarrison, planTeam } from './strategy';
-import { featuresOf, type CpuOptions } from './types';
-import { CONCEDE_RATIO, CONCEDE_STALL, CONCEDE_STALL_RATIO } from './weights';
+import { featuresOf, noiseOf, type CpuOptions } from './types';
+import { CONCEDE_STALL } from './weights';
 
 /** CPU の打ち手を作る（同じ打ち手をいくつの戦闘に使ってもよい。戦闘ごとの様子は BattleState ごとに持つ） */
 export function cpuPlayer(options: CpuOptions): Player {
   const features = featuresOf(options);
+  const noise = noiseOf(options);
   /** 戦闘・軍ごとの、前の番の初めの盤面の兵数の合計・戦況が動いていない番の数・部隊のいた HEX */
   const moods = new WeakMap<BattleState, Map<TeamId, { total: number; mood: Mood; at: Map<UnitData, Offset> }>>();
   const moodOf = (state: BattleState): Mood => {
@@ -40,15 +43,22 @@ export function cpuPlayer(options: CpuOptions): Player {
       const prev = teams.get(state.activeTeam);
       const at = new Map(state.map.allUnits().filter((u) => u.team === state.activeTeam).map((u): [UnitData, Offset] => [u, { col: u.col, row: u.row }]));
       const mood: Mood = { urgency: prev && prev.total === total ? prev.mood.urgency + 1 : 0, previous: prev?.at };
-      if (features.strategy) mood.team = planTeam(state, state.activeTeam);
+      if (features.strategy) mood.team = planTeam(state, state.activeTeam, features.personality);
       teams.set(state.activeTeam, { total, at, mood });
     },
-    decide: (state, unit) => decide(state, unit, options, moodOf(state)),
+    decide: (state, unit, rng) => decide(state, unit, options, moodOf(state), noise > 0 ? rng : undefined),
     order: (state, units) => {
       // 負けを認めそうなら、軍団長の部隊を最初に動かす（ほかの部隊が動く前に退却して戦闘を終える）
       const mood = moodOf(state);
-      const ratio = mood.team?.concede ?? 0;
-      return orderUnits(state, units, ratio >= CONCEDE_RATIO || (ratio >= CONCEDE_STALL_RATIO && mood.urgency >= CONCEDE_STALL));
+      const team = mood.team;
+      const ratio = team?.concede ?? 0;
+      const concede = !!team && ratio > 0 && (ratio >= team.army.concedeRatio || (ratio >= team.army.concedeStallRatio && mood.urgency >= CONCEDE_STALL));
+      const ordered = orderUnits(state, units, concede);
+      if (concede || !features.teamwork || ordered.length < 2) return ordered;
+      // 連携: 一番得をする部隊から動かす（殲滅できる部隊が先に討ち、削った相手を後の部隊が仕留める）。同じ得なら兵種の順
+      const gains = ordered.map((u) => moveGain(state, u, options, mood) ?? -Infinity);
+      const i = gains.reduce((b, g, k) => (g > gains[b] ? k : b), 0);
+      return [ordered[i], ...ordered.filter((_, k) => k !== i)];
     },
     routTo: (state, unit) => retreatDestinations(state, unit)[0],
   };

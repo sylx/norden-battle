@@ -10,8 +10,8 @@ export { demoTroops, Deployment, MAX_DEPLOY, SIDE_NAMES, SIDE_TEAM } from './dep
 export type { DeployState, Troop, TroopFactory } from './deployment';
 export { demoFactions, teamName, unitName } from './factions';
 export type { BattleFaction, BattleFactions } from './factions';
-export { demoStatus, demoStatuses, MAX_MORALE, troopStatus, typeTraits } from './unitStatus';
-export type { Portrait, TroopInit, UnitStatus } from './unitStatus';
+export { BATTLE_STYLE_NAMES, BATTLE_STYLES, battleStyleOf, demoStatus, demoStatuses, MAX_MORALE, troopStatus, typeTraits } from './unitStatus';
+export type { BattleStyle, Portrait, TroopInit, UnitStatus } from './unitStatus';
 export { FACILITY_NAMES } from './facilities';
 export type { SideFacilities } from './facilities';
 export type { RetreatDestinations } from './retreat';

@@ -44,11 +44,14 @@ battle-editor からマップは書き換えない。
 すぐ反映し（戦闘の途中でも）、ブラウザに覚えておく。両方の陣営を CPU にすると最後まで勝手に戦う。
 CPU の陣営は配備も CPU がする（兵種に合わせて前後を考えて置く）。CPU の番のターン表示には「早送り」（演出をさらに 3 倍に）と「スキップ」（番の残りを演出なしで進める）を出す。
 決着のカットインは、人が操作する陣営をプレイヤーとして勝利・敗北を出す（両方とも人・両方とも CPU なら攻撃側）。
-難易度はまだ手に効かない（M008 の段階 3 で入れる）。
+難易度は判断の質だけで差を付ける（CPU 側の兵数・士気は変えない）。難しいは連携（後に動く味方と合わせて殲滅できる相手を先に削る・一番得をする部隊から動かす）もする。
+易しいは危険な HEX・狙いの集中を見ず、手にノイズが入る。
+CPU の手は、部隊を率いる騎士の性格（猛進・慎重・勇敢・実利）で変わり、軍の作戦は軍団長の性格で変わる。性格は部隊の情報（右上の「騎士」）と、部隊の道具の騎士の選択肢に出る。
 
 ## 対戦シミュレータ
 
-描画なしで CPU（やランダムな打ち手）どうしを何度も戦わせ、勝率・決着の理由・ターン数・兵種ごとのダメージ・同じ所の行き来の回数を表に出す
+描画なしで CPU（やランダムな打ち手）どうしを何度も戦わせ、勝率・決着の理由・ターン数・陣営ごとの手の傾向（敵との距離・攻撃・相手の軍団長を狙った割合・殲滅した数・
+与えた÷反撃・狙った相手の兵の残り・構え・鼓舞・退却・負けを認めた・殲滅された・軍団長を討たれた・兵の損耗）・兵種ごとのダメージ・同じ所の行き来の回数を表に出す
 （[sim/cli.ts](sim/cli.ts)。norden-battle の直下で `npm run sim -- …`。[sim/run.mjs](sim/run.mjs) が Vite のモジュールランナーで動かす）。
 シードを固定すれば同じ結果になる。
 
@@ -57,7 +60,9 @@ npm run sim -- --runs 20                                  # 既定のマップ�
 npm run sim -- --map road-P000-P013.json --area P013 --verbose   # 範囲を選び、1 戦ごとの結果と行き来も出す
 npm run sim -- --map all --runs 4                         # すべてのマップのすべての範囲を 4 戦ずつ
 npm run sim -- --attacker hard --defender random          # 打ち手（easy・normal・hard・basic・random。既定は normal。basic は段階 1 の CPU）
-npm run sim -- --defender-off danger,strategy             # CPU の考える要素を切る（allAttacks・danger・stances・strategy・deploy）
+npm run sim -- --defender-off danger,strategy             # CPU の考える要素を切る（allAttacks・danger・stances・strategy・focus・teamwork・personality・deploy）
+npm run sim -- --attacker-style aggressive --defender-style none  # 陣営のすべての部隊の性格を差し替える（aggressive・cautious・valiant・pragmatic・none。既定 roster は編成の騎士のまま）
+npm run sim -- --attacker-noise 0                         # 手を選ぶときのノイズ（点数）を難易度のものから変える
 npm run sim -- --map road-P003-P008.json --area P008 --runs 1 --trace   # 行動を 1 つずつ出す（どこから動いて誰を攻撃したか）
 npm run sim -- --rosters rosters.json                     # 編成（部隊の道具で書き出したもの）
 npm run sim -- --rosters battle-editor/sim/rosters/mixed.json   # 兵種を混ぜた編成（魔法・乱撃・砲兵・ライフル兵も出る）

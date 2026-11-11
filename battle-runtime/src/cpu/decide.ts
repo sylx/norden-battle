@@ -20,6 +20,11 @@
  * - 膠着: 戦況が動かない番が続いたら（urgency。player.ts が数える）、慎重さを下げて敵に近づく重みを上げる
  * - 往復しない: 攻撃せずに、前の自分の番の初めにいた HEX へ戻る手は減点する
  * - 移動だけの手は待機（か構え・鼓舞）で行動を終える（同じ番に何度も動き回らない）。攻撃の後に動ける騎兵は、攻撃を実行した後にもう一度決める
+ * - 性格（personality。temper.ts）: 部隊の騎士の性格で重みとしきい値を変え、軍団長の性格で軍の作戦の値を変える
+ * - 狙いの集中（focus）: 弱った相手に与えるダメージを割り増す
+ * - 連携（teamwork。難しい）: 殲滅・壊滅の見込みを、ダメージの幅から確率で見る。番の中で、まだ動いていない味方が届く相手は、
+ *   この部隊と合わせて殲滅できるなら殲滅の点数の一部を足す（先に削る）
+ * - 難易度のノイズ: 候補の点数に 0〜noise の乱数を足して選ぶ（打ち手の乱数。rng を渡したときだけ）
  */
 import type { Offset } from '@norden/map-runtime/core/hex';
 import type { HexCell } from '@norden/map-runtime/core/mapData';
@@ -46,7 +51,8 @@ import { hasCondition } from '../conditions';
 import { basicAttack } from '../damage';
 import { SIDE_TEAM } from '../deployment';
 import { INSPIRE_MAX, INSPIRE_MIN, type ActionEnd } from '../engine/action';
-import { addLeg, aimCells, menuContext, moveCells, newPlan, rejectReason, setAttack } from '../engine/plan';
+import { addLeg, aimCells, isDone, menuContext, moveCells, newPlan, rejectReason, setAttack } from '../engine/plan';
+import type { Rng } from '../engine/rng';
 import type { Decision } from '../engine/sim';
 import { castleLocked, rangeBonusAt, retreatDestinations, strongholdLocked, type BattleState } from '../engine/state';
 import { moraleChange } from '../morale';
@@ -57,17 +63,14 @@ import { MAX_MORALE, type UnitStatus } from '../unitStatus';
 import { dangerAt, dangerContext, walkIntercepts, type DangerContext } from './danger';
 import { atStronghold, forcesOf, strongholdUrgent, type TeamPlan } from './strategy';
 import { cellKey, enemyReach, threatMap, type Reach } from './threat';
-import { featuresOf, type CpuFeatures, type CpuOptions } from './types';
+import { EFFICIENT_SHARE, STANDARD_ARMY, temperOf, type ArmyTemper, type Temper } from './temper';
+import { featuresOf, noiseOf, type CpuFeatures, type CpuOptions } from './types';
 import {
-  CONCEDE_RATIO,
   CONCEDE_STALL,
-  CONCEDE_STALL_RATIO,
-  GUARD_RADIUS,
   LETHAL_SHARE,
   MAX_CAUTION,
   MAX_URGENCY,
   MIN_CAUTION,
-  RETREAT_SOLDIERS,
   STALL_APPROACH,
   STALL_CAUTION,
   WEIGHTS as W,
@@ -113,6 +116,14 @@ export interface Context {
   urgent: boolean;
   /** 戦況が動いていない番の数（MAX_URGENCY まで） */
   urgency: number;
+  /** 部隊の気質（部隊の騎士の性格。personality を見ないときは標準） */
+  temper: Temper;
+  /** 軍の気質（軍団長の性格。軍の作戦が無い・personality を見ないときは標準） */
+  army: ArmyTemper;
+  /** 連携（teamwork）: 敵ごとの、この番にまだ動いていない味方が与えられそうなダメージの合計（見ないときは null） */
+  followUp: Map<UnitData, number> | null;
+  /** 勇敢: 守りたい味方（弱った味方・自軍の軍団長）と、その味方からいちばん近い敵までの距離（守らないなら空） */
+  wards: { unit: UnitData; near: number }[];
 }
 
 /** 盤面のほかに、軍の様子から決めること */
@@ -135,14 +146,40 @@ interface Evaluation {
   minDanger: number;
 }
 
-/** unit の次の行動を決める（行動できなければ null） */
-export function decide(state: BattleState, unit: UnitData, options: CpuOptions, mood: Mood = { urgency: 0 }): Decision | null {
+/** unit の次の行動を決める（行動できなければ null）。rng を渡すと、難易度のノイズを入れて選ぶ */
+export function decide(state: BattleState, unit: UnitData, options: CpuOptions, mood: Mood = { urgency: 0 }, rng?: Rng): Decision | null {
   const ev = evaluate(state, unit, mood, featuresOf(options));
   if (!ev) return null;
   const retreat = retreatChoice(ev, mood);
   if (retreat) return toDecision(state, unit, retreat);
-  const best = ev.list.reduce<Candidate | null>((a, c) => (!a || c.score > a.score ? c : a), null);
+  const noise = rng ? noiseOf(options) : 0;
+  let best: Candidate | null = null;
+  let bestScore = -Infinity;
+  for (const c of ev.list) {
+    const score = noise > 0 ? c.score + rng!.next() * noise : c.score;
+    if (!best || score > bestScore) {
+      best = c;
+      bestScore = score;
+    }
+  }
   return best ? toDecision(state, unit, best) : null;
+}
+
+/**
+ * 連携（teamwork）で動かす順を決めるときの、unit を動かす得（一番いい手の点数 − その場で待機する点数）。退却するなら大きく見る。
+ * 行動できなければ null
+ */
+export function moveGain(state: BattleState, unit: UnitData, options: CpuOptions, mood: Mood = { urgency: 0 }): number | null {
+  const ev = evaluate(state, unit, mood, featuresOf(options));
+  if (!ev || ev.list.length === 0) return null;
+  if (retreatChoice(ev, mood)) return Infinity;
+  let best = -Infinity;
+  let stay = -Infinity;
+  for (const c of ev.list) {
+    best = Math.max(best, c.score);
+    if (!c.step && !c.attack && c.end === 'wait') stay = c.score;
+  }
+  return stay === -Infinity ? best : best - stay;
 }
 
 /** 候補を Decision（予約と終わり方）にする */
@@ -174,20 +211,27 @@ function evaluate(state: BattleState, unit: UnitData, mood: Mood, features: CpuF
   const menu = buildActionMenu(menuContext(state, plan0));
   const urgency = Math.min(mood.urgency, MAX_URGENCY);
   const reach = features.danger || features.stances ? enemyReach(state, unit.team) : null;
+  const temper = temperOf(status, features.personality, features.strategy && mood.team?.garrison === unit);
+  const army = (features.strategy && mood.team?.army) || STANDARD_ARMY;
+  const enemies = state.map.allUnits().filter((u) => u.team !== unit.team);
   const ctx: Context = {
     state,
     unit,
     status,
     features,
-    enemies: state.map.allUnits().filter((u) => u.team !== unit.team),
+    enemies,
     threat: features.danger ? null : threatMap(state, unit.team),
     reach,
     danger: features.danger && reach ? dangerContext(state, unit, status, reach) : null,
     caution: forceRatio(state, unit) * STALL_CAUTION ** urgency,
-    approach: W.approach * (1 + STALL_APPROACH * urgency),
+    approach: W.approach * (1 + STALL_APPROACH * urgency) * temper.approach * army.approach,
     team: features.strategy ? (mood.team ?? null) : null,
     urgent: features.strategy && strongholdUrgent(state, unit.team, unit),
     urgency,
+    temper,
+    army,
+    followUp: features.teamwork ? followUps(state, unit, enemies) : null,
+    wards: temper.shield > 0 ? wardsOf(state, unit, enemies) : [],
   };
   const out: Candidate[] = [];
   const steps: (MoveStep | null)[] = [null, ...(allows(menu, 'move') ? moveCells(state, plan0).values() : [])];
@@ -249,7 +293,7 @@ function evaluate(state: BattleState, unit: UnitData, mood: Mood, features: CpuF
     if (canIntercept && ap >= 2) {
       // 膠着しているなら、敵は寄ってこないので構えの見込みは下がる
       // 攻撃側は攻めないと勝てないので、構えを軽く見る
-      const v = interceptValue(ctx, pos) * STALL_CAUTION ** ctx.urgency * (unit.team === SIDE_TEAM.attacker ? W.attackerStance : 1);
+      const v = interceptValue(ctx, pos) * STALL_CAUTION ** ctx.urgency * (unit.team === SIDE_TEAM.attacker ? W.attackerStance : 1) * temper.stance;
       if (v > 0) out.push({ score: stay + v + (capture && atStronghold(state, pos) ? W.capture : 0), step, attack: null, end: 'intercept' });
     }
     if (inspire > 0 && ap >= inspireCost) out.push({ score: stay + inspire, step, attack: null, end: 'inspire' });
@@ -271,10 +315,14 @@ function retreatChoice(ev: Evaluation, mood: Mood): Candidate | null {
   // 負けを認める: 数で大きく劣り、軍団長の部隊がどこへ動いても次の敵の番に殲滅されそうなら（捕縛を避ける）。
   // 殲滅されそうでなくても、数で劣ったまま戦況が CONCEDE_STALL 番動かなければ認める（逃げ回って決着しないのを避ける）
   const ratio = (features.strategy && status.commander && mood.team?.concede) || 0;
-  if (ratio >= CONCEDE_RATIO && (!features.danger || ev.minDanger >= status.soldiers * LETHAL_SHARE)) return retreat;
-  if (ratio >= CONCEDE_STALL_RATIO && mood.urgency >= CONCEDE_STALL) return retreat;
+  if (ratio > 0) {
+    if (ratio >= ctx.army.concedeRatio && (!features.danger || ev.minDanger >= status.soldiers * LETHAL_SHARE)) return retreat;
+    if (ratio >= ctx.army.concedeStallRatio && mood.urgency >= CONCEDE_STALL) return retreat;
+  }
   if (!features.stances || !features.danger || status.commander) return null;
-  if (status.soldiers > status.initialSoldiers * RETREAT_SOLDIERS) return null;
+  // 部隊の騎士の性格で、退却を考える兵数が変わる（猛進は退かない）
+  const share = ctx.temper.retreat;
+  if (share === null || status.soldiers > status.initialSoldiers * share) return null;
   if (list.some((c) => c.kills)) return null;
   if (ev.minDanger < status.soldiers * LETHAL_SHARE) return null;
   const f = forcesOf(state, unit.team, false);
@@ -291,7 +339,7 @@ export function forceRatio(state: BattleState, unit: UnitData): number {
 function lossScore(ctx: Context, damage: number, weight: number): number {
   const { unit, status } = ctx;
   if (damage <= 0) return 0;
-  let loss = Math.min(damage, status.soldiers) * worth(unit, status) * weight * ctx.caution;
+  let loss = Math.min(damage, status.soldiers) * worth(unit, status) * weight * ctx.temper.taken * ctx.caution;
   if (damage >= status.soldiers) loss += W.die + (status.commander ? W.dieCommander : 0);
   return loss;
 }
@@ -305,7 +353,7 @@ function worthAiming(ctx: Context, pos: Offset, at: Offset, attack: ResolvedAtta
 
 /** pos から at（目標は target。無ければ null）を id の攻撃で撃ったときの点数（予測の期待値から）と、相手を殲滅する見込みか */
 export function attackScore(ctx: Context, pos: Offset, at: Offset, id: MenuAttackId, target: UnitData | null): { score: number; kills: boolean; morale: number } {
-  const { state, unit, status, features } = ctx;
+  const { state, unit, status, features, temper, army } = ctx;
   const map = state.map;
   const def = resolveAttack(unit.type, id);
   const ts = target ? state.statuses.get(target) : undefined;
@@ -329,17 +377,29 @@ export function attackScore(ctx: Context, pos: Offset, at: Offset, id: MenuAttac
     const vt = worth(target, ts);
     const vs = worth(unit, status);
     const dealt = Math.min(e.damage, ts.soldiers);
+    const gain = dealt * vt;
+    const loss = Math.min(e.counter, status.soldiers) * vs * W.taken * temper.taken * ctx.caution;
     dealtToEnemies += dealt;
-    score += dealt * vt - Math.min(e.counter, status.soldiers) * vs * W.taken * ctx.caution;
-    if (e.damage >= ts.soldiers) {
-      score += W.kill + (ts.commander ? W.killCommander : 0);
-      kills = true;
-    } else if (ts.commander) score += dealt * vt * W.commanderTarget;
-    if (e.counter >= status.soldiers) score -= W.die + (status.commander ? W.dieCommander : 0);
+    score += gain * temper.dealt - loss;
+    // 殲滅・壊滅の見込み（連携: ダメージの幅から確率で見る。見ないなら期待値で殲滅するかどうか）
+    const kill = features.teamwork ? chance(f.damage, ts.soldiers) : e.damage >= ts.soldiers ? 1 : 0;
+    const killValue = W.kill * temper.kill + (ts.commander ? W.killCommander : 0);
+    score += killValue * kill;
+    kills = kill >= 0.5;
+    if (!kills && ts.commander) score += gain * W.commanderTarget * temper.commanderTarget * army.commanderTarget;
+    // 連携: まだ動いていない味方と合わせて殲滅できるなら、先に削る
+    if (!kills && ctx.followUp && dealt + (ctx.followUp.get(target) ?? 0) >= ts.soldiers) score += killValue * (1 - kill) * W.setup;
+    const die = features.teamwork ? chance(f.counter, status.soldiers) : e.counter >= status.soldiers ? 1 : 0;
+    score -= (W.die + (status.commander ? W.dieCommander : 0)) * die;
     score += (e.morale.attacker - e.morale.defender) * W.morale;
+    // 勇敢: 強い相手（自分より兵力の大きい部隊ほど）を狙う
+    if (temper.strongTarget > 0) score += gain * temper.strongTarget * Math.min(1, (ts.soldiers * vt) / Math.max(1, status.soldiers * vs));
+    // 実利: 与えるものに比べて受けるものが多い攻撃を嫌う
+    if (temper.efficiency > 0) score -= Math.max(0, loss - gain * EFFICIENT_SHARE) * temper.efficiency;
+    // 弱った相手に狙いを集める
+    if (features.focus) score += gain * W.focus * temper.focus * army.focus * (1 - ts.soldiers / Math.max(1, ts.initialSoldiers));
     if (features.strategy) {
-      // 弱った相手に狙いを集める・防衛拠点の隣の敵（次の番に入城できる）を討つ
-      score += dealt * vt * W.focus * (1 - ts.soldiers / Math.max(1, ts.initialSoldiers));
+      // 防衛拠点の隣の敵（次の番に入城できる）を討つ
       const hold = state.stronghold;
       if (hold && unit.team === SIDE_TEAM.defender && hexDistance(map, target, hold) <= 1) {
         score += dealt * vt * W.holdThreat;
@@ -358,11 +418,11 @@ export function attackScore(ctx: Context, pos: Offset, at: Offset, id: MenuAttac
       if (features.allAttacks && avg >= su.soldiers) score -= W.die + (su.commander ? W.dieCommander : 0);
       continue;
     }
-    score += v;
+    score += v * temper.dealt;
     dealtToEnemies += avg;
     if (!features.allAttacks) continue;
     if (avg >= su.soldiers) {
-      score += W.kill + (su.commander ? W.killCommander : 0);
+      score += W.kill * temper.kill + (su.commander ? W.killCommander : 0);
       kills = true;
     } else score += inflictValue(def, s.unit, su);
   }
@@ -412,7 +472,7 @@ function inspireValue(ctx: Context, before: number): number {
   const { unit, status } = ctx;
   const gain = Math.min((INSPIRE_MIN + INSPIRE_MAX) / 2, MAX_MORALE - Math.min(MAX_MORALE, status.morale + before));
   if (gain <= 0) return 0;
-  return gain * basicAttack({ type: unit.type, soldiers: status.soldiers, morale: status.morale, leadership: status.leadership, strength: mightOf(unit, status) }) * W.inspire;
+  return gain * basicAttack({ type: unit.type, soldiers: status.soldiers, morale: status.morale, leadership: status.leadership, strength: mightOf(unit, status) }) * W.inspire * ctx.temper.inspire;
 }
 
 /**
@@ -457,7 +517,7 @@ export function positionScore(ctx: Context, pos: Offset): number {
   let score = 0;
   if (enemies.length > 0) {
     const nearest = Math.min(...enemies.map((e) => hexDistance(map, pos, e)));
-    const approach = (ctx.approach / ctx.caution) * (ctx.team && status.commander ? W.commanderApproach : 1);
+    const approach = (ctx.approach / ctx.caution) * (ctx.team && status.commander ? ctx.army.commanderApproach : 1);
     if (def.ranged) {
       score -= Math.abs(nearest - def.maxRange) * approach;
       if (nearest < def.minRange) score -= W.tooClose;
@@ -471,17 +531,74 @@ export function positionScore(ctx: Context, pos: Offset): number {
     if (unit.team === SIDE_TEAM.attacker) score -= d * W.objective;
     else if (ctx.team?.garrison === unit) score -= d * W.garrison;
     // 数で勝っているなら拠点を離れて敵を討ちに出る（慎重さが 1 より小さいほど、拠点の周りに留まる重みを下げる）
-    else score -= Math.max(0, d - GUARD_RADIUS) * W.guard * (ctx.team ? Math.min(1, ctx.caution) : 1);
+    else score -= Math.max(0, d - ctx.army.guardRadius) * W.guard * ctx.army.guard * (ctx.team ? Math.min(1, ctx.caution) : 1);
     if (ctx.urgent && d === 0) score += W.block;
   }
   if (ctx.danger) score -= dangerPenalty(ctx, pos);
   else {
     const t = ctx.threat?.get(cellKey(state, pos)) ?? 0;
-    score -= t * (def.ranged ? W.threatRanged : W.threat) * (status.commander ? W.threatCommander : 1) * ctx.caution;
+    score -= t * (def.ranged ? W.threatRanged : W.threat) * (status.commander ? W.threatCommander : 1) * ctx.caution * ctx.temper.danger;
   }
   const cell = map.get(pos.col, pos.row);
-  if (cell) score += cellDefense(cell) * W.terrain;
+  if (cell) score += cellDefense(cell) * W.terrain * ctx.temper.terrain;
+  if (ctx.wards.length > 0) score += shieldScore(ctx, pos);
   return score;
+}
+
+/** 勇敢: pos が守りたい味方の隣で、その味方より敵に近い（敵との間に立つ）なら、その点数（何人守っても 1 回だけ） */
+function shieldScore(ctx: Context, pos: Offset): number {
+  const map = ctx.state.map;
+  if (ctx.enemies.length === 0) return 0;
+  const near = Math.min(...ctx.enemies.map((e) => hexDistance(map, pos, e)));
+  return ctx.wards.some((w) => hexDistance(map, pos, w.unit) === 1 && near < w.near) ? ctx.temper.shield : 0;
+}
+
+/** 勇敢: 守りたい味方（兵が戦闘の初めの WARD_SOLDIERS 以下の味方・自軍の軍団長）と、その味方からいちばん近い敵までの距離 */
+function wardsOf(state: BattleState, unit: UnitData, enemies: readonly UnitData[]): { unit: UnitData; near: number }[] {
+  if (enemies.length === 0) return [];
+  const out: { unit: UnitData; near: number }[] = [];
+  for (const a of state.map.allUnits()) {
+    if (a.team !== unit.team || a === unit) continue;
+    const s = state.statuses.get(a);
+    if (!s || !(s.commander || s.soldiers <= s.initialSoldiers * WARD_SOLDIERS)) continue;
+    out.push({ unit: a, near: Math.min(...enemies.map((e) => hexDistance(state.map, a, e))) });
+  }
+  return out;
+}
+
+/** 勇敢な部隊が守る、弱った味方の兵数（戦闘の初めの兵数に対する割合） */
+const WARD_SOLDIERS = 0.5;
+
+/** ダメージが range（下限・上限）の一様な幅に散るとして、need 以上になる確率 */
+function chance([lo, hi]: readonly [number, number], need: number): number {
+  if (hi <= lo) return lo >= need ? 1 : 0;
+  return Math.min(1, Math.max(0, (hi - need) / (hi - lo)));
+}
+
+/**
+ * 連携: 敵ごとの、この番にまだ動いていない味方（unit を除く。まだ攻撃していない）が与えられそうなダメージの合計。
+ * 味方の届く範囲（threat.ts の enemyReach を相手の軍から見たもの）に入る敵へ、いまの位置から使える攻撃で一番効くもののダメージ（期待値）を足す
+ */
+function followUps(state: BattleState, unit: UnitData, enemies: readonly UnitData[]): Map<UnitData, number> {
+  const out = new Map<UnitData, number>();
+  if (enemies.length === 0) return out;
+  const map = state.map;
+  for (const [ally, r] of enemyReach(state, enemies[0].team)) {
+    if (ally === unit || ally.team !== unit.team) continue;
+    const as = state.statuses.get(ally);
+    if (!as || as.attacked || r.attacks.length === 0 || isDone(state, ally)) continue;
+    for (const enemy of enemies) {
+      const es = state.statuses.get(enemy);
+      if (!es || !r.attack.has(cellKey(state, enemy))) continue;
+      let best = 0;
+      for (const id of r.attacks) {
+        const res = attackResult(map, { unit: ally, status: as, pos: ally }, { unit: enemy, status: es, pos: enemy }, id, { damage: 0, counter: 0 });
+        best = Math.max(best, res.damage);
+      }
+      out.set(enemy, (out.get(enemy) ?? 0) + best);
+    }
+  }
+  return out;
 }
 
 /** pos で番を終えたときの危険の点数（受けそうなダメージ × 兵の重さ × 兵種の重み × 慎重さ。lethal なら、殲滅されそうなときにさらに引く） */
@@ -493,5 +610,5 @@ function dangerPenalty(ctx: Context, pos: Offset, lethal = true): number {
   let p = Math.min(d, status.soldiers) * worth(unit, status) * w * ctx.caution;
   // 殲滅されそうな HEX も、膠着が続けば避けなくなる（軍団長どうしがにらみ合って決着しないのを避ける）
   if (lethal && d >= status.soldiers * LETHAL_SHARE) p += (W.lethal + (status.commander ? W.dieCommander / 2 : 0)) * STALL_CAUTION ** ctx.urgency;
-  return p;
+  return p * ctx.temper.danger;
 }

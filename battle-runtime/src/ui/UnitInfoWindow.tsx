@@ -2,7 +2,7 @@
  * 部隊（騎士）のウィンドウ（画面の右上、未行動の部隊のナビゲーション UnitNavigator.tsx の下）。
  *
  * - カーソルの下のユニット → 選択中のユニット → 調べている相手方のユニットの順に、1 部隊の情報を出す。どれも無ければ隠す。
- * - 顔・兵士数・士気（情報札と同じ中身）、残り行動力、指揮官の統率・武力・知力とスキル、いまの様子（行動済み・迎撃の構えなど）。
+ * - 顔・兵士数・士気（情報札と同じ中身）、残り行動力、指揮官の統率・武力・知力とスキル、性格（行動・戦闘スタイル。あれば）、いまの様子（行動済み・迎撃の構えなど）。
  * - 付いている状態（と残りのターン数）、クールタイム中の攻撃（とあと何ターンで使えるか）があれば出す。
  * - 枠は norden-ui の ThinFrameWithTitle（細いベゼルと題名の札）。表示するだけなので、マウスは下のマップへ通す。
  */
@@ -14,7 +14,7 @@ import { ATTACK_DEFS, type AttackId } from '../attacks';
 import { CONDITION_DEFS } from '../conditions';
 import type { BattleApp } from '../app';
 import { COMBAT_DEFS } from '../combat';
-import type { UnitStatus } from '../unitStatus';
+import { BATTLE_STYLE_NAMES, type UnitStatus } from '../unitStatus';
 import { useUnitName } from './factionsContext';
 import StatusCard from './StatusCard';
 
@@ -66,6 +66,12 @@ export default function UnitInfoWindow({ app }: { app: BattleApp }) {
         </dd>
         <dt>スキル</dt>
         <dd>{status.skills.length > 0 ? status.skills.map((s) => SKILL_DEFS[s].name).join('・') : <span className="none">なし</span>}</dd>
+        {status.personality && (
+          <>
+            <dt>性格</dt>
+            <dd>{BATTLE_STYLE_NAMES[status.personality]}</dd>
+          </>
+        )}
         {status.conditions.length > 0 && (
           <>
             <dt>状態</dt>

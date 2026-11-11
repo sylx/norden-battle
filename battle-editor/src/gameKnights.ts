@@ -5,13 +5,14 @@
  * - 陣営（攻撃側・防衛側）ごとに勢力を選ぶと、その勢力の騎士で部隊の一覧（編成）を作る（当主が先頭、あとは統率の高い順）。
  * - 編成の 1 行は騎士・兵種・兵数・士気・魔法（magic の兵種だけが使う）。軍団長は陣営に 1 部隊。騎士・兵種はエディタで選び直せる（兵種は率いられないものも選べる）。
  * - 部隊の能力（統率・武力・知力）・名前・顔は騎士のもの（ゲームの battleTroops.ts と同じ）。傭兵は捕縛されない。
+ *   騎士の性格（行動・戦闘スタイルの軸）も部隊に渡す（CPU の手の好み）。
  * - ゲームの騎士にはまだ戦闘のスキルが無いので、スキルは表示確認用に行の順で仮に配る（EDITOR_SKILLS）。
  * - 配備の無いマップ（ユニットを置いてあるマップ）では、防衛側の編成を赤軍、攻撃側の編成を青軍のユニットに上から順に割り当てる
  *   （兵種はマップのユニットのまま）。ほかの軍は表示確認用の仮の状態。
  * - 部隊の状態から騎士を引けるようにしておく（knightOfStatus。セリフを指揮官の騎士で喋らせる）。
  */
 // 値は three.js を読み込まない口から読む（対戦シミュレータが Node でこのファイルを使う）
-import { demoStatuses, SIDE_TEAM, SPELL_IDS, troopStatus } from '@norden/battle-runtime/rules';
+import { BATTLE_STYLE_NAMES, battleStyleOf, demoStatuses, SIDE_TEAM, SPELL_IDS, troopStatus } from '@norden/battle-runtime/rules';
 import type { BattleFactions, Portrait, SkillId, SpellId, StatusFactory, Troop, TroopFactory, UnitStatus } from '@norden/battle-runtime';
 import type { DeploySide } from '@norden/map-runtime/core/mapData';
 import { UNIT_TYPES, type UnitData, type UnitType } from '@norden/map-runtime/core/units';
@@ -108,9 +109,11 @@ export const KNIGHT_GROUPS: { name: string; knights: GameKnight[] }[] = [...GAME
   knights: f.id ? factionKnights(f.id) : GAME_KNIGHTS.filter((k) => !factionIdOf(k)),
 }));
 
-/** 騎士の選択肢の表示（名前・種別・統率・武力・知力） */
-export const knightLabel = (k: GameKnight) =>
-  `${k.name}（${CHARACTER_TYPE_LABELS[k.type]} 統${k.leadership} 武${k.strength} 知${k.intelligence}${k.mercenaryInfo ? ' 傭兵' : ''}）`;
+/** 騎士の選択肢の表示（名前・種別・統率・武力・知力・性格） */
+export const knightLabel = (k: GameKnight) => {
+  const style = battleStyleOf(k.personality);
+  return `${k.name}（${CHARACTER_TYPE_LABELS[k.type]} 統${k.leadership} 武${k.strength} 知${k.intelligence}${style ? ` ${BATTLE_STYLE_NAMES[style]}` : ''}${k.mercenaryInfo ? ' 傭兵' : ''}）`;
+};
 
 /** 勢力の騎士で組んだ既定の編成（先頭の騎士が軍団長） */
 export function defaultRoster(factionId: string): SideRoster {
@@ -144,6 +147,7 @@ function entryStatus(roster: SideRoster, i: number, type: UnitType): UnitStatus 
     name: k.name,
     portrait: portraitOf(k),
     skills: EDITOR_SKILLS[i % EDITOR_SKILLS.length],
+    personality: battleStyleOf(k.personality),
     commander: i === roster.commander,
     uncapturable: !!k.mercenaryInfo,
     spells: e.spells,

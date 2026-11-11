@@ -4,12 +4,15 @@
  *
  *   npm run sim -- [--map <ファイル|all>] [--area <都市 ID>] [--runs 20] [--seed 1] [--max-turns 30]
  *                  [--attacker normal] [--defender normal] [--rosters rosters.json] [--attacker-faction <勢力 ID>] [--defender-faction <勢力 ID>]
- *                  [--no-retreat] [--verbose] [--trace]
+ *                  [--attacker-style roster] [--defender-style roster] [--no-retreat] [--verbose] [--trace]
  *
  * - マップ: assets/maps/ のファイル（既定は戦闘の範囲のある最初のファイル）。all ならすべてのマップのすべての範囲を回す。
  *   範囲は既定で最初のもの。マップの範囲を切り出し、両軍を配備して始める（CPU は兵種に合わせて置く。basic・random は battle-editor の「自動配置」と同じ）
  * - 打ち手: 陣営ごとに easy・normal・hard（CPU の難易度）、basic（段階 1 の CPU。BASIC_FEATURES）、random（ランダムな仮の打ち手）。
- *   --attacker-off・--defender-off で CPU の考える要素（CpuFeatures の allAttacks・danger・stances・strategy・deploy）を切れる（どの要素が効いているかを比べる）
+ *   --attacker-off・--defender-off で CPU の考える要素（CpuFeatures の allAttacks・danger・stances・strategy・focus・teamwork・personality・deploy）を切れる
+ *   （どの要素が効いているかを比べる）。--attacker-noise・--defender-noise で、手を選ぶときのノイズ（点数）を難易度のものから変えられる
+ * - 性格: --attacker-style・--defender-style で、その陣営のすべての部隊（軍団長も）の騎士の性格を aggressive・cautious・valiant・pragmatic・none（標準）に
+ *   差し替える（既定の roster は編成の騎士の性格のまま）。陣営ごとの手の傾向（敵との距離・自分からの退却・構え・鼓舞・兵の損耗）を表に出す
  * - 編成: battle-editor の部隊の道具の「編成を書き出す」で書き出した JSON（--rosters）。無ければ勢力 ID ごとの既定の編成
  *   （--attacker-faction・--defender-faction。省略すると battle-editor の既定と同じ）
  * - 退却先: 既定は両軍にダミーの拠点を 1 つずつ渡す（退却・強制退却が起きる）。--no-retreat で渡さない
@@ -22,11 +25,26 @@ import { HexMap, parseMapData, type MapData } from '@norden/map-runtime/core/map
 import { UNIT_DEFS, type TeamId, type UnitData, type UnitType } from '@norden/map-runtime/core/units';
 import { BASIC_FEATURES, cpuPlayer, DIFFICULTIES, FULL_FEATURES, type CpuFeatures, type Difficulty } from '@norden/battle-runtime/cpu';
 import { createBattleState, randomPlayer, type BattleState, runBattle, seededRng, type ExecuteReport, type FacilityReport, type Player, type SplashHit } from '@norden/battle-runtime/engine';
-import { ATTACK_DEFS, BATTLE_END_REASON_NAMES, Deployment, FACILITY_NAMES, SIDE_NAMES, SIDE_TEAM, type BattleEndReason, type RetreatDestinations } from '@norden/battle-runtime/rules';
+import { axialDistance } from '@norden/map-runtime/core/hex';
+import {
+  ATTACK_DEFS,
+  BATTLE_END_REASON_NAMES,
+  BATTLE_STYLES,
+  Deployment,
+  FACILITY_NAMES,
+  SIDE_NAMES,
+  SIDE_TEAM,
+  type BattleEndReason,
+  type BattleStyle,
+  type RetreatDestinations,
+} from '@norden/battle-runtime/rules';
 import { DEFAULT_ROSTERS, defaultRoster, factionName, parseRosters, rosterStatuses, rosterTroops, type Rosters } from '../src/gameKnights';
 
 /** 打ち手: CPU の難易度・段階 1 の CPU（basic）・ランダムな仮の打ち手（random） */
 type Who = Difficulty | 'basic' | 'random';
+/** 陣営の部隊の性格: 編成の騎士のまま（roster）・標準（none）・すべて差し替える */
+type Style = 'roster' | 'none' | BattleStyle;
+type Side = 'attacker' | 'defender';
 
 interface Args {
   map: string | null;
@@ -39,6 +57,11 @@ interface Args {
   /** CPU の考える要素のうち切るもの（陣営ごと） */
   attackerOff: (keyof CpuFeatures)[];
   defenderOff: (keyof CpuFeatures)[];
+  attackerStyle: Style;
+  defenderStyle: Style;
+  /** 手を選ぶときのノイズ（省略すると難易度のもの） */
+  attackerNoise: number | null;
+  defenderNoise: number | null;
   rosters: string | null;
   attackerFaction: string | null;
   defenderFaction: string | null;
@@ -51,13 +74,19 @@ interface Args {
 const USAGE = `npm run sim -- [--map <ファイル|all>] [--area <都市 ID>] [--runs 20] [--seed 1] [--max-turns 30]
                  [--attacker easy|normal|hard|basic|random] [--defender easy|normal|hard|basic|random]
                  [--attacker-off <要素,…>] [--defender-off <要素,…>]
+                 [--attacker-style roster|none|aggressive|cautious|valiant|pragmatic] [--defender-style …]
+                 [--attacker-noise <点数>] [--defender-noise <点数>]
                  [--rosters rosters.json] [--attacker-faction <勢力 ID>] [--defender-faction <勢力 ID>] [--no-retreat] [--verbose] [--trace]`;
 
 function parseArgs(argv: readonly string[]): Args {
-  const a: Args = { map: null, area: null, runs: 20, seed: 1, maxTurns: 30, attacker: 'normal', defender: 'normal', attackerOff: [], defenderOff: [], rosters: null, attackerFaction: null, defenderFaction: null, retreat: true, verbose: false, trace: false };
+  const a: Args = { map: null, area: null, runs: 20, seed: 1, maxTurns: 30, attacker: 'normal', defender: 'normal', attackerOff: [], defenderOff: [], attackerStyle: 'roster', defenderStyle: 'roster', attackerNoise: null, defenderNoise: null, rosters: null, attackerFaction: null, defenderFaction: null, retreat: true, verbose: false, trace: false };
   const who = (v: string): Who => {
     if (v === 'random' || v === 'basic' || (DIFFICULTIES as readonly string[]).includes(v)) return v as Who;
     throw new Error(`打ち手は easy・normal・hard・basic・random のどれか: ${v}`);
+  };
+  const style = (v: string): Style => {
+    if (v === 'roster' || v === 'none' || (BATTLE_STYLES as readonly string[]).includes(v)) return v as Style;
+    throw new Error(`性格は roster・none・${BATTLE_STYLES.join('・')} のどれか: ${v}`);
   };
   const off = (v: string): (keyof CpuFeatures)[] =>
     v.split(',').map((f) => {
@@ -85,6 +114,10 @@ function parseArgs(argv: readonly string[]): Args {
     else if (key === '--defender') a.defender = who(next());
     else if (key === '--attacker-off') a.attackerOff = off(next());
     else if (key === '--defender-off') a.defenderOff = off(next());
+    else if (key === '--attacker-noise') a.attackerNoise = num(next(), key);
+    else if (key === '--defender-noise') a.defenderNoise = num(next(), key);
+    else if (key === '--attacker-style') a.attackerStyle = style(next());
+    else if (key === '--defender-style') a.defenderStyle = style(next());
     else if (key === '--rosters') a.rosters = next();
     else if (key === '--attacker-faction') a.attackerFaction = next();
     else if (key === '--defender-faction') a.defenderFaction = next();
@@ -97,11 +130,12 @@ function parseArgs(argv: readonly string[]): Args {
   return a;
 }
 
-const playerOf = (who: Who, off: readonly (keyof CpuFeatures)[]): Player => {
+const playerOf = (who: Who, off: readonly (keyof CpuFeatures)[], noise: number | null): Player => {
   if (who === 'random') return randomPlayer;
+  // 段階 1 の CPU はノイズ無し（段階 2 までと同じ）
   const features: Partial<CpuFeatures> = who === 'basic' ? { ...BASIC_FEATURES } : {};
   for (const f of off) features[f] = false;
-  return cpuPlayer({ difficulty: who === 'basic' ? 'normal' : who, features });
+  return cpuPlayer({ difficulty: who === 'basic' ? 'normal' : who, features, noise: noise ?? (who === 'basic' ? 0 : undefined) });
 };
 
 /** 兵種ごとの集計 */
@@ -111,6 +145,37 @@ interface TypeStats {
   friendly: number;
   wipedOut: number;
 }
+
+/** 陣営ごとの手の傾向 */
+interface SideStats {
+  /** 行動の数と、行動を終えたときのいちばん近い敵までの距離の合計（前に出る度合い） */
+  actions: number;
+  distance: number;
+  /** 自分から退却した部隊（軍団長でない） */
+  retreats: number;
+  /** 負けを認めた（軍団長の部隊が自分から退却した） */
+  concedes: number;
+  intercepts: number;
+  inspires: number;
+  /** 攻撃した回数・相手の軍団長の部隊を狙った回数・攻撃で相手を殲滅した回数 */
+  attacks: number;
+  commanderHits: number;
+  kills: number;
+  /** 敵ユニットを狙う攻撃で与えた・反撃で受けた兵数 */
+  dealt: number;
+  countered: number;
+  /** 敵ユニットを狙う攻撃の数と、狙った相手の攻撃の前の兵の残り（戦闘の初めに対する割合）の合計 */
+  aimed: number;
+  aimedHealth: number;
+  /** 殲滅された部隊・軍団長の部隊 */
+  wipedOut: number;
+  commanderLost: number;
+  /** 戦闘の初めの兵数と、失った兵数（殲滅・退却した部隊の残りは失ったものに数えない） */
+  initial: number;
+  lost: number;
+}
+
+const newSideStats = (): SideStats => ({ actions: 0, distance: 0, retreats: 0, concedes: 0, intercepts: 0, inspires: 0, attacks: 0, commanderHits: 0, kills: 0, dealt: 0, countered: 0, aimed: 0, aimedHealth: 0, wipedOut: 0, commanderLost: 0, initial: 0, lost: 0 });
 
 /** 1 つの範囲の集計 */
 interface Tally {
@@ -125,10 +190,68 @@ interface Tally {
   byType: Map<UnitType, TypeStats>;
   /** 同じ所を行き来した回数（部隊の番の終わりの位置が 2 つ前の番と同じで 1 つ前と違い、その 2 つの番に攻撃していない） */
   backAndForth: number;
+  sides: Record<Side, SideStats>;
 }
 
 function newTally(label: string): Tally {
-  return { label, runs: 0, wins: { attacker: 0, defender: 0 }, reasons: new Map(), stalled: 0, turns: [], actions: 0, byType: new Map(), backAndForth: 0 };
+  return { label, runs: 0, wins: { attacker: 0, defender: 0 }, reasons: new Map(), stalled: 0, turns: [], actions: 0, byType: new Map(), backAndForth: 0, sides: { attacker: newSideStats(), defender: newSideStats() } };
+}
+
+const sideOfTeam = (team: TeamId): Side => (team === SIDE_TEAM.attacker ? 'attacker' : 'defender');
+
+/** 行動を陣営ごとの手の傾向に数える */
+function countSide(t: Tally, state: BattleState, r: ExecuteReport): void {
+  const s = t.sides[sideOfTeam(r.unit.team)];
+  const status = state.statuses.get(r.unit) ?? state.retreated.find((x) => x.unit === r.unit)?.status;
+  if (r.retreat && !r.retreat.forced) {
+    if (status?.commander) s.concedes++;
+    else s.retreats++;
+  }
+  if (r.intercept) s.intercepts++;
+  if (r.inspire !== undefined) s.inspires++;
+  const a = r.attack;
+  if (a) {
+    s.attacks++;
+    if (a.targetDestroyed) s.kills++;
+    if (a.target && a.result) {
+      const ts = state.statuses.get(a.target) ?? state.wipedOut.find((w) => w.unit === a.target)?.status;
+      if (ts?.commander) s.commanderHits++;
+      s.dealt += a.result.damage;
+      s.countered += a.result.counter;
+      if (ts) {
+        s.aimed++;
+        s.aimedHealth += Math.min(1, (ts.soldiers + a.result.damage) / Math.max(1, ts.initialSoldiers));
+      }
+    }
+  }
+  if (!state.statuses.has(r.unit)) return;
+  const l = state.map.layout;
+  const enemies = state.map.allUnits().filter((u) => u.team !== r.unit.team);
+  if (enemies.length === 0) return;
+  const at = l.offsetToAxial(r.unit.col, r.unit.row);
+  s.actions++;
+  s.distance += Math.min(...enemies.map((e) => axialDistance(at, l.offsetToAxial(e.col, e.row))));
+}
+
+/** 1 戦の終わりに、陣営ごとの兵の損耗・殲滅された部隊を数える */
+function countLosses(t: Tally, state: BattleState): void {
+  const add = (team: TeamId, initial: number, now: number) => {
+    const s = t.sides[sideOfTeam(team)];
+    s.initial += initial;
+    s.lost += initial - now;
+  };
+  for (const [u, st] of state.statuses) add(u.team, st.initialSoldiers, st.soldiers);
+  for (const r of state.retreated) add(r.unit.team, r.status.initialSoldiers, r.status.soldiers);
+  for (const w of state.wipedOut) {
+    add(w.unit.team, w.status.initialSoldiers, 0);
+    const s = t.sides[sideOfTeam(w.unit.team)];
+    s.wipedOut++;
+    if (w.status.commander) s.commanderLost++;
+  }
+}
+
+function addSideStats(to: SideStats, from: SideStats): void {
+  for (const k of Object.keys(to) as (keyof SideStats)[]) to[k] += from[k];
 }
 
 function typeStats(t: Tally, type: UnitType): TypeStats {
@@ -169,7 +292,8 @@ function countFacility(t: Tally, r: FacilityReport): void {
 }
 
 /** マップの戦闘の範囲を切り出し、両軍を配備した戦闘の状態を作る（打ち手の deploy。無ければ battle-editor の「自動配置」と同じ） */
-function setup(source: MapData, area: string, rosters: Rosters, retreat: boolean, players: Partial<Record<TeamId, Player>>): BattleState {
+function setup(source: MapData, area: string, rosters: Rosters, args: Args, players: Partial<Record<TeamId, Player>>): BattleState {
+  const { retreat } = args;
   const data = cropBattleArea(source, area);
   if (!data.deploy) throw new Error(`${area} の範囲に初期配置地点がない`);
   const map = new HexMap(data);
@@ -186,15 +310,28 @@ function setup(source: MapData, area: string, rosters: Rosters, retreat: boolean
     if (!deployment.finish()) throw new Error(`${area}: ${SIDE_NAMES[deployment.side]}の配備を終えられない（部隊が無い・軍団長を置けない）`);
   }
   state.troopIds = deployment.troopIds();
+  // 性格を差し替える（配備した部隊の状態は配備のときに入るので、配備を終えてから）
+  for (const side of ['attacker', 'defender'] as const) {
+    const style = side === 'attacker' ? args.attackerStyle : args.defenderStyle;
+    if (style === 'roster') continue;
+    for (const [u, st] of state.statuses) {
+      if (u.team !== SIDE_TEAM[side]) continue;
+      if (style === 'none') delete st.personality;
+      else st.personality = style;
+    }
+  }
   return state;
 }
 
 /** source の area で runs 回戦わせて集計する */
 function simulate(t: Tally, source: MapData, area: string, args: Args, rosters: Rosters): void {
-  const players = { [SIDE_TEAM.attacker]: playerOf(args.attacker, args.attackerOff), [SIDE_TEAM.defender]: playerOf(args.defender, args.defenderOff) };
+  const players = {
+    [SIDE_TEAM.attacker]: playerOf(args.attacker, args.attackerOff, args.attackerNoise),
+    [SIDE_TEAM.defender]: playerOf(args.defender, args.defenderOff, args.defenderNoise),
+  };
   for (let i = 0; i < args.runs; i++) {
     const seed = args.seed + i;
-    const state = setup(source, area, rosters, args.retreat, players);
+    const state = setup(source, area, rosters, args, players);
     /** 部隊ごとの、番の終わりの位置と攻撃したか（ターン順） */
     const track = new Map<UnitData, Map<number, { at: string; attacked: boolean }>>();
     const result = runBattle(state, {
@@ -204,6 +341,7 @@ function simulate(t: Tally, source: MapData, area: string, args: Args, rosters: 
       maxTurns: args.maxTurns,
       onAction: (r) => {
         countAction(t, r);
+        countSide(t, state, r);
         if (args.trace) console.log(`    ${traceLine(state, r)}`);
         let turns = track.get(r.unit);
         if (!turns) track.set(r.unit, (turns = new Map()));
@@ -224,6 +362,7 @@ function simulate(t: Tally, source: MapData, area: string, args: Args, rosters: 
       }
     }
     t.backAndForth += bf.length;
+    countLosses(t, state);
     t.runs++;
     t.actions += result.actions;
     t.turns.push(result.turn);
@@ -284,6 +423,22 @@ function report(t: Tally): void {
   };
   console.table(Object.fromEntries([...t.reasons].sort((a, b) => a[0].localeCompare(b[0])).map(([r, n]) => [reasonName(r), { 回数: n, 割合: pct(n, t.runs) }])));
   console.log(`ターン数: 平均 ${avg.toFixed(1)}・最短 ${turns[0] ?? '-'}・中央 ${turns[Math.floor(turns.length / 2)] ?? '-'}・最長 ${turns.at(-1) ?? '-'}。1 戦の行動 平均 ${(t.actions / Math.max(1, t.runs)).toFixed(1)}・同じ所の行き来 平均 ${(t.backAndForth / Math.max(1, t.runs)).toFixed(2)} 回`);
+  const side = (s: SideStats) => ({
+    敵との距離: (s.distance / Math.max(1, s.actions)).toFixed(2),
+    攻撃: (s.attacks / t.runs).toFixed(1),
+    軍団長を狙った: pct(s.commanderHits, s.attacks),
+    殲滅した: (s.kills / t.runs).toFixed(2),
+    '与えた÷反撃': (s.dealt / Math.max(1, s.countered)).toFixed(2),
+    狙った相手の残り: pct(s.aimedHealth, s.aimed),
+    構え: (s.intercepts / t.runs).toFixed(2),
+    鼓舞: (s.inspires / t.runs).toFixed(2),
+    退却: (s.retreats / t.runs).toFixed(2),
+    負けを認めた: (s.concedes / t.runs).toFixed(2),
+    殲滅された: (s.wipedOut / t.runs).toFixed(2),
+    軍団長を討たれた: pct(s.commanderLost, t.runs),
+    兵の損耗: pct(s.lost, s.initial),
+  });
+  console.table({ 攻撃側: side(t.sides.attacker), 防衛側: side(t.sides.defender) });
   console.table(
     Object.fromEntries(
       [...t.byType]
@@ -317,8 +472,8 @@ export function main(argv: readonly string[], mapsDir: string): void {
   }
   const t0 = performance.now();
   console.log(
-    `攻撃側: ${factionName(rosters.attacker.factionId)}（${args.attacker}${args.attackerOff.map((f) => ` -${f}`).join('')}）・` +
-      `防衛側: ${factionName(rosters.defender.factionId)}（${args.defender}${args.defenderOff.map((f) => ` -${f}`).join('')}）・` +
+    `攻撃側: ${factionName(rosters.attacker.factionId)}（${args.attacker}${args.attackerOff.map((f) => ` -${f}`).join('')}${args.attackerStyle === 'roster' ? '' : ` 性格 ${args.attackerStyle}`}）・` +
+      `防衛側: ${factionName(rosters.defender.factionId)}（${args.defender}${args.defenderOff.map((f) => ` -${f}`).join('')}${args.defenderStyle === 'roster' ? '' : ` 性格 ${args.defenderStyle}`}）・` +
       `${targets.length} 範囲 × ${args.runs} 戦・シード ${args.seed}〜・ターンの上限 ${args.maxTurns}${args.retreat ? '' : '・退却先なし'}`,
   );
   const total = newTally('合計');
@@ -337,6 +492,8 @@ export function main(argv: readonly string[], mapsDir: string): void {
     total.turns.push(...t.turns);
     total.stalled += t.stalled;
     total.backAndForth += t.backAndForth;
+    addSideStats(total.sides.attacker, t.sides.attacker);
+    addSideStats(total.sides.defender, t.sides.defender);
     total.wins.attacker += t.wins.attacker;
     total.wins.defender += t.wins.defender;
     for (const [r, n] of t.reasons) total.reasons.set(r, (total.reasons.get(r) ?? 0) + n);

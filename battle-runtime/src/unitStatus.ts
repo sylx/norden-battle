@@ -7,6 +7,25 @@ import type { SkillId } from './actions';
 import type { AttackId, SpellId } from './attacks';
 import type { Condition } from './conditions';
 
+/**
+ * 部隊を率いる騎士の性格のうち「行動・戦闘スタイル」の軸（ゲームの騎士の personality のタグ）。CPU の手の好みが変わる（cpu/temper.ts）。
+ * この軸のタグが無い騎士・騎士のいない部隊は標準
+ */
+export const BATTLE_STYLES = ['aggressive', 'cautious', 'valiant', 'pragmatic'] as const;
+export type BattleStyle = (typeof BATTLE_STYLES)[number];
+
+export const BATTLE_STYLE_NAMES: Record<BattleStyle, string> = {
+  aggressive: '猛進',
+  cautious: '慎重',
+  valiant: '勇敢',
+  pragmatic: '実利',
+};
+
+/** 騎士の性格のタグ（ゲームの personality）から、行動・戦闘スタイルの軸のものを引く（無ければ undefined） */
+export function battleStyleOf(tags: readonly string[] | undefined): BattleStyle | undefined {
+  return tags?.find((t): t is BattleStyle => (BATTLE_STYLES as readonly string[]).includes(t));
+}
+
 export interface UnitStatus {
   soldiers: number;
   /** 戦闘が始まったときの兵数（兵数のゲージの満タン） */
@@ -22,6 +41,8 @@ export interface UnitStatus {
   portrait?: Portrait;
   /** 指揮官のスキル */
   skills: SkillId[];
+  /** 部隊を率いる騎士の性格（行動・戦闘スタイル。CPU の手の好み。無ければ標準） */
+  personality?: BattleStyle;
   /** 指揮官の統率・武力・知力（0..100。ダメージ・士気の増減に効く。damage.ts・morale.ts）。魔術師は武力の代わりに知力を使う */
   leadership: number;
   strength: number;
@@ -94,6 +115,8 @@ export interface TroopInit {
   /** 指揮官の顔をゲームの画像から切り出すときの指定（騎士の顔） */
   portrait?: Portrait;
   skills?: SkillId[];
+  /** 部隊を率いる騎士の性格（行動・戦闘スタイル） */
+  personality?: BattleStyle;
   /** その陣営の軍団長の部隊か */
   commander?: boolean;
   /** 捕縛されない部隊か */
@@ -113,6 +136,7 @@ export function troopStatus(type: UnitType, init: TroopInit): UnitStatus {
     ...(init.name && { name: init.name }),
     ...(init.portrait && { portrait: init.portrait }),
     skills: init.skills ?? [],
+    ...(init.personality && { personality: init.personality }),
     leadership: init.leadership,
     strength: init.strength,
     intelligence: init.intelligence,

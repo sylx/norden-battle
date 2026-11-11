@@ -10,6 +10,7 @@
  *   敵が CONCEDE_RATIO 倍以上でどこへ動いても次の敵の番に殲滅されそうなとき、または戦況が CONCEDE_STALL 番動いていないときに退却する
  *   （戦闘を終え、残りの部隊は強制退却。殲滅されて捕縛されるのを避ける・逃げ回って決着しないのを避ける）。
  *   そうでなければ、ふつうに戦う（相手の軍団長を討てば勝てる）
+ * - 軍団長の性格（temper.ts の ArmyTemper）で、全軍の前に出る度合い・拠点の周りに留まる広さ・軍団長の出方・負けを認めるしきい値を変える
  */
 import type { Offset } from '@norden/map-runtime/core/hex';
 import type { TeamId, UnitData } from '@norden/map-runtime/core/units';
@@ -17,7 +18,7 @@ import { COMBAT_DEFS, hexDistance } from '../combat';
 import { SIDE_TEAM } from '../deployment';
 import type { BattleState } from '../engine/state';
 import type { UnitStatus } from '../unitStatus';
-import { CONCEDE_LEFT, CONCEDE_STALL_RATIO } from './weights';
+import { armyTemperOf, type ArmyTemper } from './temper';
 import { power, worth } from './worth';
 
 /** 軍の作戦 */
@@ -29,6 +30,8 @@ export interface TeamPlan {
    * 考えないなら 0。考えるなら軍団長の部隊を最初に動かす（decide.ts の退却）
    */
   concede: number;
+  /** 軍団長の性格で決まる軍の気質 */
+  army: ArmyTemper;
 }
 
 /** 軍の兵力（兵数 × 兵の重さの合計）。いまの味方・敵と、戦闘の初めの味方 */
@@ -60,12 +63,19 @@ export function forcesOf(state: BattleState, team: TeamId, commander = true): Fo
   return { own, foe, ownInitial };
 }
 
-/** 番の初めに、team の軍の作戦を立てる */
-export function planTeam(state: BattleState, team: TeamId): TeamPlan {
+/** 番の初めに、team の軍の作戦を立てる（personality なら軍団長の性格で軍の気質を変える） */
+export function planTeam(state: BattleState, team: TeamId, personality = true): TeamPlan {
+  const army = armyTemperOf(commanderOf(state, team), personality);
   const f = forcesOf(state, team, false);
   const ratio = f.own > 0 ? f.foe / f.own : Infinity;
-  const concede = f.own <= f.ownInitial * CONCEDE_LEFT && ratio >= CONCEDE_STALL_RATIO ? ratio : 0;
-  return { garrison: chooseGarrison(state, team), concede };
+  const concede = f.own <= f.ownInitial * army.concedeLeft && ratio >= army.concedeStallRatio ? ratio : 0;
+  return { garrison: chooseGarrison(state, team), concede, army };
+}
+
+/** team の軍団長の部隊の状態（いなければ undefined） */
+export function commanderOf(state: BattleState, team: TeamId): UnitStatus | undefined {
+  for (const [u, s] of state.statuses) if (u.team === team && s.commander) return s;
+  return undefined;
 }
 
 /** 防衛側の拠点の守りの部隊（拠点に近い部隊。射程のある部隊・軍団長でない部隊を選ぶ）。攻撃側・拠点が無い・部隊がいなければ null */
