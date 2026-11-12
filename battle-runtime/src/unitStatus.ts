@@ -183,7 +183,7 @@ const MAX_SOLDIERS: Record<UnitType, number> = {
   wizard: 400,
   dragon: 600,
   golem: 800,
-  behemoth: 1200,
+  behemoth: 1000,
   brain: 1000,
 };
 
