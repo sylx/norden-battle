@@ -5,9 +5,10 @@
 .battle-screen {
   --panel-bg: rgba(38, 28, 20, 0.92);
   --panel-border: #8a6a3a;
-  --text: #f1e6cc;
-  --text-dim: #bfae8a;
-  --accent: #e2b75a;
+  /* 文字色は norden-ui の theme.css の変数（--accent は枠・地の金にも使う） */
+  --text: var(--norden-text);
+  --text-dim: var(--norden-text-muted);
+  --accent: var(--norden-text-accent);
   /* ThinFrame の枠の内側に中身を収める余白 */
   --bezel-pad-x: 14px;
   --bezel-pad-y: 12px;
@@ -160,7 +161,7 @@
 }
 
 .battle-screen .unit-tag.low-soldiers .soldiers .value {
-  color: #ff8a70;
+  color: var(--norden-text-bad);
 }
 
 .battle-screen .unit-tag .morale .fill {
@@ -172,7 +173,7 @@
 }
 
 .battle-screen .unit-tag.low-morale .morale .value {
-  color: #ff9a7a;
+  color: var(--norden-text-bad);
 }
 
 .battle-screen .unit-tag[hidden] {
@@ -197,7 +198,7 @@
   line-height: 16px;
   text-align: center;
   font-weight: bold;
-  color: #1a130d;
+  color: var(--norden-ink-strong);
   background: var(--cond);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
 }
@@ -283,7 +284,7 @@
 }
 
 .battle-screen .unit-mini.low-soldiers .n {
-  color: #ff8a70;
+  color: var(--norden-text-bad);
 }
 
 .battle-screen .unit-mini .gauges {
@@ -353,7 +354,7 @@
   border-radius: 3px;
   background: linear-gradient(#c23a2a, #7e1d14);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
-  color: #fff4d0;
+  color: var(--norden-text-strong);
   font-size: 13px;
   font-weight: 700;
   font-family: Georgia, 'Times New Roman', serif;
@@ -379,7 +380,7 @@
   border-radius: 3px;
   background: linear-gradient(#f0c24a, #a8741c);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
-  color: #3a2408;
+  color: var(--norden-ink-strong);
   font-size: 13px;
   font-weight: 700;
   font-family: Georgia, 'Times New Roman', serif;
@@ -540,13 +541,13 @@
 .battle-screen .action-menu .menu-item:hover,
 .battle-screen .action-menu .menu-item.open {
   background: linear-gradient(90deg, rgba(226, 183, 90, 0.35), rgba(226, 183, 90, 0.08));
-  color: #fff4d0;
+  color: var(--norden-text-strong);
 }
 
 .battle-screen .action-menu .menu-item.confirm {
   margin-top: 4px;
   border-top: 1px solid rgba(138, 106, 58, 0.6);
-  color: #fff4d0;
+  color: var(--norden-text-strong);
   font-weight: 600;
 }
 
@@ -570,7 +571,7 @@
 .battle-screen .action-menu .menu-note .fail {
   margin-left: auto;
   font-weight: 600;
-  color: #ff8a70;
+  color: var(--norden-text-bad);
   font-variant-numeric: tabular-nums;
 }
 
@@ -586,7 +587,7 @@
   padding: 6px 10px;
   border-radius: 3px;
   background: linear-gradient(180deg, #b8321f, #8a2214);
-  color: #fff3e6;
+  color: var(--norden-text-strong);
   text-align: center;
   white-space: nowrap;
 }
@@ -598,7 +599,7 @@
 
 .battle-screen .action-menu .menu-forced span {
   font-size: 11px;
-  color: rgba(255, 236, 220, 0.85);
+  color: var(--norden-text);
 }
 
 /* 行動終了（選べる行動が無い）。押せるものと見間違えないよう、枠も背景も無い小さな文字にする */
@@ -606,7 +607,7 @@
   margin: 0 0 2px;
   padding: 2px 4px;
   font-size: 11px;
-  color: rgba(232, 140, 120, 0.85);
+  color: var(--norden-text-bad);
   letter-spacing: 0.2em;
   text-align: center;
   white-space: nowrap;
@@ -615,7 +616,7 @@
 
 .battle-screen .action-menu .menu-item.disabled {
   cursor: default;
-  color: rgba(191, 174, 138, 0.45);
+  color: var(--norden-text-faint);
   background: none;
 }
 
@@ -627,7 +628,7 @@
   font-size: 10px;
   line-height: 16px;
   text-align: center;
-  color: #2a1e12;
+  color: var(--norden-ink-strong);
   background: var(--accent);
   font-variant-numeric: tabular-nums;
 }
@@ -641,7 +642,7 @@
   background-position: center;
   background-size: 28px 28px;
   background-repeat: no-repeat;
-  color: #fff4d0;
+  color: var(--norden-text-strong);
   font-size: 16px;
   font-weight: 800;
   line-height: 1;
@@ -688,28 +689,28 @@
 }
 
 .battle-screen .popup.damage {
-  color: #ff6a50;
+  color: var(--norden-text-bad);
 }
 
 .battle-screen .popup.counter {
-  color: #ffb070;
+  color: var(--norden-text-warn);
   font-size: 32px;
 }
 
 /* 退却したとき・退却に失敗して捕虜になったとき */
 .battle-screen .popup.retreat {
-  color: #9cc8ff;
+  color: var(--norden-text-info);
   font-size: 30px;
 }
 
 .battle-screen .popup.captured {
-  color: #ff6a50;
+  color: var(--norden-text-bad);
   font-size: 30px;
 }
 
 /* 鼓舞などで士気が上がったとき */
 .battle-screen .popup.boost {
-  color: #8fe07a;
+  color: var(--norden-text-good);
   font-size: 30px;
 }
 
@@ -721,7 +722,7 @@
 /* アーススパイクで耕したとき（ダメージの数字に添える行・空いた HEX に出す文字） */
 .battle-screen .popup.terrain,
 .battle-screen .popup-line.terrain {
-  color: #e0b870;
+  color: var(--norden-text-accent);
   font-size: 28px;
 }
 
@@ -739,7 +740,7 @@
   --bark-bg: #fbf3df;
   --bark-bg2: #eedfbd;
   --bark-line: #3b2a18;
-  --bark-ink: #26190c;
+  --bark-ink: var(--norden-ink);
   position: absolute;
   left: 0;
   top: 0;
@@ -836,7 +837,7 @@
   --bark-bg: #ddd6c6;
   --bark-bg2: #bdb4a2;
   --bark-line: #4e463b;
-  --bark-ink: #3a332b;
+  --bark-ink: var(--norden-ink);
 }
 
 .battle-screen .bark.weak .bark-body {
@@ -950,7 +951,7 @@
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.1em;
-  color: #fff4d0;
+  color: var(--norden-text-strong);
   white-space: nowrap;
 }
 
@@ -1008,11 +1009,11 @@
 
 .battle-screen .terrain-info .blocked,
 .battle-screen .terrain-info .err {
-  color: #ff8a7a;
+  color: var(--norden-text-bad);
 }
 
 .battle-screen .terrain-info .none {
-  color: rgba(191, 174, 138, 0.6);
+  color: var(--norden-text-faint);
 }
 
 /* --- 部隊（騎士）のウィンドウ（UnitInfoWindow.tsx。画面の左下、地形のウィンドウの右） --- */
@@ -1097,7 +1098,7 @@
 
 .battle-screen .unit-info .info-state.done {
   border-color: #c23a2a;
-  color: #ffb4a8;
+  color: var(--norden-text-bad);
 }
 
 .battle-screen .unit-info .info-state.done b {
@@ -1148,28 +1149,28 @@
 .battle-screen .unit-info .info-stats .norden-knight-stat {
   min-width: 0;
   padding: 2px 4px 1px;
-  --stat-color: #e2c48a;
-  --stat-wash: rgba(226, 196, 138, 0.08);
+  --stat-color: var(--norden-text-accent);
+  --stat-wash: color-mix(in srgb, var(--stat-color) 8%, transparent);
 }
 
 .battle-screen .unit-info .info-stats .norden-knight-stat.is-low {
-  --stat-color: #e48a72;
-  --stat-wash: rgba(228, 138, 114, 0.1);
+  --stat-color: var(--norden-text-bad);
+  --stat-wash: color-mix(in srgb, var(--stat-color) 10%, transparent);
 }
 
 .battle-screen .unit-info .info-stats .norden-knight-stat.is-mid {
-  --stat-color: #e2c48a;
-  --stat-wash: rgba(226, 196, 138, 0.08);
+  --stat-color: var(--norden-text-accent);
+  --stat-wash: color-mix(in srgb, var(--stat-color) 8%, transparent);
 }
 
 .battle-screen .unit-info .info-stats .norden-knight-stat.is-high {
-  --stat-color: #8fd08a;
-  --stat-wash: rgba(143, 208, 138, 0.1);
+  --stat-color: var(--norden-text-good);
+  --stat-wash: color-mix(in srgb, var(--stat-color) 10%, transparent);
 }
 
 .battle-screen .unit-info .info-stats .norden-knight-stat.is-exceptional {
-  --stat-color: #c9a2ee;
-  --stat-wash: rgba(201, 162, 238, 0.12);
+  --stat-color: var(--norden-text-rare);
+  --stat-wash: color-mix(in srgb, var(--stat-color) 12%, transparent);
 }
 
 .battle-screen .unit-info .info-stats .norden-knight-stat-label {
@@ -1411,11 +1412,11 @@
 }
 
 .battle-screen .battle-log .log-loss.damage b {
-  color: #ff6a50;
+  color: var(--norden-text-bad);
 }
 
 .battle-screen .battle-log .log-loss.counter b {
-  color: #ffb070;
+  color: var(--norden-text-warn);
 }
 
 .battle-screen .battle-log .log-morale {
@@ -1424,27 +1425,27 @@
 }
 
 .battle-screen .battle-log .log-morale.up {
-  color: #b8e08a;
+  color: var(--norden-text-good);
 }
 
 .battle-screen .battle-log .log-morale.down {
-  color: #ff9a7a;
+  color: var(--norden-text-bad);
 }
 
 .battle-screen .battle-log .log-entry.intercept .log-action {
   border-color: rgba(120, 180, 255, 0.7);
-  color: #9cc8ff;
+  color: var(--norden-text-info);
 }
 
 /* 番の終わりに拠点の施設が撃った記録（攻撃したユニットの代わりに施設の名前） */
 .battle-screen .battle-log .log-entry.facility .log-action {
   border-color: rgba(255, 190, 110, 0.7);
-  color: #ffc884;
+  color: var(--norden-text-warn);
 }
 
 .battle-screen .battle-log .log-facility {
   font-weight: bold;
-  color: #ffc884;
+  color: var(--norden-text-warn);
 }
 
 .battle-screen .battle-log .log-encircled {
@@ -1454,7 +1455,7 @@
   font-size: 10px;
   line-height: 14px;
   letter-spacing: 0.1em;
-  color: #ff9a7a;
+  color: var(--norden-text-bad);
 }
 
 /* 地形効果・高所など、地形でダメージが増減した */
@@ -1465,7 +1466,7 @@
   font-size: 10px;
   line-height: 14px;
   letter-spacing: 0.1em;
-  color: #b8e08a;
+  color: var(--norden-text-good);
 }
 
 .battle-screen .battle-log .log-destroyed {
@@ -1474,19 +1475,19 @@
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.1em;
-  color: #fff4d0;
+  color: var(--norden-text-strong);
   background: #8a2a1a;
 }
 
 .battle-screen .battle-log .log-none {
-  color: rgba(191, 174, 138, 0.6);
+  color: var(--norden-text-faint);
 }
 
 .battle-screen .battle-log .log-note {
   margin-top: 2px;
   padding-left: 12px;
   font-size: 11px;
-  color: #b8e08a;
+  color: var(--norden-text-good);
 }
 
 .battle-screen .battle-log .log-note::before {
@@ -1494,7 +1495,7 @@
 }
 
 .battle-screen .battle-log .log-note.halted {
-  color: #ff9a7a;
+  color: var(--norden-text-bad);
 }
 
 
@@ -1709,7 +1710,7 @@
   border-radius: 3px;
   font-size: 11px;
   line-height: 1.4;
-  color: #e07050;
+  color: var(--norden-text-bad);
 }
 
 .battle-screen .deploy-window .deploy-count output {
@@ -1873,7 +1874,7 @@
 }
 
 .battle-screen .battle-status .err {
-  color: #ff8a7a;
+  color: var(--norden-text-bad);
 }
 
 
@@ -1899,7 +1900,7 @@
   font-size: 18px;
   font-weight: 600;
   letter-spacing: 0.12em;
-  color: #fff4d0;
+  color: var(--norden-text-strong);
 }
 
 .battle-screen .battle-end-window .end-winner::before {
@@ -1940,7 +1941,7 @@
 /* 防衛拠点の HEX（地形のウィンドウの札） */
 .battle-screen .terrain-info .terrain-feature.stronghold {
   border-color: rgba(240, 192, 48, 0.8);
-  color: #f0c030;
+  color: var(--norden-text-gold);
 }
 
 /* 軍団長の部隊の印（配備のウィンドウ・騎士のウィンドウ） */
@@ -1950,6 +1951,6 @@
   border-radius: 3px;
   font-size: 10px;
   font-weight: 700;
-  color: #ffe08a;
+  color: var(--norden-text-gold);
   background: rgba(120, 80, 20, 0.5);
 }
