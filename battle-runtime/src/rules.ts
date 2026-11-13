@@ -4,6 +4,8 @@
  * 戦闘を進める処理は '@norden/battle-runtime/engine'、CPU の思考は '@norden/battle-runtime/cpu'。
  */
 export { ATTACK_DEFS, ATTACK_IDS, SPELL_IDS } from './attacks';
+export { basicAttack, basicDefense, MAX_BASIC_DEFENSE, STANDARD_UNIT } from './damage';
+export type { UnitPower } from './damage';
 export type { AttackId, MenuAttackId, SpellId } from './attacks';
 export type { SkillId } from './actions';
 export { demoTroops, Deployment, MAX_DEPLOY, SIDE_NAMES, SIDE_TEAM } from './deployment';

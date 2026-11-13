@@ -166,7 +166,7 @@ engine の関数を呼び、返った結果で頭上の数字・セリフ・イ�
 - 描画なしで回す（`sim.ts`）: `runBattle(state, { players, rng, playerRng })` が、軍ごとの打ち手（`Player`: 部隊の次の行動を返す `decide`、
   番の初めの `beginTurn`、動かす順の `order`、強制退却の退却先の `routTo`）で決着かターンの上限まで回す。`randomPlayer` はランダムに行動する仮の打ち手。
   `onAction`・`onFacility` で行動・施設の射撃を受け取れる（シミュレータの集計）。
-- three.js を読み込まないルールの口（部隊の状態・配備・攻撃の定義・勢力）は `@norden/battle-runtime/rules`。
+- three.js を読み込まないルールの口（部隊の状態・配備・攻撃の定義・勢力・基本攻撃力と基本防御力）は `@norden/battle-runtime/rules`。
 
 ```ts
 import { createBattleState, randomPlayer, runBattle, seededRng } from '@norden/battle-runtime/engine';
@@ -203,7 +203,7 @@ src/
     temper.ts      性格（部隊の気質・軍団長で決まる軍の気質）
     types.ts       難易度（考える要素とノイズ）・考える要素（CpuFeatures）・CPU の設定
     index.ts       CPU の公開するもの（'@norden/battle-runtime/cpu'）
-  rules.ts         three.js を読み込まないルールの口（'@norden/battle-runtime/rules'。部隊の状態・配備・攻撃の定義・勢力）
+  rules.ts         three.js を読み込まないルールの口（'@norden/battle-runtime/rules'。部隊の状態・配備・攻撃の定義・勢力・基本攻撃力と基本防御力）
   fxClock.ts       演出の時計（速度の倍率を掛けて進める。演出の時刻はすべてこれで測る）
   deployment.ts    配備フェーズ（配備する部隊・配置地点への置き方・陣営の順）
   menuModel.ts     行動メニューの状態（中身・2 階層目・毎フレームの位置の基準）
