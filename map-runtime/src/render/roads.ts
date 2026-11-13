@@ -1,24 +1,30 @@
 /**
  * 街道のメッシュ。道の中心線に沿って地形に貼り付く帯を作り、縁はアルファでぼかす。
+ * 地面の色に埋もれないよう、明るく踏み固めた路面の両側を暗い轍の縁で縁取る。
  */
 import * as THREE from 'three';
 import type { Vec2 } from '../core/hex.ts';
 import { ROAD_WIDTH } from '../core/roads.ts';
 import type { Heightmap } from '../core/terrainGen.ts';
 
-const FADE = 0.03;
+const FADE = 0.025;
 const LIFT = 0.006;
+/** 描く幅は ROAD_WIDTH より少し広げる（木・建物の除外の幅に収まる範囲） */
+const DRAW_WIDTH_SCALE = 1.2;
 
-const DIRT = new THREE.Color(0x8d7858);
-const DIRT_WORN = new THREE.Color(0xa08a68);
+/** 縁（轍・路肩）の暗い土と、中央の踏み固めた明るい路面 */
+const DIRT_EDGE = new THREE.Color(0x5e4a32);
+const DIRT_WORN = new THREE.Color(0xcdb68c);
 
 export function buildRoadMesh(paths: Vec2[][], hm: Heightmap, waterLevel: number, hexSize: number): THREE.Mesh | null {
   if (paths.length === 0) return null;
-  const hw = (ROAD_WIDTH * hexSize) / 2;
+  const hw = (ROAD_WIDTH * DRAW_WIDTH_SCALE * hexSize) / 2;
   const fade = FADE * hexSize;
-  // 横断方向の 4 点: 外側(透明) - 内側 - 内側 - 外側(透明)
-  const offsets = [-(hw + fade), -hw * 0.6, hw * 0.6, hw + fade];
-  const alphas = [0, 1, 1, 0];
+  // 横断方向の 6 点: 外側(透明) - 縁(暗) - 路面(明) - 路面(明) - 縁(暗) - 外側(透明)
+  const offsets = [-(hw + fade), -hw * 0.82, -hw * 0.45, hw * 0.45, hw * 0.82, hw + fade];
+  const alphas = [0, 1, 1, 1, 1, 0];
+  const colors = [DIRT_EDGE, DIRT_EDGE, DIRT_WORN, DIRT_WORN, DIRT_EDGE, DIRT_EDGE];
+  const across = offsets.length;
 
   const pos: number[] = [];
   const nor: number[] = [];
@@ -40,19 +46,19 @@ export function buildRoadMesh(paths: Vec2[][], hm: Heightmap, waterLevel: number
       // 水に入るところは消す
       const center = hm.heightAt(p.x, p.z);
       const dry = THREE.MathUtils.smoothstep(center, waterLevel + 0.002, waterLevel + 0.03);
-      for (let k = 0; k < 4; k++) {
+      for (let k = 0; k < across; k++) {
         const x = p.x + px * offsets[k];
         const z = p.z + pz * offsets[k];
         pos.push(x, hm.heightAt(x, z) + LIFT, z);
         hm.normalAt(x, z, n);
         nor.push(n[0], n[1], n[2]);
-        c.copy(k === 1 || k === 2 ? DIRT_WORN : DIRT);
+        c.copy(colors[k]);
         col.push(c.r, c.g, c.b, alphas[k] * dry);
       }
       if (i > 0) {
-        const r0 = base + (i - 1) * 4;
-        const r1 = base + i * 4;
-        for (let k = 0; k < 3; k++) {
+        const r0 = base + (i - 1) * across;
+        const r1 = base + i * across;
+        for (let k = 0; k < across - 1; k++) {
           idx.push(r0 + k, r0 + k + 1, r1 + k + 1);
           idx.push(r0 + k, r1 + k + 1, r1 + k);
         }
@@ -97,9 +103,9 @@ float roadNoise(vec2 p) {
         `#include <color_fragment>
 {
   float g = roadNoise(vRoadPos.xz * 40.0) * 0.5 + roadNoise(vRoadPos.xz * 9.0) * 0.5;
-  diffuseColor.rgb *= 0.82 + 0.3 * g;
-  // 縁を不規則にかじる
-  diffuseColor.a *= smoothstep(0.15, 0.55, diffuseColor.a + (roadNoise(vRoadPos.xz * 22.0) - 0.5) * 0.5);
+  diffuseColor.rgb *= 0.88 + 0.2 * g;
+  // 縁を少しだけ不規則にかじる（かじりすぎると道が途切れて見える）
+  diffuseColor.a *= smoothstep(0.1, 0.45, diffuseColor.a + (roadNoise(vRoadPos.xz * 22.0) - 0.5) * 0.3);
 }`,
       );
   };
