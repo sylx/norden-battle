@@ -263,7 +263,10 @@ export function footprint(f: Frame, x0: number, x1: number, z0: number, z1: numb
   ];
 }
 
-/** 地形に沿った壁（a → b）。上端も地形に沿う。onTop は上端の各点で呼ばれる（狭間などを載せる用） */
+/**
+ * 地形に沿った壁（a → b）。上端も地形に沿う。
+ * baseAt を渡すと、上端をその点の baseAt + height より下げない（足元は地面まで伸ばす）
+ */
 export function terrainWall(
   ctx: BuildCtx,
   a: Vec2,
@@ -273,6 +276,7 @@ export function terrainWall(
   color: THREE.Color,
   pattern: Pattern,
   topColor?: THREE.Color,
+  baseAt?: (p: Vec2) => number,
 ): { samples: { p: Vec2; top: number }[]; dir: Vec2; perp: Vec2; len: number } {
   const dx = bEnd.x - a.x;
   const dz = bEnd.z - a.z;
@@ -289,7 +293,7 @@ export function terrainWall(
       ctx.hm.heightAt(p.x + perp.x * ht, p.z + perp.z * ht),
       ctx.hm.heightAt(p.x - perp.x * ht, p.z - perp.z * ht),
     );
-    samples.push({ p, ground: g, top: Math.max(g, ctx.waterLevel) + height });
+    samples.push({ p, ground: g, top: Math.max(g, ctx.waterLevel, baseAt?.(p) ?? -Infinity) + height });
   }
   const V = (p: Vec2, side: number, y: number) => new THREE.Vector3(p.x + perp.x * ht * side, y, p.z + perp.z * ht * side);
   for (let i = 0; i < n; i++) {

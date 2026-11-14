@@ -6,6 +6,7 @@
  * 城の門は、街道の来ている辺と橋が直接つながる辺のすべてに開ける（どれも無い郭には 1 か所選んで開ける）。
  * 橋が直接つながる門は、床を橋の路面の高さにそろえる（橋は門の外側の面で止まる。castleGate.ts）。
  * 城の地面の石畳は地形のシェーダで描く（HexOverlay.setPaved）。
+ * 川岸などで壁の外側へ地面が落ち込む辺では、壁・塔・門を内側の地面の高さから立てる（足元は地面まで伸ばす。insideGround）。
  * 壁の崩れた HEX（HexCell.breached。戦闘中にアーススパイクで崩す）の辺は、城壁を瓦礫と低い残骸に、木柵を倒れた丸太にする。
  * 塔・物見櫓は、つながる壁がすべて崩れていれば瓦礫の山にする。崩れていない部分の見た目（乱数の並び）は変えない。
  */
@@ -126,6 +127,18 @@ function lerp2(a: Vec2, b: Vec2, t: number): Vec2 {
 
 const mid = (e: Edge) => lerp2(e.a, e.b, 0.5);
 
+const center = (ctx: BuildCtx, cell: HexCell) => ctx.map.layout.offsetToWorld(cell.col, cell.row);
+
+/**
+ * 壁の内側の地面の高さ: 壁の上の点 p から HEX の中心 c へ少し入った数点の高さの最大。
+ * 壁・塔の高さをここから測ると、外側が川岸などで落ち込んでいても内側の地面より沈まない
+ */
+function insideGround(ctx: BuildCtx, p: Vec2, c: Vec2): number {
+  let h = -Infinity;
+  for (const t of [0.15, 0.3, 0.45]) h = Math.max(h, ctx.hm.heightAt(p.x + (c.x - p.x) * t, p.z + (c.z - p.z) * t));
+  return h;
+}
+
 /** 辺の先の HEX が、この辺へ向けて架かった橋か */
 function bridgeTo(ctx: BuildCtx, e: Edge): boolean {
   const nc = ctx.map.get(e.nb.col, e.nb.row);
@@ -221,9 +234,10 @@ function buildCastle(ctx: BuildCtx, cells: HexCell[], seed: number): void {
   const walk = stone.clone().multiplyScalar(0.8);
   const towerRoof = rng() < 0.6 ? (rng() < 0.5 ? ROOF_SLATE : ROOF_TILE[1]) : null;
 
-  const castleWall = (a: Vec2, b: Vec2, out: Vec2, height: number) => {
+  // c は壁の内側の HEX の中心
+  const castleWall = (a: Vec2, b: Vec2, out: Vec2, c: Vec2, height: number) => {
     if (Math.hypot(b.x - a.x, b.z - a.z) < 0.02) return;
-    const w = terrainWall(ctx, a, b, WALL_T, height, stone, PAT.Masonry, walk);
+    const w = terrainWall(ctx, a, b, WALL_T, height, stone, PAT.Masonry, walk, (p) => insideGround(ctx, p, c));
     // 狭間（外側の胸壁）
     const step = 0.045;
     const n = Math.floor(w.len / step);
@@ -242,16 +256,17 @@ function buildCastle(ctx: BuildCtx, cells: HexCell[], seed: number): void {
 
   // 城壁: 隣の郭の段が低い（城の外は 0）辺。外向きは段の低い側。内側の郭ほど高い。
   // 壁の崩れた HEX の辺は、両端に低い残骸を残して瓦礫にする（門も崩す）
-  const towers = new Map<string, { p: Vec2; ward: number; intact: boolean }>();
+  const towers = new Map<string, { p: Vec2; ward: number; intact: boolean; base: number }>();
   for (const e of boundaryEdges(ctx, cells, () => false)) {
     const ward = castleWard(e.cell);
     if (wardAt(e.nb) >= ward) continue;
     const height = WALL_H * wardScale(ward);
     const broken = !!e.cell.breached;
+    const c = center(ctx, e.cell);
     if (broken) {
       const rr = structureRng(ctx, seed, e.cell.col, e.cell.row, 40 + e.dir);
-      castleWall(e.a, lerp2(e.a, e.b, 0.12 + rr() * 0.1), e.out, height * (0.35 + rr() * 0.25));
-      castleWall(lerp2(e.a, e.b, 0.78 + rr() * 0.1), e.b, e.out, height * (0.35 + rr() * 0.25));
+      castleWall(e.a, lerp2(e.a, e.b, 0.12 + rr() * 0.1), e.out, c, height * (0.35 + rr() * 0.25));
+      castleWall(lerp2(e.a, e.b, 0.78 + rr() * 0.1), e.b, e.out, c, height * (0.35 + rr() * 0.25));
       rubble(ctx, e.a, e.b, 'stone', rr);
     }
     const doorRng = gates.get(edgeKey(e));
@@ -259,22 +274,23 @@ function buildCastle(ctx: BuildCtx, cells: HexCell[], seed: number): void {
       const len = Math.hypot(e.b.x - e.a.x, e.b.z - e.a.z);
       const t = GATE_HALF / len;
       if (!broken) {
-        castleWall(e.a, lerp2(e.a, e.b, 0.5 - t), e.out, height);
-        castleWall(lerp2(e.a, e.b, 0.5 + t), e.b, e.out, height);
+        castleWall(e.a, lerp2(e.a, e.b, 0.5 - t), e.out, c, height);
+        castleWall(lerp2(e.a, e.b, 0.5 + t), e.b, e.out, c, height);
       }
       const floor = bridgeTo(ctx, e) ? castleBridgeGate(ctx, e.cell, e.dir).floor : undefined;
-      gatehouse(broken ? discard(ctx) : ctx, mid(e), { x: (e.b.x - e.a.x) / len, z: (e.b.z - e.a.z) / len }, e.out, height, stone, doorRng, floor);
+      const m = mid(e);
+      gatehouse(broken ? discard(ctx) : ctx, m, { x: (e.b.x - e.a.x) / len, z: (e.b.z - e.a.z) / len }, e.out, insideGround(ctx, m, c), height, stone, doorRng, floor);
     } else if (!broken) {
-      castleWall(e.a, e.b, e.out, height);
+      castleWall(e.a, e.b, e.out, c, height);
     }
     for (const p of [e.a, e.b]) {
       const k = vertexKey(p);
       const t = towers.get(k);
-      towers.set(k, { p, ward: Math.max(t?.ward ?? 0, ward), intact: !!t?.intact || !broken });
+      towers.set(k, { p, ward: Math.max(t?.ward ?? 0, ward), intact: !!t?.intact || !broken, base: Math.max(t?.base ?? -Infinity, insideGround(ctx, p, c)) });
     }
   }
   for (const t of towers.values()) {
-    roundTower(t.intact ? ctx : discard(ctx), t.p, TOWER_R, TOWER_H * wardScale(t.ward), stone, towerRoof, rng);
+    roundTower(t.intact ? ctx : discard(ctx), t.p, t.base, TOWER_R, TOWER_H * wardScale(t.ward), stone, towerRoof, rng);
     if (!t.intact) {
       const rr = structureRng(ctx, seed, Math.round(t.p.x * 100), Math.round(t.p.z * 100), 47);
       for (let i = 0; i < 3; i++) {
@@ -312,10 +328,11 @@ function buildCastle(ctx: BuildCtx, cells: HexCell[], seed: number): void {
   }
 }
 
-function roundTower(ctx: BuildCtx, p: Vec2, radius: number, height: number, stone: THREE.Color, roof: number | null, rng: Rng): void {
+/** 丸い塔。base（内側の地面の高さ）より上端を下げない */
+function roundTower(ctx: BuildCtx, p: Vec2, base: number, radius: number, height: number, stone: THREE.Color, roof: number | null, rng: Rng): void {
   const pts = [0, 1, 2, 3].map((i) => ({ x: p.x + Math.cos(i * 1.57) * radius, z: p.z + Math.sin(i * 1.57) * radius }));
   const g = groundRange(ctx.hm, [p, ...pts]);
-  const top = Math.max(g.max, ctx.waterLevel) + height;
+  const top = Math.max(g.max, ctx.waterLevel, base) + height;
   cylinder(ctx.b, p.x, p.z, g.min - 0.1, top, radius, radius * 0.94, 14, stone, PAT.Masonry);
   // 張り出し + 狭間
   const rr = radius * 1.12;
@@ -331,13 +348,16 @@ function roundTower(ctx: BuildCtx, p: Vec2, radius: number, height: number, ston
   }
 }
 
-/** 城門。floor を渡すと門の床をその高さにする（橋の路面に合わせる。地面より高ければ石の土台を積む） */
-function gatehouse(ctx: BuildCtx, mid: Vec2, dir: Vec2, out: Vec2, wallH: number, stone: THREE.Color, rng: Rng, floor?: number): void {
+/**
+ * 城門。inside（内側の地面の高さ）より上端を下げない。
+ * floor を渡すと門の床をその高さにする（橋の路面に合わせる。地面より高ければ石の土台を積む）
+ */
+function gatehouse(ctx: BuildCtx, mid: Vec2, dir: Vec2, out: Vec2, inside: number, wallH: number, stone: THREE.Color, rng: Rng, floor?: number): void {
   const perp = { x: -dir.z, z: dir.x };
   const f = edgeFrame(mid, dir, perp, out);
   const g = groundRange(ctx.hm, footprint(f, -GATE_HALF - 0.1, GATE_HALF + 0.1, -WALL_T, WALL_T));
   const base = floor ?? g.min;
-  const top = Math.max(g.max, base) + wallH + 0.08;
+  const top = Math.max(g.max, base, inside) + wallH + 0.08;
   const d = CASTLE_GATE_DEPTH;
   // 両脇の塔
   for (const s of [-1, 1]) {
@@ -416,39 +436,44 @@ function buildFort(ctx: BuildCtx, cells: HexCell[], seed: number): void {
   const vertices = new Map(edges.flatMap((e) => [e.a, e.b]).map((p) => [vertexKey(p), p]));
   const wood = 0x6b4f35;
 
-  const palisade = (a: Vec2, b: Vec2) => {
+  // c は柵の内側の HEX の中心。丸太の上端は内側の地面より下げない
+  const palisade = (a: Vec2, b: Vec2, c: Vec2) => {
     const len = Math.hypot(b.x - a.x, b.z - a.z);
     const n = Math.max(1, Math.round(len / (LOG_R * 2)));
     for (let i = 0; i < n; i++) {
       const p = lerp2(a, b, (i + 0.5) / n);
       const g = ctx.hm.heightAt(p.x, p.z);
-      const h = PALISADE_H * (0.9 + rng() * 0.2);
-      const c = vary(wood, rng, 0.12);
-      cylinder(ctx.b, p.x, p.z, g - 0.05, g + h, LOG_R, LOG_R, 5, c, PAT.Wood);
-      cone(ctx.b, p.x, p.z, g + h, 0.022, LOG_R, 5, c, PAT.Wood);
+      const top = Math.max(g, insideGround(ctx, p, c)) + PALISADE_H * (0.9 + rng() * 0.2);
+      const col = vary(wood, rng, 0.12);
+      cylinder(ctx.b, p.x, p.z, g - 0.05, top, LOG_R, LOG_R, 5, col, PAT.Wood);
+      cone(ctx.b, p.x, p.z, top, 0.022, LOG_R, 5, col, PAT.Wood);
     }
   };
 
   // 木柵の倒れた HEX の辺は、柵を描かずに（乱数は同じように引く）倒れた丸太を散らす
   const sink = discard(ctx);
   const intactVertices = new Set<string>();
+  const vertexBase = new Map<string, number>();
   for (const e of edges) {
     const broken = !!e.cell.breached;
-    const fence = broken ? (p: Vec2, q: Vec2) => withBuilder(ctx, sink, () => palisade(p, q)) : palisade;
+    const c = center(ctx, e.cell);
+    const fence = (p: Vec2, q: Vec2) => (broken ? withBuilder(ctx, sink, () => palisade(p, q, c)) : palisade(p, q, c));
     if (e === gate) {
       const len = Math.hypot(e.b.x - e.a.x, e.b.z - e.a.z);
       const t = GATE_HALF / len;
       fence(e.a, lerp2(e.a, e.b, 0.5 - t));
       fence(lerp2(e.a, e.b, 0.5 + t), e.b);
-      fortGate(broken ? sink : ctx, lerp2(e.a, e.b, 0.5), { x: (e.b.x - e.a.x) / len, z: (e.b.z - e.a.z) / len }, e.out, rng);
+      const m = mid(e);
+      fortGate(broken ? sink : ctx, m, { x: (e.b.x - e.a.x) / len, z: (e.b.z - e.a.z) / len }, e.out, insideGround(ctx, m, c), rng);
     } else {
       fence(e.a, e.b);
     }
     if (broken) rubble(ctx, e.a, e.b, 'log', structureRng(ctx, seed, e.cell.col, e.cell.row, 40 + e.dir));
     else for (const p of [e.a, e.b]) intactVertices.add(vertexKey(p));
+    for (const p of [e.a, e.b]) vertexBase.set(vertexKey(p), Math.max(vertexBase.get(vertexKey(p)) ?? -Infinity, insideGround(ctx, p, c)));
   }
 
-  for (const [k, v] of vertices) watchtower(intactVertices.has(k) ? ctx : sink, v, rng);
+  for (const [k, v] of vertices) watchtower(intactVertices.has(k) ? ctx : sink, v, vertexBase.get(k)!, rng);
 
   // 内側に小屋と天幕
   const layout = ctx.map.layout;
@@ -476,12 +501,13 @@ function buildFort(ctx: BuildCtx, cells: HexCell[], seed: number): void {
   }
 }
 
-function watchtower(ctx: BuildCtx, p: Vec2, rng: Rng): void {
+/** 物見櫓。base（内側の地面の高さ）より床を下げない */
+function watchtower(ctx: BuildCtx, p: Vec2, base: number, rng: Rng): void {
   const f = new Frame(p.x, p.z, rng() * Math.PI);
   const s = 0.045;
   const g = groundRange(ctx.hm, footprint(f, -s, s, -s, s));
   const wood = vary(0x5e4430, rng);
-  const deck = g.max + 0.19;
+  const deck = Math.max(g.max, base) + 0.19;
   const roofY = deck + 0.08;
   for (const [x, z] of [
     [-s, -s],
@@ -500,12 +526,13 @@ function watchtower(ctx: BuildCtx, p: Vec2, rng: Rng): void {
   pyramidRoof(ctx.b, f, -s - 0.025, s + 0.025, -s - 0.025, s + 0.025, roofY, 0.06, vary(ROOF_THATCH, rng));
 }
 
-function fortGate(ctx: BuildCtx, mid: Vec2, dir: Vec2, out: Vec2, rng: Rng): void {
+/** 砦の門。inside（内側の地面の高さ）より上端を下げない */
+function fortGate(ctx: BuildCtx, mid: Vec2, dir: Vec2, out: Vec2, inside: number, rng: Rng): void {
   const perp = { x: -dir.z, z: dir.x };
   const f = edgeFrame(mid, dir, perp, out);
   const g = groundRange(ctx.hm, footprint(f, -GATE_HALF, GATE_HALF, -0.02, 0.02));
   const wood = vary(0x5e4430, rng);
-  const top = g.max + PALISADE_H + 0.05;
+  const top = Math.max(g.max, inside) + PALISADE_H + 0.05;
   for (const x of [-GATE_HALF, GATE_HALF]) {
     const px = f.x(x, 0);
     const pz = f.z(x, 0);
