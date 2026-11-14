@@ -1,18 +1,21 @@
 /**
  * 城・砦。
  * 同種の HEX がつながった領域ごとに、外周の辺に壁（城 = 石の城壁、砦 = 木柵）、
- * 外周の頂点に塔、1 か所に門を置き、内側に建物を建てる。
- * 城は HEX ごとの郭の段（ward）が違う HEX の境にも城壁を立て（二重・三重の城壁）、郭ごとに門を 1 か所開ける。
+ * 外周の頂点に塔、門を置き、内側に建物を建てる。砦の門は 1 か所。
+ * 城は HEX ごとの郭の段（ward）が違う HEX の境にも城壁を立て（二重・三重の城壁）、郭ごとに門を開ける。
+ * 城の門は、街道の来ている辺と橋が直接つながる辺のすべてに開ける（どれも無い郭には 1 か所選んで開ける）。
+ * 橋が直接つながる門は、床を橋の路面の高さにそろえる（橋は門の外側の面で止まる。castleGate.ts）。
  * 城の地面の石畳は地形のシェーダで描く（HexOverlay.setPaved）。
  * 壁の崩れた HEX（HexCell.breached。戦闘中にアーススパイクで崩す）の辺は、城壁を瓦礫と低い残骸に、木柵を倒れた丸太にする。
  * 塔・物見櫓は、つながる壁がすべて崩れていれば瓦礫の山にする。崩れていない部分の見た目（乱数の並び）は変えない。
  */
 import * as THREE from 'three';
-import { castleWard, featureRegions } from '../../core/features.ts';
+import { bridgeAxis, castleWard, featureRegions } from '../../core/features.ts';
 import type { Offset, Vec2 } from '../../core/hex.ts';
 import type { HexCell } from '../../core/mapData.ts';
 import { TERRAIN_DEFS } from '../../core/terrainTypes.ts';
 import { GeoBuilder } from '../geoBuilder.ts';
+import { CASTLE_GATE_DEPTH, castleBridgeGate } from './castleGate.ts';
 import { PAT } from './material.ts';
 import { box, structureRng, cone, cylinder, footprint, Frame, groundRange, pyramidRoof, terrainWall, vary, type BuildCtx, type Rng } from './shapes.ts';
 import { house, ROOF_SLATE, ROOF_THATCH, ROOF_TILE } from './village.ts';
@@ -123,6 +126,15 @@ function lerp2(a: Vec2, b: Vec2, t: number): Vec2 {
 
 const mid = (e: Edge) => lerp2(e.a, e.b, 0.5);
 
+/** 辺の先の HEX が、この辺へ向けて架かった橋か */
+function bridgeTo(ctx: BuildCtx, e: Edge): boolean {
+  const nc = ctx.map.get(e.nb.col, e.nb.row);
+  return nc?.feature === 'bridge' && bridgeAxis(ctx.map, nc) === e.dir % 3;
+}
+
+/** 街道か橋がつながっていて、必ず門を開ける辺 */
+const connected = (ctx: BuildCtx, e: Edge) => !!e.cell.roads?.includes(e.dir) || bridgeTo(ctx, e);
+
 /**
  * 描かずに捨てる組み立て先の ctx。崩れた壁・塔も乱数だけは同じように引いて、
  * 崩れていない壁・建物の見た目が崩す前と変わらないようにする
@@ -175,8 +187,10 @@ function buildCastle(ctx: BuildCtx, cells: HexCell[], seed: number): void {
   const wardAt = (o: Offset) => castleWard(ctx.map.get(o.col, o.row));
   const maxWard = Math.max(...cells.map(castleWard));
 
-  // 郭ごと（外側から）に門を選ぶ。内側の郭の門は 1 つ外側の郭に向けて開け、外側の門の近くに寄せる
-  const gates = new Set<string>();
+  // 郭ごと（外側から）に門を選ぶ。街道・橋のつながる辺にはすべて門を開ける。
+  // それとは別に 1 か所を選び（街道の辺があればそのどれか）、内側の郭ではそれを 1 つ外側の郭に向けて外側の門の近くに寄せる。
+  // 値は門の扉の色を引く乱数。選んだ門は城全体の rng、街道・橋だけの門は辺ごとの乱数（門が増えても他の見た目が変わらない）
+  const gates = new Map<string, Rng>();
   let outerGates: Vec2[] = [];
   for (let k = 1; k <= maxWard; k++) {
     const ringGates: Vec2[] = [];
@@ -188,10 +202,17 @@ function buildCastle(ctx: BuildCtx, cells: HexCell[], seed: number): void {
       return (wardAt(e.nb) === k - 1 ? 0 : -6) - 0.6 * near;
     };
     for (const comp of components(ctx, cells.filter((c) => castleWard(c) >= k))) {
-      const gate = pickGate(ctx, boundaryEdges(ctx, comp, (o) => wardAt(o) >= k), rng, k === 1 ? undefined : inward);
-      if (!gate) continue;
-      gates.add(edgeKey(gate));
-      ringGates.push(mid(gate));
+      const edges = boundaryEdges(ctx, comp, (o) => wardAt(o) >= k);
+      const gate = pickGate(ctx, edges, rng, k === 1 ? undefined : inward);
+      if (gate) {
+        gates.set(edgeKey(gate), rng);
+        ringGates.push(mid(gate));
+      }
+      for (const e of edges) {
+        if (e === gate || !connected(ctx, e)) continue;
+        if (!gates.has(edgeKey(e))) gates.set(edgeKey(e), structureRng(ctx, seed, e.cell.col, e.cell.row, 50 + e.dir));
+        ringGates.push(mid(e));
+      }
     }
     outerGates = ringGates;
   }
@@ -233,14 +254,16 @@ function buildCastle(ctx: BuildCtx, cells: HexCell[], seed: number): void {
       castleWall(lerp2(e.a, e.b, 0.78 + rr() * 0.1), e.b, e.out, height * (0.35 + rr() * 0.25));
       rubble(ctx, e.a, e.b, 'stone', rr);
     }
-    if (gates.has(edgeKey(e))) {
+    const doorRng = gates.get(edgeKey(e));
+    if (doorRng) {
       const len = Math.hypot(e.b.x - e.a.x, e.b.z - e.a.z);
       const t = GATE_HALF / len;
       if (!broken) {
         castleWall(e.a, lerp2(e.a, e.b, 0.5 - t), e.out, height);
         castleWall(lerp2(e.a, e.b, 0.5 + t), e.b, e.out, height);
       }
-      gatehouse(broken ? discard(ctx) : ctx, mid(e), { x: (e.b.x - e.a.x) / len, z: (e.b.z - e.a.z) / len }, e.out, height, stone, rng);
+      const floor = bridgeTo(ctx, e) ? castleBridgeGate(ctx, e.cell, e.dir).floor : undefined;
+      gatehouse(broken ? discard(ctx) : ctx, mid(e), { x: (e.b.x - e.a.x) / len, z: (e.b.z - e.a.z) / len }, e.out, height, stone, doorRng, floor);
     } else if (!broken) {
       castleWall(e.a, e.b, e.out, height);
     }
@@ -308,12 +331,14 @@ function roundTower(ctx: BuildCtx, p: Vec2, radius: number, height: number, ston
   }
 }
 
-function gatehouse(ctx: BuildCtx, mid: Vec2, dir: Vec2, out: Vec2, wallH: number, stone: THREE.Color, rng: Rng): void {
+/** 城門。floor を渡すと門の床をその高さにする（橋の路面に合わせる。地面より高ければ石の土台を積む） */
+function gatehouse(ctx: BuildCtx, mid: Vec2, dir: Vec2, out: Vec2, wallH: number, stone: THREE.Color, rng: Rng, floor?: number): void {
   const perp = { x: -dir.z, z: dir.x };
   const f = edgeFrame(mid, dir, perp, out);
   const g = groundRange(ctx.hm, footprint(f, -GATE_HALF - 0.1, GATE_HALF + 0.1, -WALL_T, WALL_T));
-  const top = g.max + wallH + 0.08;
-  const d = WALL_T / 2 + 0.03;
+  const base = floor ?? g.min;
+  const top = Math.max(g.max, base) + wallH + 0.08;
+  const d = CASTLE_GATE_DEPTH;
   // 両脇の塔
   for (const s of [-1, 1]) {
     const x0 = s < 0 ? -GATE_HALF - 0.1 : GATE_HALF;
@@ -328,11 +353,13 @@ function gatehouse(ctx: BuildCtx, mid: Vec2, dir: Vec2, out: Vec2, wallH: number
     ])
       box(ctx.b, f, mx - 0.012, mx + 0.012, mz - 0.012, mz + 0.012, top, top + 0.03, stone, PAT.Masonry);
   }
+  // 門の床の土台（橋の路面が地面より高いとき）
+  if (base > g.min) box(ctx.b, f, -GATE_HALF, GATE_HALF, -d, d, g.min - 0.1, base, stone, PAT.Masonry);
   // 門の上のアーチ部
-  const opening = g.min + 0.11;
+  const opening = base + 0.11;
   box(ctx.b, f, -GATE_HALF, GATE_HALF, -WALL_T / 2 - 0.01, WALL_T / 2 + 0.01, opening, top - 0.03, stone, PAT.Masonry);
   // 扉
-  box(ctx.b, f, -GATE_HALF, GATE_HALF, WALL_T / 2 - 0.004, WALL_T / 2 + 0.006, g.min - 0.02, opening, vary(0x3e2a1c, rng), PAT.Wood);
+  box(ctx.b, f, -GATE_HALF, GATE_HALF, WALL_T / 2 - 0.004, WALL_T / 2 + 0.006, base - 0.02, opening, vary(0x3e2a1c, rng), PAT.Wood);
 }
 
 function keep(ctx: BuildCtx, c: Vec2, stone: THREE.Color, roofColor: number, rng: Rng): void {

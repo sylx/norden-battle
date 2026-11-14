@@ -1,10 +1,12 @@
 /**
  * 石のアーチ橋。川の HEX を、指定した軸の両隣の陸へ渡す。
+ * 端が城の HEX につながるときは、城の中まで伸ばさず城門の外側の面で止め、路面を門の床の高さにそろえる。
  */
 import * as THREE from 'three';
 import { bridgeAxis } from '../../core/features.ts';
-import type { Vec2 } from '../../core/hex.ts';
+import type { Offset, Vec2 } from '../../core/hex.ts';
 import type { HexCell } from '../../core/mapData.ts';
+import { BRIDGE_MIN_DECK, castleBridgeGate } from './castleGate.ts';
 import { PAT } from './material.ts';
 import { structureRng, hexahedron, quad, vary, type BuildCtx } from './shapes.ts';
 
@@ -24,21 +26,27 @@ export function buildBridge(ctx: BuildCtx, cell: HexCell, seed: number): void {
   const rng = structureRng(ctx, seed, cell.col, cell.row, 3);
   const axis = bridgeAxis(ctx.map, cell);
   const c = layout.offsetToWorld(cell.col, cell.row);
-  const na = layout.neighborInDir(cell.col, cell.row, axis);
-  const nb = layout.neighborInDir(cell.col, cell.row, axis + 3);
-  const wa = layout.offsetToWorld(na.col, na.row);
-  const wb = layout.offsetToWorld(nb.col, nb.row);
-  const pA: Vec2 = { x: c.x + (wa.x - c.x) * REACH, z: c.z + (wa.z - c.z) * REACH };
-  const pB: Vec2 = { x: c.x + (wb.x - c.x) * REACH, z: c.z + (wb.z - c.z) * REACH };
+  // 橋の端と、そこでの路面の高さ。dir は橋の HEX から端の HEX への向き
+  const end = (dir: number): { p: Vec2; h: number } => {
+    const n: Offset = layout.neighborInDir(cell.col, cell.row, dir);
+    const nc = ctx.map.get(n.col, n.row);
+    if (nc?.feature === 'castle') {
+      const gate = castleBridgeGate(ctx, nc, (dir + 3) % 6);
+      return { p: gate.end, h: gate.floor };
+    }
+    const w = layout.offsetToWorld(n.col, n.row);
+    const p = { x: c.x + (w.x - c.x) * REACH, z: c.z + (w.z - c.z) * REACH };
+    return { p, h: ctx.hm.heightAt(p.x, p.z) + 0.012 };
+  };
+  const { p: pA, h: hA } = end(axis);
+  const { p: pB, h: hB } = end((axis + 3) % 6);
   const len = Math.hypot(pB.x - pA.x, pB.z - pA.z);
   const dir = { x: (pB.x - pA.x) / len, z: (pB.z - pA.z) / len };
   const perp = { x: -dir.z, z: dir.x };
 
   // 路面の高さ: 両岸を結び、水面より十分上に、中央を少し持ち上げる
   const N = 40;
-  const hA = ctx.hm.heightAt(pA.x, pA.z) + 0.012;
-  const hB = ctx.hm.heightAt(pB.x, pB.z) + 0.012;
-  const minDeck = ctx.waterLevel + 0.11;
+  const minDeck = ctx.waterLevel + BRIDGE_MIN_DECK;
   const deck: number[] = [];
   const ground: number[] = [];
   const pts: Vec2[] = [];
