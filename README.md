@@ -1,3 +1,6 @@
+> [!NOTE]
+> このリポジトリは 2026-11-14 に [nordencult](https://github.com/sylx/nordencult) の [`norden-battle/`](https://github.com/sylx/nordencult/tree/main/norden-battle) に移りました（履歴もそのまま取り込んであります）。ここは更新しません。
+
 # norden-battle
 
 ファンタジー SLG の HEX 戦闘まわりのツール群（npm workspaces）。
