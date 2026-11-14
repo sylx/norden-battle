@@ -19,7 +19,8 @@
  *   norden-ui の AlertDialog で知らせる（例: 軍団長が退却しました。全部隊は強制退却になります）。部隊ごとに行動メニューで退却先を選ぶ
  *   （行動メニューは赤い「強制退却」の帯と赤い縁で、ふだんの退却と見分けられるようにする）。
  * - 決着すると（どちらかの陣営の全滅・退却、攻撃側の入城、軍団長部隊の全滅・退却。victory.ts）決着のカットインを出し、終わったら画面の中央に
- *   決着のウィンドウ（BattleEndWindow.tsx）を出す。そのボタン（onEnd を渡したときだけ）で使う側に知らせる。
+ *   決着のウィンドウ（BattleEndWindow.tsx）を出す。そのボタン（onEnd を渡したときだけ）で使う側に知らせる。決着したこと自体は
+ *   カットインを出すのと同時に onDecided で知らせる（勝利・敗北の BGM をカットインに合わせて鳴らすため）。
  *   カットインは、プレイヤーの陣営（playerSide）が勝てば CUTIN_TEMPLATES の battle-win、負ければ battle-lose をテンプレートのまま出す
  *   （プレイヤーが戦闘にいないときは battle-win）。決着した後はターン表示を出さない。
  * - ターン表示には、いま行動している軍を出す（防衛側 → 攻撃側の交互）。その軍のユニットがすべて行動済みになったら
@@ -123,6 +124,8 @@ export interface BattleScreenProps {
   onRetreat?: (report: RetreatReport) => void;
   /** ユニットが殲滅されたとき（指揮官が捕縛されたかは report.captured。この戦闘のすべては BattleApp.wipedOut にも残る） */
   onWipeout?: (report: WipeoutReport) => void;
+  /** 決着したとき（決着のカットインを出すのと同時。勝利・敗北の BGM を鳴らすときなどに使う） */
+  onDecided?: (outcome: BattleOutcome) => void;
   /** 決着のウィンドウのボタンを押したとき（渡さなければボタンを出さない。決着そのものは BattleApp の end でも受け取れる） */
   onEnd?: (outcome: BattleOutcome) => void;
   /** 決着のウィンドウのボタンの文字（既定は「戦闘を終える」） */
@@ -152,6 +155,7 @@ export default function BattleScreen({
   facilities,
   onRetreat,
   onWipeout,
+  onDecided,
   onEnd,
   endLabel = '戦闘を終える',
   playerSide = null,
@@ -184,8 +188,8 @@ export default function BattleScreen({
   /** CPU が操作している（ターン終了の代わりに早送り・スキップを出す）と、CPU の番の早送り */
   const [cpuActive, setCpuActive] = useState(false);
   const [fastForward, setFastForward] = useState(false);
-  const latest = useRef({ statuses, troops, factions, cutInTexts, onRetreat, onWipeout, onApp, playerSide });
-  latest.current = { statuses, troops, factions, cutInTexts, onRetreat, onWipeout, onApp, playerSide };
+  const latest = useRef({ statuses, troops, factions, cutInTexts, onRetreat, onWipeout, onDecided, onApp, playerSide });
+  latest.current = { statuses, troops, factions, cutInTexts, onRetreat, onWipeout, onDecided, onApp, playerSide };
 
   useEffect(() => {
     const app = new BattleApp(viewportRef.current!);
@@ -245,6 +249,7 @@ export default function BattleScreen({
         void playCutIn(queue, endCutIn(o.winner, latest.current.playerSide)).then(() => {
           if (app.outcome === o) setEndShown(true);
         });
+        latest.current.onDecided?.(o);
       }),
     ];
     return () => {
